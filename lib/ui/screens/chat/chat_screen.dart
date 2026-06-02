@@ -125,11 +125,23 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           Icon(Icons.search, color: Colors.grey, size: 22.sp),
           SizedBox(width: 12.w),
-          Text(
-            'Ask Meta AI or Search',
-            style: TextStyle(
-              color: Colors.grey,
-              fontSize: 16.sp,
+          Expanded(
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: 'Ask Meta AI or Search',
+                hintStyle: TextStyle(
+                  color: Colors.grey,
+                  fontSize: 16.sp,
+                ),
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+              ),
             ),
           ),
         ],
@@ -186,7 +198,7 @@ class _ChatScreenState extends State<ChatScreen> {
     bool isGroup = false,
   }) {
     return ListTile(
-      onTap: () => context.push('/chat/$name'),
+      onTap: () => context.push('/chat-detail/$name'),
       leading: CircleAvatar(
         radius: 26.r,
         backgroundColor: const Color(0xFFF0F2F5),

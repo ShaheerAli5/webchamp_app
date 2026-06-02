@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
+import 'package:go_router/go_router.dart';
 import 'qr_code_screen.dart';
 
 class MoreScreen extends StatefulWidget {
@@ -93,7 +94,7 @@ class _MoreScreenState extends State<MoreScreen> {
                             _buildMenuItem(
                               assetPath: 'assets/images/templates.png',
                               title: 'Templates',
-                              onTap: () {},
+                              onTap: () => context.push('/templates'),
                             ),
                             _buildExpandableMenuItem(
                               assetPath: 'assets/images/bot replies.png',
@@ -108,24 +109,24 @@ class _MoreScreenState extends State<MoreScreen> {
                                 _buildSubMenuItem(
                                   assetPath: 'assets/images/list.png',
                                   title: 'List',
-                                  onTap: () {},
+                                  onTap: () => context.push('/bot-list'),
                                 ),
                                 _buildSubMenuItem(
                                   icon: Icons.account_tree_outlined,
                                   title: 'Flows',
-                                  onTap: () {},
+                                  onTap: () => context.push('/bot-flows'),
                                 ),
                               ],
                             ),
                             _buildMenuItem(
                               assetPath: 'assets/images/team member.png',
                               title: 'Team Members',
-                              onTap: () {},
+                              onTap: () => context.push('/team-members'),
                             ),
                             _buildMenuItem(
                               assetPath: 'assets/images/subscription.png',
                               title: 'My Subscription',
-                              onTap: () {},
+                              onTap: () => context.push('/subscription'),
                             ),
                             _buildMenuItem(
                               assetPath: 'assets/images/message log.png',

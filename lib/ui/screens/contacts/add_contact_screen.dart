@@ -14,7 +14,11 @@ class _AddContactScreenState extends State<AddContactScreen> {
   bool _enableReplyBot = true;
   String? _selectedCountry;
   String? _selectedLanguage;
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _mobileController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _otherInfoController = TextEditingController();
 
   final Map<String, String> _countryCodes = {
     'Pakistan': '92',
@@ -40,130 +44,168 @@ class _AddContactScreenState extends State<AddContactScreen> {
   }
 
   @override
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _mobileController.dispose();
+    _emailController.dispose();
+    _otherInfoController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(context),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 20.h),
-                child: Container(
-                  width: 358.w,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24.r),
-                    border: Border.all(color: const Color(0xFFE8E8EC)),
+      backgroundColor: const Color(0xFFF9FAFB),
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(57.h),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: Color(0xFFE8E8EC), width: 1)),
+          ),
+          padding: EdgeInsets.symmetric(horizontal: 16.w),
+          child: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            titleSpacing: 0,
+            automaticallyImplyLeading: false,
+            title: Row(
+              children: [
+                GestureDetector(
+                  onTap: () => context.pop(),
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    height: 40.h,
+                    alignment: Alignment.center,
+                    child: Icon(Icons.arrow_back, size: 20.sp, color: Colors.black),
                   ),
-                  padding: EdgeInsets.all(16.w),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildFieldContainer('FIRST NAME', _buildTextField('Enter first name')),
-                      _buildFieldContainer('LAST NAME', _buildTextField('Enter last name')),
-                      _buildFieldContainer('COUNTRY', _buildCountryDropdown()),
-                      _buildMobileFieldContainer(),
-                      _buildFieldContainer('LANGUAGE', _buildLanguageDropdown()),
-                      _buildFieldContainer('EMAIL', _buildTextField('email@example.com')),
-                      _buildFieldContainer('GROUPS', _buildDropdownField('Select groups')),
-                      SizedBox(height: 8.h),
-                      _buildSwitchRow(
-                        'Opt out marketing messages',
-                        _optOutMarketing,
-                        (val) => setState(() => _optOutMarketing = val),
-                      ),
-                      SizedBox(height: 12.h),
-                      _buildSwitchRow(
-                        'Enable reply bot',
-                        _enableReplyBot,
-                        (val) => setState(() => _enableReplyBot = val),
-                      ),
-                      SizedBox(height: 16.h),
-                      const Divider(color: Color(0xFFE8E8EC)),
-                      SizedBox(height: 16.h),
-                      _buildFieldContainer('OTHER INFORMATION', _buildTextField('', maxLines: 4), height: 112.h),
-                      SizedBox(height: 24.h),
-                      Row(
+                ),
+                SizedBox(width: 12.w),
+                Text(
+                  'Add New Contact',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 18.sp,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 24.h),
+              child: Container(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 40.h,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24.r),
+                  border: Border.all(color: const Color(0xFFE8E8EC)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(16.w, 20.h, 16.w, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: _buildActionButton(
-                              'Close',
-                              const Color(0xFFEFEFEF),
-                              const Color(0xFF151515),
-                              () => context.pop(),
-                            ),
+                          _buildFieldContainer('FIRST NAME', _buildTextField('Enter first name', controller: _firstNameController)),
+                          _buildFieldContainer('LAST NAME', _buildTextField('Enter last name', controller: _lastNameController)),
+                          _buildFieldContainer('COUNTRY', _buildCountryDropdown()),
+                          _buildMobileFieldContainer(),
+                          _buildFieldContainer('LANGUAGE', _buildLanguageDropdown()),
+                          _buildFieldContainer('EMAIL', _buildTextField('email@example.com', controller: _emailController)),
+                          _buildFieldContainer('GROUPS', _buildDropdownField('Select groups')),
+                          SizedBox(height: 8.h),
+                          _buildSwitchRow(
+                            'Opt out marketing messages',
+                            _optOutMarketing,
+                            (val) => setState(() => _optOutMarketing = val),
                           ),
-                          SizedBox(width: 12.w),
-                          Expanded(
-                            child: _buildActionButton(
-                              'Submit',
-                              const Color(0xFF007176),
-                              Colors.white,
-                              () {},
-                            ),
+                          SizedBox(height: 12.h),
+                          _buildSwitchRow(
+                            'Enable reply bot',
+                            _enableReplyBot,
+                            (val) => setState(() => _enableReplyBot = val),
+                          ),
+                          SizedBox(height: 16.h),
+                          const Divider(color: Color(0xFFE8E8EC)),
+                          SizedBox(height: 16.h),
+                          _buildFieldContainer('OTHER INFORMATION', _buildTextField('', maxLines: 4, controller: _otherInfoController), height: 112.h),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 20.h),
+                      child: Column(
+                        children: [
+                          SizedBox(height: 24.h),
+                          const Divider(color: Color(0xFFE8E8EC)),
+                          SizedBox(height: 24.h),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildActionButton(
+                                  'Close',
+                                  const Color(0xFFF2F4F7),
+                                  const Color(0xFF344054),
+                                  () => context.pop(),
+                                ),
+                              ),
+                              SizedBox(width: 12.w),
+                              Expanded(
+                                child: _buildActionButton(
+                                  'Submit',
+                                  const Color(0xFF007176),
+                                  Colors.white,
+                                  () {},
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+            );
+          },
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Container(
-      width: 390.w,
-      height: 57.h,
-      padding: EdgeInsets.symmetric(horizontal: 16.w),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE8E8EC), width: 1)),
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => context.pop(),
-            child: Icon(Icons.arrow_back, size: 20.sp, color: Colors.black),
-          ),
-          SizedBox(width: 12.w),
-          Text(
-            'Add New Contact',
-            style: TextStyle(
-              color: Colors.black,
-              fontSize: 18.sp,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'Inter',
-            ),
-          ),
-        ],
       ),
     );
   }
 
   Widget _buildFieldContainer(String label, Widget child, {double? height}) {
     return Container(
-      width: 326.w,
+      width: double.infinity,
       margin: EdgeInsets.only(bottom: 16.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            height: 16.h,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 10.sp,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF475467),
-                fontFamily: 'Inter',
-              ),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.sp,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF667085),
+              fontFamily: 'Inter',
             ),
           ),
           SizedBox(height: 8.h),
@@ -178,7 +220,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
 
   Widget _buildMobileFieldContainer() {
     return Container(
-      width: 326.w,
+      width: double.infinity,
       margin: EdgeInsets.only(bottom: 16.h),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -188,7 +230,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
             style: TextStyle(
               fontSize: 10.sp,
               fontWeight: FontWeight.bold,
-              color: const Color(0xFF475467),
+              color: const Color(0xFF667085),
               fontFamily: 'Inter',
             ),
           ),
@@ -371,7 +413,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
 
   Widget _buildSwitchRow(String label, bool value, Function(bool) onChanged) {
     return SizedBox(
-      width: 326.w,
+      width: double.infinity,
       height: 24.h,
       child: Row(
         children: [
@@ -401,20 +443,24 @@ class _AddContactScreenState extends State<AddContactScreen> {
   }
 
   Widget _buildActionButton(String label, Color bgColor, Color textColor, VoidCallback onTap) {
-    return ElevatedButton(
-      onPressed: onTap,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: bgColor,
-        foregroundColor: textColor,
-        elevation: 0,
-        fixedSize: Size(155.w, 48.h),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18.r),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 48.h,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(99.r),
         ),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: textColor,
+            fontSize: 16.sp,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Inter',
+          ),
+        ),
       ),
     );
   }
