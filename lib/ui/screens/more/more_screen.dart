@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../../../providers/auth_provider.dart';
+import '../../../routes/app_routes.dart';
 import 'qr_code_screen.dart';
 
 class MoreScreen extends StatefulWidget {
@@ -131,7 +134,7 @@ class _MoreScreenState extends State<MoreScreen> {
                             _buildMenuItem(
                               assetPath: 'assets/images/message log.png',
                               title: 'Message Log',
-                              onTap: () {},
+                              onTap: () => context.push('/message-log'),
                             ),
                             _buildExpandableMenuItem(
                               assetPath: 'assets/images/settings.png',
@@ -146,7 +149,7 @@ class _MoreScreenState extends State<MoreScreen> {
                                 _buildSubMenuItem(
                                   icon: Icons.settings_outlined,
                                   title: 'General',
-                                  onTap: () {},
+                                  onTap: () => context.push(AppRoutes.generalSettings),
                                 ),
                                 _buildSubMenuItem(
                                   icon: Icons.phonelink_setup,
@@ -159,6 +162,11 @@ class _MoreScreenState extends State<MoreScreen> {
                                   onTap: () {},
                                 ),
                               ],
+                            ),
+                            _buildLogoutItem(
+                              icon: Icons.logout_rounded,
+                              title: 'Logout',
+                              onTap: () => _showLogoutDialog(),
                             ),
                           ],
                         ),
@@ -412,6 +420,104 @@ class _MoreScreenState extends State<MoreScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildLogoutItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+        child: Row(
+          children: [
+            Container(
+              width: 44.w,
+              height: 44.w,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFCE4EC),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: const Color(0xFFC2185B),
+                size: 22.sp,
+              ),
+            ),
+            SizedBox(width: 16.w),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFFC2185B),
+                  height: 24 / 16,
+                  fontFamily: 'Plus Jakarta Sans',
+                ),
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              color: const Color(0xFF98A2B3),
+              size: 20.sp,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        title: Text(
+          'Logout',
+          style: TextStyle(
+            fontFamily: 'Plus Jakarta Sans',
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to logout?',
+          style: TextStyle(
+            fontFamily: 'Plus Jakarta Sans',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: const Color(0xFF667085),
+                fontFamily: 'Plus Jakarta Sans',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.read<AuthProvider>().logout();
+              context.go(AppRoutes.login);
+            },
+            child: Text(
+              'Logout',
+              style: TextStyle(
+                color: const Color(0xFFC2185B),
+                fontFamily: 'Plus Jakarta Sans',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../ui/screens/auth/login_screen.dart';
 import '../ui/screens/auth/signup_screen.dart';
+import '../ui/screens/auth/forgot_password_screen.dart';
+import '../ui/screens/auth/verify_email_screen.dart';
+import '../ui/screens/auth/reset_password_screen.dart';
 import '../ui/screens/main_screen.dart';
 import '../ui/screens/profile/profile_screen.dart';
 import '../ui/screens/settings/settings_screen.dart';
@@ -26,6 +29,12 @@ import '../ui/screens/bot_replies/add_bot_flow_screen.dart';
 import '../ui/screens/team/team_members_screen.dart';
 import '../ui/screens/team/add_team_member_screen.dart';
 import '../ui/screens/more/subscription_screen.dart';
+import '../ui/screens/more/message_log_screen.dart';
+import '../ui/screens/more/message_log_detail_screen.dart';
+import '../ui/screens/settings/general_settings_screen.dart';
+
+import '../ui/screens/chat/create_new_list_screen.dart';
+import '../ui/screens/chat/select_contacts_screen.dart';
 
 class AppRoutes {
   static const String home = '/';
@@ -36,12 +45,17 @@ class AppRoutes {
   
   static const String login = '/login';
   static const String signup = '/signup';
+  static const String forgotPassword = '/forgot-password';
+  static const String verifyEmail = '/verify-email';
+  static const String resetPassword = '/reset-password';
   static const String profile = '/profile';
   static const String settings = '/settings';
   static const String createCampaign = '/create-campaign';
   static const String addContact = '/add-contact';
   static const String uploadCsv = '/upload-csv';
   static const String individualChat = '/chat-detail/:name';
+  static const String createNewList = '/create-new-list';
+  static const String selectContacts = '/select-contacts';
   static const String templates = '/templates';
   static const String addTemplate = '/add-template';
   static const String botList = '/bot-list';
@@ -54,13 +68,15 @@ class AppRoutes {
   static const String teamMembers = '/team-members';
   static const String addTeamMember = '/add-team-member';
   static const String subscription = '/subscription';
+  static const String messageLog = '/message-log';
+  static const String messageLogDetail = '/message-log-detail';
+  static const String generalSettings = '/general-settings';
 
   static final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 
   static final GoRouter router = GoRouter(
-    initialLocation: home,
+    initialLocation: login,
     navigatorKey: _rootNavigatorKey,
-    debugLogDiagnostics: true, // Added for easier debugging
     routes: [
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
@@ -118,6 +134,18 @@ class AppRoutes {
         builder: (context, state) => const SignupScreen(),
       ),
       GoRoute(
+        path: forgotPassword,
+        builder: (context, state) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: verifyEmail,
+        builder: (context, state) => const VerifyEmailScreen(),
+      ),
+      GoRoute(
+        path: resetPassword,
+        builder: (context, state) => const ResetPasswordScreen(),
+      ),
+      GoRoute(
         path: profile,
         builder: (context, state) => const ProfileScreen(),
       ),
@@ -138,6 +166,14 @@ class AppRoutes {
         builder: (context, state) => const UploadCsvScreen(),
       ),
       GoRoute(
+        path: createNewList,
+        builder: (context, state) => const CreateNewListScreen(),
+      ),
+      GoRoute(
+        path: selectContacts,
+        builder: (context, state) => const SelectContactsScreen(),
+      ),
+      GoRoute(
         path: templates,
         builder: (context, state) => const TemplatesScreen(),
       ),
@@ -151,19 +187,31 @@ class AppRoutes {
       ),
       GoRoute(
         path: simpleBotReply,
-        builder: (context, state) => const SimpleBotReplyScreen(),
+        builder: (context, state) {
+          final botData = state.extra as Map<String, dynamic>?;
+          return SimpleBotReplyScreen(botData: botData);
+        },
       ),
       GoRoute(
         path: advanceInteractiveBotReply,
-        builder: (context, state) => const AdvanceInteractiveBotReplyScreen(),
+        builder: (context, state) {
+          final botData = state.extra as Map<String, dynamic>?;
+          return AdvanceInteractiveBotReplyScreen(botData: botData);
+        },
       ),
       GoRoute(
         path: templateBotReply,
-        builder: (context, state) => const TemplateBotReplyScreen(),
+        builder: (context, state) {
+          final botData = state.extra as Map<String, dynamic>?;
+          return TemplateBotReplyScreen(botData: botData);
+        },
       ),
       GoRoute(
         path: mediaBotReply,
-        builder: (context, state) => const MediaBotReplyScreen(),
+        builder: (context, state) {
+          final botData = state.extra as Map<String, dynamic>?;
+          return MediaBotReplyScreen(botData: botData);
+        },
       ),
       GoRoute(
         path: botFlows,
@@ -179,11 +227,29 @@ class AppRoutes {
       ),
       GoRoute(
         path: addTeamMember,
-        builder: (context, state) => const AddTeamMemberScreen(),
+        builder: (context, state) {
+          final userData = state.extra as Map<String, dynamic>?;
+          return AddTeamMemberScreen(userData: userData);
+        },
       ),
       GoRoute(
         path: subscription,
         builder: (context, state) => const SubscriptionScreen(),
+      ),
+      GoRoute(
+        path: messageLog,
+        builder: (context, state) => const MessageLogScreen(),
+      ),
+      GoRoute(
+        path: messageLogDetail,
+        builder: (context, state) {
+          final logData = state.extra as Map<String, dynamic>;
+          return MessageLogDetailScreen(logData: logData);
+        },
+      ),
+      GoRoute(
+        path: generalSettings,
+        builder: (context, state) => const GeneralSettingsScreen(),
       ),
       GoRoute(
         path: individualChat,
