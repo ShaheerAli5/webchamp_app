@@ -18,7 +18,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       appBar: PreferredSize(
-        preferredSize: Size.fromHeight(57.h),
+        preferredSize: Size.fromHeight(56.h),
         child: Container(
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -26,7 +26,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               bottom: BorderSide(color: Color(0xFFEAECF0), width: 1),
             ),
           ),
-          padding: EdgeInsets.symmetric(horizontal: 16.w),
+          padding: EdgeInsets.symmetric(horizontal: 20.w),
           child: AppBar(
             backgroundColor: Colors.transparent,
             elevation: 0,
@@ -37,20 +37,16 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 GestureDetector(
                   onTap: () => context.pop(),
                   behavior: HitTestBehavior.opaque,
-                  child: SizedBox(
-                    width: 24.w,
-                    height: 24.h,
-                    child: Icon(Icons.arrow_back, color: Colors.black, size: 24.sp),
-                  ),
+                  child: Icon(Icons.arrow_back, color: const Color(0xFF004D4F), size: 24.sp),
                 ),
-                SizedBox(width: 12.w),
+                SizedBox(width: 16.w),
                 Text(
                   'My Subscription',
                   style: TextStyle(
-                    color: const Color(0xFF151515),
+                    color: const Color(0xFF111212),
                     fontSize: 20.sp,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Plus Jakarta Sans',
                   ),
                 ),
               ],
@@ -72,6 +68,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 _buildPaidPlansList(),
                 SizedBox(height: 24.h),
                 _buildManualPaymentSection(),
+                SizedBox(height: 32.h),
               ],
             ),
           ),
@@ -84,7 +81,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   Widget _buildCurrentPlanCard() {
     return Container(
       width: 358.w,
-      height: 479.h, // Fixed height from design
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24.r),
@@ -99,6 +95,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       ),
       padding: EdgeInsets.all(24.w),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
@@ -114,10 +111,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 fontSize: 10.sp,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.5,
+                fontFamily: 'Plus Jakarta Sans',
               ),
             ),
           ),
-          SizedBox(height: 16.h), // Gap 16px from design
+          SizedBox(height: 16.h),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -128,7 +126,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     'Free',
                     style: TextStyle(
                       color: const Color(0xFF007176),
-                      fontSize: 24.sp,
+                      fontSize: 22.sp,
                       fontWeight: FontWeight.w700,
                       fontFamily: 'Plus Jakarta Sans',
                     ),
@@ -137,65 +135,78 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     'Great for getting started',
                     style: TextStyle(
                       color: const Color(0xFF667085),
-                      fontSize: 14.sp,
+                      fontSize: 13.sp,
                       fontWeight: FontWeight.w400,
+                      fontFamily: 'Plus Jakarta Sans',
                     ),
                   ),
                 ],
               ),
               Container(
-                width: 48.w,
-                height: 48.w,
+                width: 40.w,
+                height: 40.w,
                 decoration: const BoxDecoration(
                   color: Color(0xFFE1F4F4),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.workspace_premium_outlined, color: const Color(0xFF007176), size: 28.sp),
+                child: Icon(Icons.workspace_premium_outlined, color: const Color(0xFF007176), size: 24.sp),
               ),
             ],
           ),
-          SizedBox(height: 16.h), // Gap 16px from design
-          _buildFeatureItem('5 Contacts', true),
-          _buildFeatureItem('0 Campaigns Per Month', true),
-          _buildFeatureItem('0 Bot Replies', true),
-          _buildFeatureItem('Unlimited Bot Flows', true),
-          _buildFeatureItem('0 Contact Custom Fields', true),
-          _buildFeatureItem('1 Team Members/Agents', true),
-          _buildFeatureItem('AI Chat Bot', false),
-          _buildFeatureItem('API and Webhook Access', false),
+          SizedBox(height: 24.h),
+          ListView(
+            shrinkWrap: true,
+            padding: EdgeInsets.zero,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              _buildFeatureItem('5 Contacts', true, isSmall: true),
+              _buildFeatureItem('0 Campaigns Per Month', true, isSmall: true),
+              _buildFeatureItem('0 Bot Replies', true, isSmall: true),
+              _buildFeatureItem('Unlimited Bot Flows', true, isSmall: true),
+              _buildFeatureItem('0 Contact Custom Fields', true, isSmall: true),
+              _buildFeatureItem('1 Team Members/Agents', true, isSmall: true),
+              _buildFeatureItem('AI Chat Bot', false, isSmall: true),
+              _buildFeatureItem('API and Webhook Access', false, isSmall: true),
+            ],
+          ),
         ],
       ),
     );
   }
 
   Widget _buildSectionHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          'SUBSCRIBE PAID PLANS',
-          style: TextStyle(
-            fontSize: 11.sp,
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF475467),
-            letterSpacing: 0.5,
+    return Container(
+      width: 358.w,
+      height: 32.h,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'SUBSCRIBE PAID PLANS',
+            style: TextStyle(
+              fontSize: 11.sp,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF475467),
+              letterSpacing: 0.5,
+              fontFamily: 'Plus Jakarta Sans',
+            ),
           ),
-        ),
-        Container(
-          height: 32.h,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF2F4F7),
-            borderRadius: BorderRadius.circular(99.r),
+          Container(
+            height: 32.h,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF2F4F7),
+              borderRadius: BorderRadius.circular(99.r),
+            ),
+            padding: EdgeInsets.all(2.w),
+            child: Row(
+              children: [
+                _buildToggleButton('Monthly', _isMonthly, () => setState(() => _isMonthly = true)),
+                _buildToggleButton('Yearly', !_isMonthly, () => setState(() => _isMonthly = false)),
+              ],
+            ),
           ),
-          padding: EdgeInsets.all(2.w),
-          child: Row(
-            children: [
-              _buildToggleButton('Monthly', _isMonthly, () => setState(() => _isMonthly = true)),
-              _buildToggleButton('Yearly', !_isMonthly, () => setState(() => _isMonthly = false)),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -216,6 +227,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             color: isActive ? Colors.white : const Color(0xFF475467),
             fontSize: 12.sp,
             fontWeight: FontWeight.w600,
+            fontFamily: 'Plus Jakarta Sans',
           ),
         ),
       ),
@@ -224,7 +236,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
   Widget _buildPaidPlansList() {
     return SizedBox(
-      height: 530.h,
+      height: 440.h,
       child: ListView(
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
@@ -249,7 +261,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             ],
             missingFeatures: ['API Access and Webhook Access'],
           ),
-          SizedBox(width: 16.w),
+          SizedBox(width: 12.w),
           _buildPlanCard(
             title: 'Premium',
             price: '30.00',
@@ -269,7 +281,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               'API Access and Webhook Access',
             ],
           ),
-          SizedBox(width: 16.w),
+          SizedBox(width: 12.w),
         ],
       ),
     );
@@ -290,8 +302,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 304.3.w,
-        height: 503.h,
+        width: 280.w,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(24.r),
@@ -301,7 +312,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.04),
-              blurRadius: 20,
+              blurRadius: 15,
               offset: const Offset(0, 4),
             ),
           ],
@@ -313,56 +324,38 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 )
               : null,
         ),
-        padding: EdgeInsets.all(24.w),
+        padding: EdgeInsets.all(16.w),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                if (badge != null)
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-                    decoration: BoxDecoration(
-                      color: badgeColor,
-                      borderRadius: BorderRadius.circular(99.r),
-                    ),
-                    child: Text(
-                      badge,
-                      style: TextStyle(
-                        color: badgeTextColor,
-                        fontSize: 8.5.sp,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Inter',
-                      ),
-                    ),
-                  )
-                else
-                  const SizedBox(),
-                Container(
-                  width: 18.w,
-                  height: 18.w,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isSelected ? const Color(0xFF007176) : const Color(0xFFD0D5DD),
-                      width: isSelected ? 5.w : 1.w,
-                    ),
+            if (badge != null)
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+                decoration: BoxDecoration(
+                  color: badgeColor,
+                  borderRadius: BorderRadius.circular(99.r),
+                ),
+                child: Text(
+                  badge,
+                  style: TextStyle(
+                    color: badgeTextColor,
+                    fontSize: 7.5.sp,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Plus Jakarta Sans',
                   ),
                 ),
-              ],
-            ),
-            SizedBox(height: 32.h),
+              ),
+            SizedBox(height: 12.h),
             Text(
               title,
               style: TextStyle(
-                fontSize: 22.sp,
+                fontSize: 18.sp,
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF101828),
                 fontFamily: 'Plus Jakarta Sans',
               ),
             ),
-            SizedBox(height: 6.h),
+            SizedBox(height: 2.h),
             Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
@@ -370,27 +363,29 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 Text(
                   price,
                   style: TextStyle(
-                    fontSize: 28.sp,
+                    fontSize: 22.sp,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF101828),
-                    fontFamily: 'Inter',
+                    fontFamily: 'Plus Jakarta Sans',
                   ),
                 ),
                 SizedBox(width: 4.w),
                 Text(
                   'USD /mo',
                   style: TextStyle(
-                    fontSize: 14.sp,
+                    fontSize: 11.sp,
                     fontWeight: FontWeight.w500,
                     color: const Color(0xFF667085),
+                    fontFamily: 'Plus Jakarta Sans',
                   ),
                 ),
               ],
             ),
-            SizedBox(height: 24.h),
+            SizedBox(height: 16.h),
             Expanded(
               child: ListView(
                 shrinkWrap: true,
+                padding: EdgeInsets.zero,
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
                   ...features.map((f) => _buildFeatureItem(f, true, isSmall: true)),
@@ -398,10 +393,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 ],
               ),
             ),
-            SizedBox(height: 12.h),
+            SizedBox(height: 8.h),
             Container(
               width: double.infinity,
-              height: 48.h,
+              height: 40.h,
               decoration: BoxDecoration(
                 color: const Color(0xFFF2F4F7),
                 borderRadius: BorderRadius.circular(12.r),
@@ -411,9 +406,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 'Choose $title',
                 style: TextStyle(
                   color: const Color(0xFF344054),
-                  fontSize: 14.sp,
+                  fontSize: 12.sp,
                   fontWeight: FontWeight.w700,
-                  fontFamily: 'Inter',
+                  fontFamily: 'Plus Jakarta Sans',
                 ),
               ),
             ),
@@ -423,56 +418,30 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
-  Widget _buildFeatureItem(String text, bool isEnabled, {bool isSmall = false}) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 12.h),
-      child: Row(
-        children: [
-          Icon(
-            isEnabled ? Icons.check_rounded : Icons.close_rounded,
-            color: isEnabled ? const Color(0xFF039855) : const Color(0xFFD92D20),
-            size: isSmall ? 16.sp : 18.sp,
-          ),
-          SizedBox(width: 12.w),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: isEnabled ? const Color(0xFF344054) : const Color(0xFF98A2B3),
-                fontSize: isSmall ? 13.sp : 14.sp,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildManualPaymentSection() {
     return Container(
       width: 358.w,
+      height: 96.h,
       decoration: BoxDecoration(
         color: const Color(0xFFEFEFEF),
         borderRadius: BorderRadius.circular(18.r),
       ),
       padding: EdgeInsets.all(12.w),
       child: Column(
-        mainAxisSize: MainAxisSize.min, // Use min size to "hug" content
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 38.w,
-                height: 38.w,
+                width: 28.w,
+                height: 28.w,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE4E7EC),
-                  borderRadius: BorderRadius.circular(10.r),
+                  color: const Color(0xFFE4E4E4),
+                  borderRadius: BorderRadius.circular(8.r),
                 ),
                 child: Icon(Icons.account_balance_wallet_outlined,
-                    color: const Color(0xFF007176), size: 20.sp),
+                    color: const Color(0xFF007176), size: 16.sp),
               ),
               SizedBox(width: 12.w),
               Expanded(
@@ -482,20 +451,21 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     Text(
                       'Prefer Manual Payment?',
                       style: TextStyle(
-                        fontSize: 15.sp,
+                        fontSize: 13.sp,
                         fontWeight: FontWeight.w700,
-                        color: const Color(0xFF101828),
+                        color: const Color(0xFF151515),
                         fontFamily: 'Plus Jakarta Sans',
+                        height: 1.3,
                       ),
                     ),
-                    SizedBox(height: 2.h),
                     Text(
                       'We accept wire transfers and crypto.',
                       style: TextStyle(
-                        fontSize: 13.sp,
-                        color: const Color(0xFF475467),
-                        fontWeight: FontWeight.w500,
-                        fontFamily: 'Inter',
+                        fontSize: 11.5.sp,
+                        color: const Color(0xFF151C27),
+                        fontWeight: FontWeight.w400,
+                        fontFamily: 'Plus Jakarta Sans',
+                        height: 1.3,
                       ),
                     ),
                   ],
@@ -503,30 +473,57 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               ),
             ],
           ),
-          SizedBox(height: 12.h),
-          Padding(
-            padding: EdgeInsets.only(left: 50.w),
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 8.h),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10.r),
-                border: Border.all(color: const Color(0xFFEAECF0)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Manual/Prepaid Subscription',
-                    style: TextStyle(
-                      fontSize: 13.sp,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF101828),
-                    ),
+          const Spacer(),
+          Container(
+            width: 196.w,
+            height: 26.h,
+            padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 0),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(6.r),
+              border: Border.all(color: const Color(0xFFDFDEDA)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Manual/Prepaid Subscription',
+                  style: TextStyle(
+                    fontSize: 10.sp,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF151515),
+                    fontFamily: 'Plus Jakarta Sans',
                   ),
-                  SizedBox(width: 8.w),
-                  Icon(Icons.north_east_rounded, size: 14.sp, color: const Color(0xFF101828)),
-                ],
+                ),
+                SizedBox(width: 8.w),
+                Icon(Icons.north_east_rounded, size: 10.sp, color: const Color(0xFF151515)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeatureItem(String text, bool isEnabled, {bool isSmall = false}) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 8.h),
+      child: Row(
+        children: [
+          Icon(
+            isEnabled ? Icons.check_rounded : Icons.close_rounded,
+            color: isEnabled ? const Color(0xFF039855) : const Color(0xFFD92D20),
+            size: 14.sp,
+          ),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: isEnabled ? const Color(0xFF344054) : const Color(0xFF98A2B3),
+                fontSize: 11.sp,
+                fontWeight: FontWeight.w500,
+                fontFamily: 'Plus Jakarta Sans',
               ),
             ),
           ),
@@ -555,11 +552,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         child: GestureDetector(
           onTap: () {},
           child: Container(
-            height: 48.h, // Fixed 48px from design
-            width: 358.w, // Fill 358px from design
+            height: 48.h,
+            width: 358.w,
             decoration: BoxDecoration(
-              color: const Color(0xFF007176), // #007176 from design
-              borderRadius: BorderRadius.circular(18.r), // 18px from design
+              color: const Color(0xFF007176),
+              borderRadius: BorderRadius.circular(18.r),
             ),
             alignment: Alignment.center,
             child: Text(
@@ -569,7 +566,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 fontSize: 16.sp,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.2,
-                fontFamily: 'Inter',
+                fontFamily: 'Plus Jakarta Sans',
               ),
             ),
           ),

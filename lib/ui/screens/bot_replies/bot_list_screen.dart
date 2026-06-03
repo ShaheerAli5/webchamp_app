@@ -5,8 +5,41 @@ import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
 import '../../../routes/app_routes.dart';
 
-class BotListScreen extends StatelessWidget {
+class BotListScreen extends StatefulWidget {
   const BotListScreen({super.key});
+
+  @override
+  State<BotListScreen> createState() => _BotListScreenState();
+}
+
+class _BotListScreenState extends State<BotListScreen> {
+  // Sample data to manage state
+  List<Map<String, dynamic>> bots = [
+    {
+      'title': 'Welcome Greeter',
+      'status': 'Active',
+      'type': 'Auto Reply',
+      'trigger': '"Hello", "Hi"',
+      'createdOn': '2023-11-20 14:30',
+      'botType': 'simple', // To determine which edit screen to show
+    },
+    {
+      'title': 'Welcome Greeter',
+      'status': 'Inactive',
+      'type': 'Auto Reply',
+      'trigger': '"Hello", "Hi"',
+      'createdOn': '2023-11-20 14:30',
+      'botType': 'media',
+    },
+    {
+      'title': 'Welcome Greeter',
+      'status': 'Active',
+      'type': 'Auto Reply',
+      'trigger': '"Hello", "Hi"',
+      'createdOn': '2023-11-20 14:30',
+      'botType': 'advance',
+    },
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -38,15 +71,15 @@ class BotListScreen extends StatelessWidget {
                     child: Icon(Icons.arrow_back, color: Colors.black, size: 24.sp),
                   ),
                 ),
-                SizedBox(width: 12.w), // Exact 12px gap from design
+                SizedBox(width: 12.w),
                 Text(
                   'Bot Manager',
                   style: TextStyle(
-                    color: const Color(0xFF151515), // Woodsmoke color from design
+                    color: const Color(0xFF151515),
                     fontSize: 20.sp,
-                    fontWeight: FontWeight.w500, // Medium (500) from design
-                    fontFamily: 'Inter', // Inter font from design
-                    letterSpacing: 0.06, // Letter spacing from design
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Inter',
+                    letterSpacing: 0.06,
                   ),
                 ),
                 const Spacer(),
@@ -63,49 +96,36 @@ class BotListScreen extends StatelessWidget {
       body: Column(
         children: [
           Expanded(
-            child: SingleChildScrollView(
+            child: ListView.separated(
               padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 20.h),
-              child: Column(
-                children: [
-                  _buildSearchBar(),
-                  SizedBox(height: 16.h),
-                  _buildBotCard(
-                    context,
-                    title: 'Welcome Greeter',
-                    status: 'Active',
-                    statusColor: const Color(0xFFE7F6EC),
-                    statusTextColor: const Color(0xFF027A48),
-                    type: 'Auto Reply',
-                    trigger: '"Hello", "Hi"',
-                    createdOn: '2023-11-20 14:30',
-                  ),
-                  SizedBox(height: 16.h),
-                  _buildBotCard(
-                    context,
-                    title: 'Welcome Greeter',
-                    status: 'Inactive',
-                    statusColor: const Color(0xFFE0E6F3),
-                    statusTextColor: const Color(0xFF5369A1),
-                    type: 'Auto Reply',
-                    trigger: '"Hello", "Hi"',
-                    createdOn: '2023-11-20 14:30',
-                  ),
-                  SizedBox(height: 16.h),
-                  _buildBotCard(
-                    context,
-                    title: 'Welcome Greeter',
-                    status: 'Active',
-                    statusColor: const Color(0xFFE7F6EC),
-                    statusTextColor: const Color(0xFF027A48),
-                    type: 'Auto Reply',
-                    trigger: '"Hello", "Hi"',
-                    createdOn: '2023-11-20 14:30',
-                  ),
-                  SizedBox(height: 24.h),
-                  _buildLoadMoreButton(),
-                  SizedBox(height: 80.h),
-                ],
-              ),
+              itemCount: bots.length + 2, // Search bar + List + Load more
+              separatorBuilder: (context, index) => SizedBox(height: 16.h),
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return _buildSearchBar();
+                }
+                if (index == bots.length + 1) {
+                  return Column(
+                    children: [
+                      SizedBox(height: 8.h),
+                      _buildLoadMoreButton(),
+                      SizedBox(height: 80.h),
+                    ],
+                  );
+                }
+                final bot = bots[index - 1];
+                return _buildBotCard(
+                  context,
+                  index: index - 1,
+                  title: bot['title'],
+                  status: bot['status'],
+                  statusColor: bot['status'] == 'Active' ? const Color(0xFFE7F6EC) : const Color(0xFFE0E6F3),
+                  statusTextColor: bot['status'] == 'Active' ? const Color(0xFF027A48) : const Color(0xFF5369A1),
+                  type: bot['type'],
+                  trigger: bot['trigger'],
+                  createdOn: bot['createdOn'],
+                );
+              },
             ),
           ),
         ],
@@ -159,7 +179,7 @@ class BotListScreen extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: 24.h),
-                _buildAddBotOption(
+                _buildOptionItem(
                   icon: Iconsax.messages_3_copy,
                   title: 'Simple Bot Reply',
                   onTap: () {
@@ -168,7 +188,7 @@ class BotListScreen extends StatelessWidget {
                   },
                 ),
                 _buildDivider(),
-                _buildAddBotOption(
+                _buildOptionItem(
                   icon: Iconsax.gallery_copy,
                   title: 'Media Bot Reply',
                   onTap: () {
@@ -177,7 +197,7 @@ class BotListScreen extends StatelessWidget {
                   },
                 ),
                 _buildDivider(),
-                _buildAddBotOption(
+                _buildOptionItem(
                   icon: Iconsax.flash_1_copy,
                   title: 'Advance Interactive Bot Reply',
                   onTap: () {
@@ -186,7 +206,7 @@ class BotListScreen extends StatelessWidget {
                   },
                 ),
                 _buildDivider(),
-                _buildAddBotOption(
+                _buildOptionItem(
                   icon: Iconsax.element_plus_copy,
                   title: 'Template Bot Reply',
                   onTap: () {
@@ -195,29 +215,7 @@ class BotListScreen extends StatelessWidget {
                   },
                 ),
                 SizedBox(height: 24.h),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48.h,
-                  child: TextButton(
-                    onPressed: () => context.pop(),
-                    style: TextButton.styleFrom(
-                      backgroundColor: const Color(0xFFEFEFEF),
-                      padding: EdgeInsets.symmetric(vertical: 12.h),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(9999.r),
-                      ),
-                    ),
-                    child: Text(
-                      'CANCEL',
-                      style: TextStyle(
-                        fontSize: 14.sp,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF344054),
-                        fontFamily: 'Inter',
-                      ),
-                    ),
-                  ),
-                ),
+                _buildCancelButton(context),
               ],
             ),
           ),
@@ -226,105 +224,279 @@ class BotListScreen extends StatelessWidget {
     );
   }
 
-  void _showBotActionsSheet(BuildContext context) {
+  void _showBotActionsSheet(BuildContext context, int index) {
+    final bot = bots[index];
+    bool isActive = bot['status'] == 'Active';
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       barrierColor: Colors.black.withOpacity(0.1),
       builder: (context) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFF9F9FF),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
-            ),
-            padding: EdgeInsets.only(
-              left: 16.w,
-              right: 16.w,
-              top: 24.h,
-              bottom: MediaQuery.of(context).padding.bottom + 24.h,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 48.w,
-                    height: 5.h,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD0D5DD),
-                      borderRadius: BorderRadius.circular(10.r),
-                    ),
-                  ),
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9F9FF),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24.r)),
                 ),
-                SizedBox(height: 24.h),
-                Text(
-                  'Bot Actions',
-                  style: TextStyle(
-                    fontSize: 18.sp,
-                    height: 24 / 18,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF151C27),
-                    fontFamily: 'Plus Jakarta Sans',
-                  ),
+                padding: EdgeInsets.only(
+                  left: 16.w,
+                  right: 16.w,
+                  top: 24.h,
+                  bottom: MediaQuery.of(context).padding.bottom + 24.h,
                 ),
-                SizedBox(height: 24.h),
-                _buildAddBotOption(
-                  icon: Iconsax.edit_2_copy,
-                  title: 'Edit',
-                  onTap: () => context.pop(),
-                ),
-                _buildDivider(),
-                _buildAddBotOption(
-                  icon: Iconsax.copy_copy,
-                  title: 'Clone',
-                  onTap: () => context.pop(),
-                ),
-                _buildDivider(),
-                _buildAddBotOption(
-                  icon: Iconsax.toggle_on_copy,
-                  title: 'Status',
-                  onTap: () => context.pop(),
-                ),
-                _buildDivider(),
-                _buildAddBotOption(
-                  icon: Iconsax.trash_copy,
-                  title: 'Delete',
-                  iconColor: const Color(0xFFD92D20),
-                  onTap: () => context.pop(),
-                ),
-                SizedBox(height: 24.h),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48.h,
-                  child: TextButton(
-                    onPressed: () => context.pop(),
-                    style: TextButton.styleFrom(
-                      backgroundColor: const Color(0xFFEFEFEF),
-                      padding: EdgeInsets.symmetric(vertical: 12.h),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(9999.r),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 48.w,
+                        height: 5.h,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD0D5DD),
+                          borderRadius: BorderRadius.circular(10.r),
+                        ),
                       ),
                     ),
-                    child: Text(
-                      'CANCEL',
+                    SizedBox(height: 24.h),
+                    Text(
+                      'Bot Actions',
                       style: TextStyle(
-                        fontSize: 14.sp,
+                        fontSize: 18.sp,
+                        height: 24 / 18,
                         fontWeight: FontWeight.w700,
-                        color: const Color(0xFF344054),
-                        fontFamily: 'Inter',
+                        color: const Color(0xFF151C27),
+                        fontFamily: 'Plus Jakarta Sans',
                       ),
                     ),
-                  ),
+                    SizedBox(height: 24.h),
+                    _buildOptionItem(
+                      icon: Iconsax.edit_2_copy,
+                      title: 'Edit',
+                      onTap: () {
+                        context.pop();
+                        _navigateToEdit(bot);
+                      },
+                    ),
+                    _buildDivider(),
+                    _buildOptionItem(
+                      icon: Iconsax.copy_copy,
+                      title: 'Clone',
+                      onTap: () {
+                        setState(() {
+                          final newBot = Map<String, dynamic>.from(bot);
+                          newBot['title'] = '${bot['title']} (Copy)';
+                          // Insert the clone right after the original bot
+                          bots.insert(index + 1, newBot);
+                        });
+                        context.pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('"${bot['title']}" cloned successfully'),
+                            backgroundColor: const Color(0xFF006C70),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildDivider(),
+                    _buildOptionItem(
+                      icon: Iconsax.toggle_on_copy,
+                      title: 'Status',
+                      onTap: () {
+                        bool newValue = !isActive;
+                        setModalState(() {
+                          isActive = newValue;
+                        });
+                        setState(() {
+                          bots[index]['status'] = newValue ? 'Active' : 'Inactive';
+                        });
+                      },
+                      trailing: Switch.adaptive(
+                        value: isActive,
+                        activeColor: const Color(0xFF006C70),
+                        onChanged: (value) {
+                          setModalState(() {
+                            isActive = value;
+                          });
+                          setState(() {
+                            bots[index]['status'] = value ? 'Active' : 'Inactive';
+                          });
+                        },
+                      ),
+                    ),
+                    _buildDivider(),
+                    _buildOptionItem(
+                      icon: Iconsax.trash_copy,
+                      title: 'Delete',
+                      iconColor: const Color(0xFFD92D20),
+                      onTap: () {
+                        context.pop();
+                        _showDeleteConfirmation(context, index);
+                      },
+                    ),
+                    SizedBox(height: 24.h),
+                    _buildCancelButton(context),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
+    );
+  }
+
+  void _navigateToEdit(Map<String, dynamic> bot) {
+    final botType = bot['botType'];
+    switch (botType) {
+      case 'simple':
+        context.push(AppRoutes.simpleBotReply, extra: bot);
+        break;
+      case 'media':
+        context.push(AppRoutes.mediaBotReply, extra: bot);
+        break;
+      case 'advance':
+        context.push(AppRoutes.advanceInteractiveBotReply, extra: bot);
+        break;
+      case 'template':
+        context.push(AppRoutes.templateBotReply, extra: bot);
+        break;
+      default:
+        context.push(AppRoutes.simpleBotReply, extra: bot);
+    }
+  }
+
+  void _showDeleteConfirmation(BuildContext context, int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Bot'),
+        content: const Text('Are you sure you want to delete this bot?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                bots.removeAt(index);
+              });
+              Navigator.pop(context); // Close confirmation dialog
+              _showSuccessPopup(context, 'Successfully Deleted');
+            },
+            child: const Text('Yes', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSuccessPopup(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => Center(
+        child: Container(
+          margin: EdgeInsets.symmetric(horizontal: 40.w),
+          padding: EdgeInsets.symmetric(vertical: 24.h, horizontal: 24.w),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16.r),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56.w,
+                height: 56.w,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE7F6EC),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.check_circle,
+                  color: const Color(0xFF039855),
+                  size: 32.sp,
+                ),
+              ),
+              SizedBox(height: 16.h),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF101828),
+                  fontFamily: 'Plus Jakarta Sans',
+                ),
+              ),
+              SizedBox(height: 24.h),
+              SizedBox(
+                width: double.infinity,
+                height: 44.h,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF006C70),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    'Close',
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCancelButton(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48.h,
+      child: TextButton(
+        onPressed: () => context.pop(),
+        style: TextButton.styleFrom(
+          backgroundColor: const Color(0xFFEFEFEF),
+          padding: EdgeInsets.symmetric(vertical: 12.h),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(9999.r),
+          ),
+        ),
+        child: Text(
+          'CANCEL',
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF344054),
+            fontFamily: 'Inter',
+          ),
+        ),
+      ),
     );
   }
 
@@ -335,11 +507,12 @@ class BotListScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAddBotOption({
+  Widget _buildOptionItem({
     required IconData icon,
     required String title,
     required VoidCallback onTap,
     Color? iconColor,
+    Widget? trailing,
   }) {
     return InkWell(
       onTap: onTap,
@@ -363,11 +536,12 @@ class BotListScreen extends StatelessWidget {
                 ),
               ),
             ),
-            Icon(
-              Icons.chevron_right,
-              color: const Color(0xFFBBC9CB),
-              size: 18.sp, // Closest to 7.4x12
-            ),
+            trailing ??
+                Icon(
+                  Icons.chevron_right,
+                  color: const Color(0xFFBBC9CB),
+                  size: 18.sp,
+                ),
           ],
         ),
       ),
@@ -417,6 +591,7 @@ class BotListScreen extends StatelessWidget {
 
   Widget _buildBotCard(
     BuildContext context, {
+    required int index,
     required String title,
     required String status,
     required Color statusColor,
@@ -466,7 +641,7 @@ class BotListScreen extends StatelessWidget {
                   ),
                   SizedBox(width: 8.w),
                   GestureDetector(
-                    onTap: () => _showBotActionsSheet(context),
+                    onTap: () => _showBotActionsSheet(context, index),
                     behavior: HitTestBehavior.opaque,
                     child: Icon(Icons.more_vert, color: const Color(0xFF98A2B3), size: 20.sp),
                   ),

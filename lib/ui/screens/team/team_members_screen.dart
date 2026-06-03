@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:iconsax_flutter/iconsax_flutter.dart';
+import '../../../routes/app_routes.dart';
 
 class TeamMembersScreen extends StatefulWidget {
   const TeamMembersScreen({super.key});
@@ -13,6 +15,36 @@ class TeamMembersScreen extends StatefulWidget {
 class _TeamMembersScreenState extends State<TeamMembersScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+
+  List<Map<String, dynamic>> teamMembers = [
+    {
+      'name': 'Jane Doe',
+      'username': '@janedoe',
+      'email': 'jane.doe@example.com',
+      'phone': '+1 234 567 890',
+      'createdOn': '2023-11-20 14:30',
+      'status': 'Active',
+      'initials': 'JD',
+    },
+    {
+      'name': 'John Smith',
+      'username': '@johnsmith',
+      'email': 'john.smith@example.com',
+      'phone': '+1 987 654 321',
+      'createdOn': '2023-11-21 09:15',
+      'status': 'Active',
+      'initials': 'JS',
+    },
+    {
+      'name': 'Alice Johnson',
+      'username': '@alicej',
+      'email': 'alice.j@example.com',
+      'phone': '+1 555 123 456',
+      'createdOn': '2023-11-22 16:45',
+      'status': 'Inactive',
+      'initials': 'AJ',
+    },
+  ];
 
   @override
   void dispose() {
@@ -77,9 +109,10 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
               Expanded(
                 child: ListView.builder(
                   padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 100.h),
-                  itemCount: 5,
+                  itemCount: teamMembers.length,
                   itemBuilder: (context, index) {
-                    return _buildTeamMemberCard();
+                    final member = teamMembers[index];
+                    return _buildTeamMemberCard(member, index);
                   },
                 ),
               ),
@@ -89,7 +122,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
             bottom: MediaQuery.of(context).padding.bottom + 24.h,
             right: 16.w,
             child: GestureDetector(
-              onTap: () => context.push('/add-team-member'),
+              onTap: () => context.push(AppRoutes.addTeamMember),
               child: Container(
                 width: 60.w,
                 height: 60.w,
@@ -166,7 +199,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
     );
   }
 
-  Widget _buildTeamMemberCard() {
+  Widget _buildTeamMemberCard(Map<String, dynamic> member, int index) {
     return Container(
       width: 358.w,
       margin: EdgeInsets.only(bottom: 16.h),
@@ -197,7 +230,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                 ),
                 alignment: Alignment.center,
                 child: Text(
-                  'JD',
+                  member['initials'],
                   style: TextStyle(
                     color: const Color(0xFF475467),
                     fontSize: 14.sp,
@@ -211,17 +244,17 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Jane Doe',
+                      member['name'],
                       style: TextStyle(
                         color: const Color(0xFF151C27),
                         fontSize: 16.sp,
                         fontWeight: FontWeight.w600,
                         fontFamily: 'Plus Jakarta Sans',
-                        height: 1.5, // matches line height 24px
+                        height: 1.5,
                       ),
                     ),
                     Text(
-                      '@janedoe',
+                      member['username'],
                       style: TextStyle(
                         color: const Color(0xFF667085),
                         fontSize: 13.sp,
@@ -235,13 +268,13 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFECFDF3),
+                  color: member['status'] == 'Active' ? const Color(0xFFECFDF3) : const Color(0xFFF2F4F7),
                   borderRadius: BorderRadius.circular(99.r),
                 ),
                 child: Text(
-                  'Active',
+                  member['status'],
                   style: TextStyle(
-                    color: const Color(0xFF039855),
+                    color: member['status'] == 'Active' ? const Color(0xFF039855) : const Color(0xFF475467),
                     fontSize: 11.sp,
                     fontWeight: FontWeight.w600,
                   ),
@@ -249,17 +282,17 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
               ),
               SizedBox(width: 12.w),
               GestureDetector(
-                onTap: () => _showUserActions(context),
+                onTap: () => _showUserActions(context, member, index),
                 child: Icon(Icons.more_vert, color: const Color(0xFF667085), size: 24.sp),
               ),
             ],
           ),
           SizedBox(height: 18.h),
-          _buildInfoRow('EMAIL', 'jane.doe@example.com'),
+          _buildInfoRow('EMAIL', member['email']),
           SizedBox(height: 16.h),
-          _buildInfoRow('PHONE', '+1 234 567 890'),
+          _buildInfoRow('PHONE', member['phone']),
           SizedBox(height: 16.h),
-          _buildInfoRow('CREATED ON', '2023-11-20 14:30'),
+          _buildInfoRow('CREATED ON', member['createdOn']),
         ],
       ),
     );
@@ -287,14 +320,14 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
             fontWeight: FontWeight.w600,
             color: const Color(0xFF151C27),
             fontFamily: 'Plus Jakarta Sans',
-            height: 1.28, // matches line height 18px
+            height: 1.28,
           ),
         ),
       ],
     );
   }
 
-  void _showUserActions(BuildContext context) {
+  void _showUserActions(BuildContext context, Map<String, dynamic> member, int index) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -340,24 +373,33 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                 ),
                 SizedBox(height: 16.h),
                 _buildActionItem(
-                  icon: Icons.edit_outlined,
+                  icon: Iconsax.edit_2_copy,
                   title: 'Edit User & Permissions',
                   iconColor: const Color(0xFF007176),
-                  onTap: () => context.pop(),
+                  onTap: () {
+                    context.pop();
+                    context.push(AppRoutes.addTeamMember, extra: member);
+                  },
                 ),
                 const Divider(color: Color(0xFFF2F4F7), height: 1),
                 _buildActionItem(
-                  icon: Icons.login_outlined,
+                  icon: Iconsax.login_1_copy,
                   title: 'Login as',
                   iconColor: const Color(0xFF12B76A),
-                  onTap: () => context.pop(),
+                  onTap: () {
+                    context.pop();
+                    _showLoginAsPopup(context, member['name']);
+                  },
                 ),
                 const Divider(color: Color(0xFFF2F4F7), height: 1),
                 _buildActionItem(
-                  icon: Icons.delete_outline_rounded,
+                  icon: Iconsax.trash_copy,
                   title: 'Delete',
                   iconColor: const Color(0xFFD92D20),
-                  onTap: () => context.pop(),
+                  onTap: () {
+                    context.pop();
+                    _showDeleteConfirmation(context, index, member['name']);
+                  },
                 ),
                 SizedBox(height: 24.h),
                 GestureDetector(
@@ -386,6 +428,138 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
           ),
         );
       },
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context, int index, String name) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete User'),
+        content: Text('Are you sure you want to delete $name?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                teamMembers.removeAt(index);
+              });
+              Navigator.pop(context);
+              _showSuccessPopup(context, 'Successfully Deleted');
+            },
+            child: const Text('Yes', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSuccessPopup(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => Center(
+        child: Container(
+          margin: EdgeInsets.symmetric(horizontal: 40.w),
+          padding: EdgeInsets.symmetric(vertical: 24.h, horizontal: 24.w),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16.r),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56.w,
+                height: 56.w,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE7F6EC),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.check_circle,
+                  color: const Color(0xFF039855),
+                  size: 32.sp,
+                ),
+              ),
+              SizedBox(height: 16.h),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF101828),
+                  fontFamily: 'Plus Jakarta Sans',
+                ),
+              ),
+              SizedBox(height: 24.h),
+              SizedBox(
+                width: double.infinity,
+                height: 44.h,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF006C70),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    'Close',
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showLoginAsPopup(BuildContext context, String name) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Login as'),
+        content: Text('Are you sure you want to login as $name?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Logged in as $name'),
+                  backgroundColor: const Color(0xFF006C70),
+                ),
+              );
+              // In a real app, you would handle session switching and navigation here
+              context.go(AppRoutes.home);
+            },
+            child: const Text('Yes', style: TextStyle(color: Color(0xFF006C70))),
+          ),
+        ],
+      ),
     );
   }
 

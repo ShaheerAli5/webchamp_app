@@ -4,7 +4,8 @@ import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
 
 class MediaBotReplyScreen extends StatefulWidget {
-  const MediaBotReplyScreen({super.key});
+  final Map<String, dynamic>? botData;
+  const MediaBotReplyScreen({super.key, this.botData});
 
   @override
   State<MediaBotReplyScreen> createState() => _MediaBotReplyScreenState();
@@ -19,6 +20,16 @@ class _MediaBotReplyScreenState extends State<MediaBotReplyScreen> {
   final TextEditingController _triggerSubjectController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.botData != null) {
+      _nameController.text = widget.botData!['title'] ?? '';
+      _isStatusActive = widget.botData!['status'] == 'Active';
+      _triggerSubjectController.text = widget.botData!['trigger'] ?? '';
+    }
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _replyTextController.dispose();
@@ -28,10 +39,11 @@ class _MediaBotReplyScreenState extends State<MediaBotReplyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isEditing = widget.botData != null;
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       appBar: PreferredSize(
-        preferredSize: Size.fromHeight(57.h),
+        preferredSize: Size.fromHeight(64.h),
         child: Container(
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -50,22 +62,20 @@ class _MediaBotReplyScreenState extends State<MediaBotReplyScreen> {
                 GestureDetector(
                   onTap: () => context.pop(),
                   behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    height: 40.h,
-                    alignment: Alignment.center,
-                    child: Icon(Icons.arrow_back, color: Colors.black, size: 24.sp),
-                  ),
+                  child: Icon(Icons.arrow_back, color: const Color(0xFF151515), size: 28.sp),
                 ),
-                SizedBox(width: 12.w),
+                SizedBox(width: 16.w),
                 Text(
-                  'Media Bot Reply',
+                  isEditing ? 'Edit Media Bot' : 'Media Bot Reply',
                   style: TextStyle(
                     color: const Color(0xFF151515),
-                    fontSize: 20.sp,
+                    fontSize: 22.sp,
                     fontWeight: FontWeight.w600,
                     fontFamily: 'Inter',
                   ),
                 ),
+                const Spacer(),
+                Icon(Icons.help_outline, color: const Color(0xFF007176), size: 26.sp),
               ],
             ),
           ),
@@ -179,10 +189,12 @@ class _MediaBotReplyScreenState extends State<MediaBotReplyScreen> {
                   SizedBox(width: 12.w),
                   Expanded(
                     child: _buildFooterButton(
-                      'Submit',
+                      isEditing ? 'Update' : 'Submit',
                       const Color(0xFF007176),
                       Colors.white,
-                      onTap: () {},
+                      onTap: () {
+                        context.pop();
+                      },
                     ),
                   ),
                 ],

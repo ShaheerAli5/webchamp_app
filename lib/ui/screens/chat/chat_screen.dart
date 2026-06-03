@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
+import '../../../routes/app_routes.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -11,7 +12,7 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  bool _isSetupCompleted = false;
+  bool _isSetupCompleted = true;
 
   @override
   Widget build(BuildContext context) {
@@ -160,27 +161,40 @@ class _ChatScreenState extends State<ChatScreen> {
           _buildChip('All', isSelected: true),
           _buildChip('Unread 11'),
           _buildChip('Groups 7'),
+          _buildChip('New List', isAction: true, hasAddIcon: true, onTap: () => context.push(AppRoutes.createNewList)),
         ],
       ),
     );
   }
 
-  Widget _buildChip(String label, {bool isSelected = false}) {
-    return Container(
-      margin: EdgeInsets.only(right: 8.w),
-      padding: EdgeInsets.symmetric(horizontal: 16.w),
-      decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFFD8FDD2) : const Color(0xFFF0F2F5),
-        borderRadius: BorderRadius.circular(18.r),
-        border: Border.all(color: isSelected ? const Color(0xFF25D366) : Colors.transparent, width: 0.5),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        label,
-        style: TextStyle(
-          color: isSelected ? const Color(0xFF075E54) : Colors.grey[700],
-          fontSize: 14.sp,
-          fontWeight: FontWeight.w500,
+  Widget _buildChip(String label, {bool isSelected = false, bool isAction = false, bool hasAddIcon = false, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: EdgeInsets.only(right: 8.w),
+        padding: EdgeInsets.symmetric(horizontal: 16.w),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFD8FDD2) : Colors.white,
+          borderRadius: BorderRadius.circular(18.r),
+          border: Border.all(color: isSelected ? const Color(0xFF25D366) : const Color(0xFFD1D1D1), width: 1.w),
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasAddIcon) ...[
+              Icon(Icons.add, size: 16.sp, color: const Color(0xFF667085)),
+              SizedBox(width: 4.w),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? const Color(0xFF075E54) : const Color(0xFF667085),
+                fontSize: 14.sp,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -264,15 +278,21 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildFAB() {
     return Container(
-      width: 56.w,
-      height: 56.w,
+      width: 60.w,
+      height: 60.w,
       decoration: BoxDecoration(
-        color: const Color(0xFF25D366),
-        borderRadius: BorderRadius.circular(16.r),
+        color: const Color(0xFF21C063),
+        borderRadius: BorderRadius.circular(18.r),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: IconButton(
-        icon: const Icon(Icons.add_box, color: Colors.white),
-        onPressed: () {},
+      child: Center(
+        child: Icon(Icons.add_comment_rounded, color: Colors.white, size: 28.sp),
       ),
     );
   }
