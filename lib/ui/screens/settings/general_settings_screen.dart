@@ -62,7 +62,7 @@ class _GeneralSettingsScreenState extends State<GeneralSettingsScreen> {
                 ),
                 SizedBox(width: 16.w),
                 Text(
-                  'Add New User',
+                  'General Settings',
                   style: TextStyle(
                     color: const Color(0xFF0A0A0A),
                     fontSize: 20.sp,

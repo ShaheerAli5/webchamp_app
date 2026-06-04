@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../providers/auth_provider.dart';
 import '../ui/screens/auth/login_screen.dart';
 import '../ui/screens/auth/signup_screen.dart';
 import '../ui/screens/auth/forgot_password_screen.dart';
@@ -32,6 +33,7 @@ import '../ui/screens/more/subscription_screen.dart';
 import '../ui/screens/more/message_log_screen.dart';
 import '../ui/screens/more/message_log_detail_screen.dart';
 import '../ui/screens/settings/general_settings_screen.dart';
+import '../ui/screens/settings/bot_settings_screen.dart';
 
 import '../ui/screens/chat/create_new_list_screen.dart';
 import '../ui/screens/chat/select_contacts_screen.dart';
@@ -71,193 +73,213 @@ class AppRoutes {
   static const String messageLog = '/message-log';
   static const String messageLogDetail = '/message-log-detail';
   static const String generalSettings = '/general-settings';
+  static const String botSettings = '/bot-settings';
 
   static final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 
-  static final GoRouter router = GoRouter(
-    initialLocation: login,
-    navigatorKey: _rootNavigatorKey,
-    routes: [
-      StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) {
-          return MainScreen(navigationShell: navigationShell);
-        },
-        branches: [
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: home,
-                builder: (context, state) => const HomeScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: campaigns,
-                builder: (context, state) => const CampaignsScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: chat,
-                builder: (context, state) => const ChatScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: contacts,
-                builder: (context, state) => const ContactsScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: more,
-                builder: (context, state) => const MoreScreen(),
-              ),
-            ],
-          ),
-        ],
-      ),
-      GoRoute(
-        path: login,
-        builder: (context, state) => const LoginScreen(),
-      ),
-      GoRoute(
-        path: signup,
-        builder: (context, state) => const SignupScreen(),
-      ),
-      GoRoute(
-        path: forgotPassword,
-        builder: (context, state) => const ForgotPasswordScreen(),
-      ),
-      GoRoute(
-        path: verifyEmail,
-        builder: (context, state) => const VerifyEmailScreen(),
-      ),
-      GoRoute(
-        path: resetPassword,
-        builder: (context, state) => const ResetPasswordScreen(),
-      ),
-      GoRoute(
-        path: profile,
-        builder: (context, state) => const ProfileScreen(),
-      ),
-      GoRoute(
-        path: settings,
-        builder: (context, state) => const SettingsScreen(),
-      ),
-      GoRoute(
-        path: createCampaign,
-        builder: (context, state) => const CreateCampaignScreen(),
-      ),
-      GoRoute(
-        path: addContact,
-        builder: (context, state) => const AddContactScreen(),
-      ),
-      GoRoute(
-        path: uploadCsv,
-        builder: (context, state) => const UploadCsvScreen(),
-      ),
-      GoRoute(
-        path: createNewList,
-        builder: (context, state) => const CreateNewListScreen(),
-      ),
-      GoRoute(
-        path: selectContacts,
-        builder: (context, state) => const SelectContactsScreen(),
-      ),
-      GoRoute(
-        path: templates,
-        builder: (context, state) => const TemplatesScreen(),
-      ),
-      GoRoute(
-        path: addTemplate,
-        builder: (context, state) => const AddTemplateScreen(),
-      ),
-      GoRoute(
-        path: botList,
-        builder: (context, state) => const BotListScreen(),
-      ),
-      GoRoute(
-        path: simpleBotReply,
-        builder: (context, state) {
-          final botData = state.extra as Map<String, dynamic>?;
-          return SimpleBotReplyScreen(botData: botData);
-        },
-      ),
-      GoRoute(
-        path: advanceInteractiveBotReply,
-        builder: (context, state) {
-          final botData = state.extra as Map<String, dynamic>?;
-          return AdvanceInteractiveBotReplyScreen(botData: botData);
-        },
-      ),
-      GoRoute(
-        path: templateBotReply,
-        builder: (context, state) {
-          final botData = state.extra as Map<String, dynamic>?;
-          return TemplateBotReplyScreen(botData: botData);
-        },
-      ),
-      GoRoute(
-        path: mediaBotReply,
-        builder: (context, state) {
-          final botData = state.extra as Map<String, dynamic>?;
-          return MediaBotReplyScreen(botData: botData);
-        },
-      ),
-      GoRoute(
-        path: botFlows,
-        builder: (context, state) => const BotFlowsScreen(),
-      ),
-      GoRoute(
-        path: addBotFlow,
-        builder: (context, state) => const AddBotFlowScreen(),
-      ),
-      GoRoute(
-        path: teamMembers,
-        builder: (context, state) => const TeamMembersScreen(),
-      ),
-      GoRoute(
-        path: addTeamMember,
-        builder: (context, state) {
-          final userData = state.extra as Map<String, dynamic>?;
-          return AddTeamMemberScreen(userData: userData);
-        },
-      ),
-      GoRoute(
-        path: subscription,
-        builder: (context, state) => const SubscriptionScreen(),
-      ),
-      GoRoute(
-        path: messageLog,
-        builder: (context, state) => const MessageLogScreen(),
-      ),
-      GoRoute(
-        path: messageLogDetail,
-        builder: (context, state) {
-          final logData = state.extra as Map<String, dynamic>;
-          return MessageLogDetailScreen(logData: logData);
-        },
-      ),
-      GoRoute(
-        path: generalSettings,
-        builder: (context, state) => const GeneralSettingsScreen(),
-      ),
-      GoRoute(
-        path: individualChat,
-        builder: (context, state) {
-          final name = state.pathParameters['name'] ?? 'Chat';
-          return IndividualChatScreen(name: name);
-        },
-      ),
-    ],
-  );
+  static GoRouter createRouter(AuthProvider authProvider) {
+    return GoRouter(
+      initialLocation: home,
+      navigatorKey: _rootNavigatorKey,
+      refreshListenable: authProvider,
+      redirect: (context, state) {
+        final isLoggedIn = authProvider.isLoggedIn;
+        final isAuthRoute = state.matchedLocation == login || state.matchedLocation == signup || state.matchedLocation == forgotPassword;
+
+        if (!isLoggedIn && !isAuthRoute) {
+          return login;
+        }
+        if (isLoggedIn && isAuthRoute) {
+          return home;
+        }
+        return null;
+      },
+      routes: [
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) {
+            return MainScreen(navigationShell: navigationShell);
+          },
+          branches: [
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: home,
+                  builder: (context, state) => const HomeScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: campaigns,
+                  builder: (context, state) => const CampaignsScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: chat,
+                  builder: (context, state) => const ChatScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: contacts,
+                  builder: (context, state) => const ContactsScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: more,
+                  builder: (context, state) => const MoreScreen(),
+                ),
+              ],
+            ),
+          ],
+        ),
+        GoRoute(
+          path: login,
+          builder: (context, state) => const LoginScreen(),
+        ),
+        GoRoute(
+          path: signup,
+          builder: (context, state) => const SignupScreen(),
+        ),
+        GoRoute(
+          path: forgotPassword,
+          builder: (context, state) => const ForgotPasswordScreen(),
+        ),
+        GoRoute(
+          path: verifyEmail,
+          builder: (context, state) => const VerifyEmailScreen(),
+        ),
+        GoRoute(
+          path: resetPassword,
+          builder: (context, state) => const ResetPasswordScreen(),
+        ),
+        GoRoute(
+          path: profile,
+          builder: (context, state) => const ProfileScreen(),
+        ),
+        GoRoute(
+          path: settings,
+          builder: (context, state) => const SettingsScreen(),
+        ),
+        GoRoute(
+          path: createCampaign,
+          builder: (context, state) => const CreateCampaignScreen(),
+        ),
+        GoRoute(
+          path: addContact,
+          builder: (context, state) => const AddContactScreen(),
+        ),
+        GoRoute(
+          path: uploadCsv,
+          builder: (context, state) => const UploadCsvScreen(),
+        ),
+        GoRoute(
+          path: createNewList,
+          builder: (context, state) => const CreateNewListScreen(),
+        ),
+        GoRoute(
+          path: selectContacts,
+          builder: (context, state) => const SelectContactsScreen(),
+        ),
+        GoRoute(
+          path: templates,
+          builder: (context, state) => const TemplatesScreen(),
+        ),
+        GoRoute(
+          path: addTemplate,
+          builder: (context, state) => const AddTemplateScreen(),
+        ),
+        GoRoute(
+          path: botList,
+          builder: (context, state) => const BotListScreen(),
+        ),
+        GoRoute(
+          path: simpleBotReply,
+          builder: (context, state) {
+            final botData = state.extra as Map<String, dynamic>?;
+            return SimpleBotReplyScreen(botData: botData);
+          },
+        ),
+        GoRoute(
+          path: advanceInteractiveBotReply,
+          builder: (context, state) {
+            final botData = state.extra as Map<String, dynamic>?;
+            return AdvanceInteractiveBotReplyScreen(botData: botData);
+          },
+        ),
+        GoRoute(
+          path: templateBotReply,
+          builder: (context, state) {
+            final botData = state.extra as Map<String, dynamic>?;
+            return TemplateBotReplyScreen(botData: botData);
+          },
+        ),
+        GoRoute(
+          path: mediaBotReply,
+          builder: (context, state) {
+            final botData = state.extra as Map<String, dynamic>?;
+            return MediaBotReplyScreen(botData: botData);
+          },
+        ),
+        GoRoute(
+          path: botFlows,
+          builder: (context, state) => const BotFlowsScreen(),
+        ),
+        GoRoute(
+          path: addBotFlow,
+          builder: (context, state) => const AddBotFlowScreen(),
+        ),
+        GoRoute(
+          path: teamMembers,
+          builder: (context, state) => const TeamMembersScreen(),
+        ),
+        GoRoute(
+          path: addTeamMember,
+          builder: (context, state) {
+            final userData = state.extra as Map<String, dynamic>?;
+            return AddTeamMemberScreen(userData: userData);
+          },
+        ),
+        GoRoute(
+          path: subscription,
+          builder: (context, state) => const SubscriptionScreen(),
+        ),
+        GoRoute(
+          path: messageLog,
+          builder: (context, state) => const MessageLogScreen(),
+        ),
+        GoRoute(
+          path: messageLogDetail,
+          builder: (context, state) {
+            final logData = state.extra as Map<String, dynamic>;
+            return MessageLogDetailScreen(logData: logData);
+          },
+        ),
+        GoRoute(
+          path: generalSettings,
+          builder: (context, state) => const GeneralSettingsScreen(),
+        ),
+        GoRoute(
+          path: botSettings,
+          builder: (context, state) => const BotSettingsScreen(),
+        ),
+        GoRoute(
+          path: individualChat,
+          builder: (context, state) {
+            final name = state.pathParameters['name'] ?? 'Chat';
+            return IndividualChatScreen(name: name);
+          },
+        ),
+      ],
+    );
+  }
 }

@@ -159,7 +159,7 @@ class _MoreScreenState extends State<MoreScreen> {
                                 _buildSubMenuItem(
                                   icon: Icons.smart_toy_outlined,
                                   title: 'AI Bot & Bot Settings',
-                                  onTap: () {},
+                                  onTap: () => context.push(AppRoutes.botSettings),
                                 ),
                               ],
                             ),

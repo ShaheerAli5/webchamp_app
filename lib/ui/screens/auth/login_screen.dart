@@ -132,12 +132,26 @@ class _LoginScreenState extends State<LoginScreen> {
                             height: 52.h,
                             child: ElevatedButton(
                               onPressed: auth.isLoading ? null : () async {
-                                await auth.login(
+                                if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Please enter email and password')),
+                                  );
+                                  return;
+                                }
+                                
+                                final success = await auth.login(
                                   _emailController.text,
                                   _passwordController.text,
                                 );
+                                
                                 if (context.mounted) {
-                                  context.go('/');
+                                  if (success) {
+                                    context.go('/');
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(auth.errorMessage ?? 'Login failed')),
+                                    );
+                                  }
                                 }
                               },
                               style: ElevatedButton.styleFrom(
