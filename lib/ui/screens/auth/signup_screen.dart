@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../core/theme/app_colors.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -42,14 +43,13 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 20.h),
           child: Column(
             children: [
               SizedBox(height: 20.h),
-              // Logo and Header
               _buildLogo(),
               SizedBox(height: 8.h),
               Text(
@@ -57,7 +57,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 style: TextStyle(
                   fontSize: 32.sp,
                   fontWeight: FontWeight.w700,
-                  color: const Color(0xFF007176),
+                  color: AppColors.primary,
                   fontFamily: 'Inter',
                 ),
               ),
@@ -66,7 +66,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 style: TextStyle(
                   fontSize: 24.sp,
                   fontWeight: FontWeight.w700,
-                  color: const Color(0xFF151515),
+                  color: AppColors.textPrimary,
                   fontFamily: 'Inter',
                 ),
               ),
@@ -75,13 +75,12 @@ class _SignupScreenState extends State<SignupScreen> {
                 'Secure access for administrators',
                 style: TextStyle(
                   fontSize: 14.sp,
-                  color: const Color(0xFF667085),
+                  color: AppColors.textSecondary,
                   fontFamily: 'Inter',
                 ),
               ),
               SizedBox(height: 32.h),
 
-              // Create Account Card
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -104,50 +103,79 @@ class _SignupScreenState extends State<SignupScreen> {
                         style: TextStyle(
                           fontSize: 20.sp,
                           fontWeight: FontWeight.w700,
-                          color: const Color(0xFF151515),
+                          color: AppColors.textPrimary,
                           fontFamily: 'Inter',
                         ),
                       ),
                     ),
                     SizedBox(height: 24.h),
                     
-                    _buildInputField('Vendor/Company Name', _vendorTitleController, prefixIcon: Iconsax.user),
-                    _buildInputField('Username', _usernameController, prefixIcon: Icons.badge_outlined),
+                    _SearchStyleInputField(
+                      hint: 'Vendor/Company Name', 
+                      controller: _vendorTitleController, 
+                      prefixIcon: Iconsax.user,
+                    ),
+                    _SearchStyleInputField(
+                      hint: 'Username', 
+                      controller: _usernameController, 
+                      prefixIcon: Iconsax.personalcard,
+                    ),
                     Row(
                       children: [
-                        Expanded(child: _buildInputField('First Name', _firstNameController, prefixIcon: Iconsax.user)),
+                        Expanded(
+                          child: _SearchStyleInputField(
+                            hint: 'First Name', 
+                            controller: _firstNameController, 
+                            prefixIcon: Iconsax.user,
+                          ),
+                        ),
                         SizedBox(width: 12.w),
-                        Expanded(child: _buildInputField('Last Name', _lastNameController, prefixIcon: Iconsax.user)),
+                        Expanded(
+                          child: _SearchStyleInputField(
+                            hint: 'Last Name', 
+                            controller: _lastNameController, 
+                            prefixIcon: Iconsax.user,
+                          ),
+                        ),
                       ],
                     ),
-                    _buildInputField('923335467853', _mobileController, prefixIcon: Icons.phone_android_outlined, bottomPadding: 8.h),
+                    _SearchStyleInputField(
+                      hint: '923338738974', 
+                      controller: _mobileController, 
+                      prefixIcon: Iconsax.mobile, 
+                      bottomPadding: 8.h,
+                    ),
                     Padding(
                       padding: EdgeInsets.only(bottom: 16.h),
                       child: Text(
                         'Mobile number should be with country code without 0 or +',
                         style: TextStyle(
                           fontSize: 11.sp,
-                          color: const Color(0xFF98A2B3),
+                          color: AppColors.textSecondary,
                           fontFamily: 'Inter',
                         ),
                       ),
                     ),
-                    _buildInputField('Email', _emailController, prefixIcon: Icons.mail_outline),
-                    _buildInputField(
-                      'Password', 
-                      _passwordController, 
+                    _SearchStyleInputField(
+                      hint: 'Email', 
+                      controller: _emailController, 
+                      prefixIcon: Iconsax.sms,
+                    ),
+                    _SearchStyleInputField(
+                      hint: 'Password', 
+                      controller: _passwordController, 
                       isPassword: true,
                       obscureText: _obscurePassword,
                       onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
-                      prefixIcon: Icons.lock_outline,
+                      prefixIcon: Iconsax.key,
                     ),
-                    _buildInputField(
-                      'Confirm Password', 
-                      _confirmPasswordController, 
+                    _SearchStyleInputField(
+                      hint: 'Confirm Password', 
+                      controller: _confirmPasswordController, 
                       isPassword: true,
                       obscureText: _obscureConfirmPassword,
                       onToggleVisibility: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
-                      prefixIcon: Icons.lock_reset_outlined,
+                      prefixIcon: Iconsax.key_square,
                     ),
 
                     SizedBox(height: 8.h),
@@ -159,7 +187,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           child: Checkbox(
                             value: _acceptTerms,
                             onChanged: (value) => setState(() => _acceptTerms = value ?? false),
-                            activeColor: const Color(0xFF007176),
+                            activeColor: AppColors.primary,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4.r)),
                           ),
                         ),
@@ -171,7 +199,7 @@ class _SignupScreenState extends State<SignupScreen> {
                               'I accept the Terms and Conditions',
                               style: TextStyle(
                                 fontSize: 13.sp,
-                                color: const Color(0xFF475467),
+                                color: AppColors.textBody,
                                 fontFamily: 'Inter',
                               ),
                             ),
@@ -241,9 +269,9 @@ class _SignupScreenState extends State<SignupScreen> {
                               }
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF007176),
+                              backgroundColor: AppColors.primary,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(18.r),
+                                borderRadius: BorderRadius.circular(26.r),
                               ),
                               elevation: 0,
                             ),
@@ -275,7 +303,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           'Already have an account? ',
                           style: TextStyle(
                             fontSize: 14.sp,
-                            color: const Color(0xFF151515),
+                            color: AppColors.textPrimary,
                             fontFamily: 'Inter',
                           ),
                         ),
@@ -286,7 +314,7 @@ class _SignupScreenState extends State<SignupScreen> {
                             style: TextStyle(
                               fontSize: 14.sp,
                               fontWeight: FontWeight.w700,
-                              color: const Color(0xFF151515),
+                              color: AppColors.primary,
                               fontFamily: 'Inter',
                             ),
                           ),
@@ -300,7 +328,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       text: TextSpan(
                         style: TextStyle(
                           fontSize: 12.sp,
-                          color: const Color(0xFF667085),
+                          color: AppColors.textSecondary,
                           fontFamily: 'Inter',
                           height: 1.5,
                         ),
@@ -313,7 +341,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                 'Terms of Service',
                                 style: TextStyle(
                                   fontSize: 12.sp,
-                                  color: const Color(0xFF007176),
+                                  color: AppColors.primary,
                                   decoration: TextDecoration.underline,
                                 ),
                               ),
@@ -327,7 +355,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                 'Privacy Policy',
                                 style: TextStyle(
                                   fontSize: 12.sp,
-                                  color: const Color(0xFF007176),
+                                  color: AppColors.primary,
                                   decoration: TextDecoration.underline,
                                 ),
                               ),
@@ -354,65 +382,113 @@ class _SignupScreenState extends State<SignupScreen> {
       fit: BoxFit.contain,
     );
   }
+}
 
-  Widget _buildInputField(
-    String hint, 
-    TextEditingController controller, {
-    bool isPassword = false,
-    bool obscureText = false,
-    VoidCallback? onToggleVisibility,
-    IconData? prefixIcon,
-    double? bottomPadding,
-  }) {
+class _SearchStyleInputField extends StatefulWidget {
+  final String hint;
+  final TextEditingController controller;
+  final bool isPassword;
+  final bool obscureText;
+  final VoidCallback? onToggleVisibility;
+  final IconData? prefixIcon;
+  final double? bottomPadding;
+
+  const _SearchStyleInputField({
+    required this.hint,
+    required this.controller,
+    this.isPassword = false,
+    this.obscureText = false,
+    this.onToggleVisibility,
+    this.prefixIcon,
+    this.bottomPadding,
+  });
+
+  @override
+  State<_SearchStyleInputField> createState() => _SearchStyleInputFieldState();
+}
+
+class _SearchStyleInputFieldState extends State<_SearchStyleInputField> {
+  final FocusNode _focusNode = FocusNode();
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    setState(() {
+      _isFocused = _focusNode.hasFocus;
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
           height: 52.h,
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16.r),
-            border: Border.all(color: const Color(0xFFD0D5DD)),
+            color: _isFocused ? const Color(0xFFF0F9FA) : Colors.white,
+            borderRadius: BorderRadius.circular(_isFocused ? 30.r : 16.r),
+            border: Border.all(
+              color: _isFocused ? AppColors.primary : const Color(0xFFEAECF0),
+              width: _isFocused ? 1.5 : 1,
+            ),
           ),
           padding: EdgeInsets.symmetric(horizontal: 16.w),
           alignment: Alignment.centerLeft,
           child: Row(
             children: [
-              if (prefixIcon != null) ...[
+              if (widget.prefixIcon != null) ...[
                 Icon(
-                  prefixIcon,
-                  color: const Color(0xFF98A2B3),
+                  widget.prefixIcon,
+                  color: _isFocused ? AppColors.primary : const Color(0xFF98A2B3),
                   size: 20.sp,
                 ),
                 SizedBox(width: 12.w),
               ],
               Expanded(
                 child: TextField(
-                  controller: controller,
-                  obscureText: obscureText,
+                  controller: widget.controller,
+                  focusNode: _focusNode,
+                  obscureText: widget.obscureText,
                   decoration: InputDecoration(
-                    hintText: hint,
+                    hintText: widget.hint,
                     hintStyle: TextStyle(
                       color: const Color(0xFF98A2B3),
                       fontSize: 14.sp,
                       fontFamily: 'Inter',
                     ),
+                    filled: false,
                     border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
                     isDense: true,
                     contentPadding: EdgeInsets.zero,
                   ),
                   style: TextStyle(
-                    color: const Color(0xFF151C27),
+                    color: AppColors.textPrimary,
                     fontSize: 14.sp,
                     fontFamily: 'Inter',
                   ),
                 ),
               ),
-              if (isPassword)
+              if (widget.isPassword)
                 GestureDetector(
-                  onTap: onToggleVisibility,
+                  onTap: widget.onToggleVisibility,
                   child: Icon(
-                    obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                    widget.obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
                     color: const Color(0xFF667085),
                     size: 20.sp,
                   ),
@@ -420,7 +496,7 @@ class _SignupScreenState extends State<SignupScreen> {
             ],
           ),
         ),
-        SizedBox(height: bottomPadding ?? 16.h),
+        SizedBox(height: widget.bottomPadding ?? 16.h),
       ],
     );
   }

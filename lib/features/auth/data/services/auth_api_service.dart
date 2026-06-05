@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_constants.dart';
@@ -11,10 +10,8 @@ class AuthApiService {
   Future<Response> login(String email, String password) async {
     return await _apiClient.post(
       ApiConstants.login,
-      data: {
-        'email': email,
-        'password': password,
-      },
+      data: {'email': email, 'password': password},
+      options: Options(contentType: 'application/x-www-form-urlencoded'),
     );
   }
 
@@ -29,7 +26,7 @@ class AuthApiService {
     required String passwordConfirmation,
     required bool termsAndConditions,
   }) async {
-    final body = jsonEncode({
+    final body = {
       'first_name': firstName,
       'last_name': lastName,
       'email': email,
@@ -38,8 +35,8 @@ class AuthApiService {
       'vendor_title': vendorTitle,
       'password': password,
       'password_confirmation': passwordConfirmation,
-      'terms_and_conditions': termsAndConditions,
-    });
+      'terms_and_conditions': termsAndConditions ? '1' : '0',
+    };
 
     print('=== REGISTER BODY ===');
     print(body);
@@ -48,7 +45,7 @@ class AuthApiService {
     final response = await _apiClient.post(
       ApiConstants.vendorRegister,
       data: body,
-      options: Options(contentType: 'application/json'),
+      options: Options(contentType: 'application/x-www-form-urlencoded'),
     );
 
     return response;

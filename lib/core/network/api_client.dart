@@ -8,14 +8,13 @@ class ApiClient {
 
   ApiClient(SecureStorageService storageService)
       : _dio = Dio(BaseOptions(
-          baseUrl: ApiConstants.baseUrl,
-          connectTimeout: const Duration(seconds: 30),
-          receiveTimeout: const Duration(seconds: 30),
-          contentType: 'application/json',
-          headers: {
-            'Accept': 'application/json',
-          },
-        )) {
+    baseUrl: ApiConstants.baseUrl,
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 30),
+    headers: {
+      'Accept': 'application/json',
+    },
+  )) {
     _dio.interceptors.add(DioInterceptor(storageService));
     _dio.interceptors.add(LogInterceptor(
       requestBody: true,
