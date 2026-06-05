@@ -88,7 +88,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   borderRadius: BorderRadius.circular(28.r),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.02),
+                      color: Colors.black.withValues(alpha: 0.02),
                       blurRadius: 10,
                       offset: const Offset(0, 2),
                     ),
@@ -111,27 +111,43 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     SizedBox(height: 24.h),
                     
-                    _buildInputField('FIRST NAME', 'Enter your first name', _firstNameController),
-                    _buildInputField('LAST NAME', 'Enter your last name', _lastNameController),
-                    _buildInputField('WORK EMAIL', 'email@company.com', _emailController),
-                    _buildInputField('USERNAME', 'johndoe123', _usernameController),
-                    _buildInputField('MOBILE NUMBER', 'e.g. 03001234567', _mobileController),
-                    _buildInputField('VENDOR TITLE', 'e.g. My Business Name', _vendorTitleController),
+                    _buildInputField('Vendor/Company Name', _vendorTitleController, prefixIcon: Iconsax.user),
+                    _buildInputField('Username', _usernameController, prefixIcon: Icons.badge_outlined),
+                    Row(
+                      children: [
+                        Expanded(child: _buildInputField('First Name', _firstNameController, prefixIcon: Iconsax.user)),
+                        SizedBox(width: 12.w),
+                        Expanded(child: _buildInputField('Last Name', _lastNameController, prefixIcon: Iconsax.user)),
+                      ],
+                    ),
+                    _buildInputField('923335467853', _mobileController, prefixIcon: Icons.phone_android_outlined, bottomPadding: 8.h),
+                    Padding(
+                      padding: EdgeInsets.only(bottom: 16.h),
+                      child: Text(
+                        'Mobile number should be with country code without 0 or +',
+                        style: TextStyle(
+                          fontSize: 11.sp,
+                          color: const Color(0xFF98A2B3),
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                    ),
+                    _buildInputField('Email', _emailController, prefixIcon: Icons.mail_outline),
                     _buildInputField(
-                      'PASSWORD', 
-                      '••••••••', 
+                      'Password', 
                       _passwordController, 
                       isPassword: true,
                       obscureText: _obscurePassword,
                       onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
+                      prefixIcon: Icons.lock_outline,
                     ),
                     _buildInputField(
-                      'CONFIRM PASSWORD', 
-                      '••••••••', 
+                      'Confirm Password', 
                       _confirmPasswordController, 
                       isPassword: true,
                       obscureText: _obscureConfirmPassword,
                       onToggleVisibility: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                      prefixIcon: Icons.lock_reset_outlined,
                     ),
 
                     SizedBox(height: 8.h),
@@ -340,37 +356,36 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Widget _buildInputField(
-    String label, 
     String hint, 
     TextEditingController controller, {
     bool isPassword = false,
     bool obscureText = false,
     VoidCallback? onToggleVisibility,
+    IconData? prefixIcon,
+    double? bottomPadding,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11.sp,
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF475467),
-            fontFamily: 'Inter',
-            letterSpacing: 0.5.sp,
-          ),
-        ),
-        SizedBox(height: 8.h),
         Container(
-          height: 48.h,
+          height: 52.h,
           decoration: BoxDecoration(
-            color: const Color(0xFFF4F4F4),
-            borderRadius: BorderRadius.circular(12.r),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16.r),
+            border: Border.all(color: const Color(0xFFD0D5DD)),
           ),
           padding: EdgeInsets.symmetric(horizontal: 16.w),
           alignment: Alignment.centerLeft,
           child: Row(
             children: [
+              if (prefixIcon != null) ...[
+                Icon(
+                  prefixIcon,
+                  color: const Color(0xFF98A2B3),
+                  size: 20.sp,
+                ),
+                SizedBox(width: 12.w),
+              ],
               Expanded(
                 child: TextField(
                   controller: controller,
@@ -405,7 +420,7 @@ class _SignupScreenState extends State<SignupScreen> {
             ],
           ),
         ),
-        SizedBox(height: 16.h),
+        SizedBox(height: bottomPadding ?? 16.h),
       ],
     );
   }
