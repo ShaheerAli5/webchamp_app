@@ -183,81 +183,93 @@ class _MoreScreenState extends State<MoreScreen> {
   }
 
   Widget _buildProfileSection() {
-    return Container(
-      height: 77.h,
-      padding: EdgeInsets.symmetric(horizontal: 16.w),
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Color(0xFFDCE2F3), width: 1),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40.w,
-            height: 40.w,
+    return Consumer<AuthProvider>(
+      builder: (context, auth, child) {
+        final user = auth.user;
+        String displayName = user?.displayName ?? 'Admin Panel';
+        if (displayName.trim().isEmpty) displayName = 'Admin Panel';
+        
+        final initials = displayName.trim().split(' ').where((e) => e.isNotEmpty).take(2).map((e) => e[0].toUpperCase()).join();
+
+        return InkWell(
+          onTap: () => context.push(AppRoutes.profile),
+          child: Container(
+            height: 77.h,
+            padding: EdgeInsets.symmetric(horizontal: 16.w),
             decoration: const BoxDecoration(
-              color: Color(0xFFE4E4E4),
-              shape: BoxShape.circle,
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              'AP',
-              style: TextStyle(
-                color: const Color(0xFF151C27),
-                fontSize: 14.sp,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'Plus Jakarta Sans',
+              border: Border(
+                bottom: BorderSide(color: Color(0xFFDCE2F3), width: 1),
               ),
             ),
-          ),
-          SizedBox(width: 16.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Row(
               children: [
-                Text(
-                  'Admin Panel',
-                  style: TextStyle(
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF151C27),
-                    height: 1.3,
-                    fontFamily: 'Plus Jakarta Sans',
+                Container(
+                  width: 40.w,
+                  height: 40.w,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE4E4E4),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    initials.isEmpty ? 'AP' : initials,
+                    style: TextStyle(
+                      color: const Color(0xFF151C27),
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Plus Jakarta Sans',
+                    ),
                   ),
                 ),
-                Text(
-                  'WhatsApp Marketing',
-                  style: TextStyle(
-                    fontSize: 14.sp,
-                    fontWeight: FontWeight.w400,
-                    color: const Color(0xFF3C494B),
-                    height: 1.4,
-                    fontFamily: 'Plus Jakarta Sans',
+                SizedBox(width: 16.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        displayName,
+                        style: TextStyle(
+                          fontSize: 18.sp,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF151C27),
+                          fontFamily: 'Plus Jakarta Sans',
+                        ),
+                      ),
+                      Text(
+                        'WhatsApp Marketing',
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w400,
+                          color: const Color(0xFF3C494B),
+                          height: 1.4,
+                          fontFamily: 'Plus Jakarta Sans',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCDF150),
+                    borderRadius: BorderRadius.circular(9999.r),
+                  ),
+                  child: Text(
+                    'Active',
+                    style: TextStyle(
+                      color: const Color(0xFF151C27),
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Plus Jakarta Sans',
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-            decoration: BoxDecoration(
-              color: const Color(0xFFCDF150),
-              borderRadius: BorderRadius.circular(9999.r),
-            ),
-            child: Text(
-              'Active',
-              style: TextStyle(
-                color: const Color(0xFF151C27),
-                fontSize: 12.sp,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Plus Jakarta Sans',
-              ),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

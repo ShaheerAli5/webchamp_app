@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
@@ -14,6 +15,7 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
+  final _formKey = GlobalKey<FormState>();
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -94,91 +96,102 @@ class _SignupScreenState extends State<SignupScreen> {
                   ],
                 ),
                 padding: EdgeInsets.all(24.w),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Text(
-                        'Create Account',
-                        style: TextStyle(
-                          fontSize: 20.sp,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                          fontFamily: 'Inter',
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 24.h),
-                    
-                    _SearchStyleInputField(
-                      hint: 'Vendor/Company Name', 
-                      controller: _vendorTitleController, 
-                      prefixIcon: Iconsax.user,
-                    ),
-                    _SearchStyleInputField(
-                      hint: 'Username', 
-                      controller: _usernameController, 
-                      prefixIcon: Iconsax.personalcard,
-                    ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _SearchStyleInputField(
-                            hint: 'First Name', 
-                            controller: _firstNameController, 
-                            prefixIcon: Iconsax.user,
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Text(
+                          'Create Account',
+                          style: TextStyle(
+                            fontSize: 20.sp,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                            fontFamily: 'Inter',
                           ),
                         ),
-                        SizedBox(width: 12.w),
-                        Expanded(
-                          child: _SearchStyleInputField(
-                            hint: 'Last Name', 
-                            controller: _lastNameController, 
-                            prefixIcon: Iconsax.user,
-                          ),
-                        ),
-                      ],
-                    ),
-                    _SearchStyleInputField(
-                      hint: '923338738974', 
-                      controller: _mobileController, 
-                      prefixIcon: Iconsax.mobile, 
-                      bottomPadding: 8.h,
-                    ),
-                    Padding(
-                      padding: EdgeInsets.only(bottom: 16.h),
-                      child: Text(
-                        'Mobile number should be with country code without 0 or +',
-                        style: TextStyle(
-                          fontSize: 11.sp,
-                          color: AppColors.textSecondary,
-                          fontFamily: 'Inter',
-                        ),
                       ),
-                    ),
-                    _SearchStyleInputField(
-                      hint: 'Email', 
-                      controller: _emailController, 
-                      prefixIcon: Iconsax.sms,
-                    ),
-                    _SearchStyleInputField(
-                      hint: 'Password', 
-                      controller: _passwordController, 
-                      isPassword: true,
-                      obscureText: _obscurePassword,
-                      onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
-                      prefixIcon: Iconsax.key,
-                    ),
-                    _SearchStyleInputField(
-                      hint: 'Confirm Password', 
-                      controller: _confirmPasswordController, 
-                      isPassword: true,
-                      obscureText: _obscureConfirmPassword,
-                      onToggleVisibility: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
-                      prefixIcon: Iconsax.key_square,
-                    ),
+                      SizedBox(height: 24.h),
+                      
+                      _SearchStyleInputField(
+                        hint: 'First Name', 
+                        controller: _firstNameController, 
+                        prefixIcon: Iconsax.user,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) return 'First name is required';
+                          if (value.trim().length < 2) return 'First name must be at least 2 characters';
+                          return null;
+                        },
+                      ),
+                      _SearchStyleInputField(
+                        hint: 'Last Name', 
+                        controller: _lastNameController, 
+                        prefixIcon: Iconsax.user,
+                        validator: (value) => (value == null || value.isEmpty) ? 'Last name is required' : null,
+                      ),
+                      _SearchStyleInputField(
+                        hint: 'Username', 
+                        controller: _usernameController, 
+                        prefixIcon: Iconsax.personalcard,
+                        validator: (value) => (value == null || value.isEmpty) ? 'Username is required' : null,
+                      ),
+                      _SearchStyleInputField(
+                        hint: 'Email', 
+                        controller: _emailController, 
+                        prefixIcon: Iconsax.sms,
+                        keyboardType: TextInputType.emailAddress,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) return 'Email is required';
+                          if (!value.contains('@')) return 'Enter a valid email';
+                          return null;
+                        },
+                      ),
+                      _SearchStyleInputField(
+                        hint: '923001234567', 
+                        controller: _mobileController, 
+                        prefixIcon: Iconsax.mobile,
+                        keyboardType: TextInputType.phone,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(15),
+                        ],
+                        validator: (value) {
+                          if (value == null || value.isEmpty) return 'Mobile number is required';
+                          if (value.length < 10) return 'Enter a valid mobile number with country code';
+                          return null;
+                        },
+                      ),
+                      _SearchStyleInputField(
+                        hint: 'BUSINESS NAME', 
+                        controller: _vendorTitleController, 
+                        prefixIcon: Iconsax.user,
+                        validator: (value) => (value == null || value.isEmpty) ? 'Business name is required' : null,
+                      ),
+                      _SearchStyleInputField(
+                        hint: 'Password', 
+                        controller: _passwordController, 
+                        isPassword: true,
+                        obscureText: _obscurePassword,
+                        onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
+                        prefixIcon: Iconsax.key,
+                        validator: (value) => (value == null || value.isEmpty) ? 'Password is required' : null,
+                      ),
+                      _SearchStyleInputField(
+                        hint: 'Confirm Password', 
+                        controller: _confirmPasswordController, 
+                        isPassword: true,
+                        obscureText: _obscureConfirmPassword,
+                        onToggleVisibility: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                        prefixIcon: Iconsax.key_square,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) return 'Confirm password is required';
+                          if (value != _passwordController.text) return 'Passwords do not match';
+                          return null;
+                        },
+                      ),
 
-                    SizedBox(height: 8.h),
+                      SizedBox(height: 8.h),
                     Row(
                       children: [
                         SizedBox(
@@ -216,23 +229,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           height: 52.h,
                           child: ElevatedButton(
                             onPressed: auth.isLoading ? null : () async {
-                              if (_firstNameController.text.isEmpty || 
-                                  _lastNameController.text.isEmpty || 
-                                  _emailController.text.isEmpty || 
-                                  _usernameController.text.isEmpty ||
-                                  _mobileController.text.isEmpty ||
-                                  _vendorTitleController.text.isEmpty ||
-                                  _passwordController.text.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Please fill all fields')),
-                                );
-                                return;
-                              }
-                              
-                              if (_passwordController.text != _confirmPasswordController.text) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Passwords do not match')),
-                                );
+                              if (!_formKey.currentState!.validate()) {
                                 return;
                               }
 
@@ -243,7 +240,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                 return;
                               }
 
-                              final success = await auth.register(
+                              final response = await auth.register(
                                 firstName: _firstNameController.text.trim(),
                                 lastName: _lastNameController.text.trim(),
                                 email: _emailController.text.trim(),
@@ -256,14 +253,56 @@ class _SignupScreenState extends State<SignupScreen> {
                               );
                               
                               if (context.mounted) {
-                                if (success) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Registration successful! Please login.')),
+                                if (response != null && response['reaction'] == 1) {
+                                  final data = response['data'];
+                                  final activationRequired = data != null && data['activation_required'] == true;
+                                  
+                                  final message = response['message'] ?? 'Registration successful! Please check your email to activate your account.';
+                                  
+                                  showDialog(
+                                    context: context,
+                                    barrierDismissible: false,
+                                    builder: (context) => AlertDialog(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
+                                      title: Text(
+                                        activationRequired ? 'Activation Required' : 'Account Created',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.primary,
+                                          fontFamily: 'Inter',
+                                        ),
+                                      ),
+                                      content: Text(
+                                        message,
+                                        style: TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontFamily: 'Inter',
+                                        ),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.pop(context); // Close dialog
+                                            context.go('/login'); // Navigate to login
+                                          },
+                                          child: Text(
+                                            'OK',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.primary,
+                                              fontFamily: 'Inter',
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   );
-                                  context.go('/login');
                                 } else {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(auth.errorMessage ?? 'Registration failed')),
+                                    SnackBar(
+                                      content: Text(auth.errorMessage ?? 'Registration failed'),
+                                      backgroundColor: Colors.red,
+                                    ),
                                   );
                                 }
                               }
@@ -367,6 +406,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   ],
                 ),
               ),
+            ),
             ],
           ),
         ),
@@ -392,6 +432,9 @@ class _SearchStyleInputField extends StatefulWidget {
   final VoidCallback? onToggleVisibility;
   final IconData? prefixIcon;
   final double? bottomPadding;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+  final String? Function(String?)? validator;
 
   const _SearchStyleInputField({
     required this.hint,
@@ -401,6 +444,9 @@ class _SearchStyleInputField extends StatefulWidget {
     this.onToggleVisibility,
     this.prefixIcon,
     this.bottomPadding,
+    this.keyboardType,
+    this.inputFormatters,
+    this.validator,
   });
 
   @override
@@ -437,7 +483,7 @@ class _SearchStyleInputFieldState extends State<_SearchStyleInputField> {
       children: [
         AnimatedContainer(
           duration: const Duration(milliseconds: 300),
-          height: 52.h,
+          constraints: BoxConstraints(minHeight: 52.h),
           decoration: BoxDecoration(
             color: _isFocused ? const Color(0xFFF0F9FA) : Colors.white,
             borderRadius: BorderRadius.circular(_isFocused ? 30.r : 16.r),
@@ -446,7 +492,7 @@ class _SearchStyleInputFieldState extends State<_SearchStyleInputField> {
               width: _isFocused ? 1.5 : 1,
             ),
           ),
-          padding: EdgeInsets.symmetric(horizontal: 16.w),
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
           alignment: Alignment.centerLeft,
           child: Row(
             children: [
@@ -459,10 +505,13 @@ class _SearchStyleInputFieldState extends State<_SearchStyleInputField> {
                 SizedBox(width: 12.w),
               ],
               Expanded(
-                child: TextField(
+                child: TextFormField(
                   controller: widget.controller,
                   focusNode: _focusNode,
                   obscureText: widget.obscureText,
+                  keyboardType: widget.keyboardType,
+                  inputFormatters: widget.inputFormatters,
+                  validator: widget.validator,
                   decoration: InputDecoration(
                     hintText: widget.hint,
                     hintStyle: TextStyle(
@@ -474,6 +523,8 @@ class _SearchStyleInputFieldState extends State<_SearchStyleInputField> {
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
                     isDense: true,
                     contentPadding: EdgeInsets.zero,
                   ),

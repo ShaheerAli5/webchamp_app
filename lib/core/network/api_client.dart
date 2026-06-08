@@ -13,6 +13,8 @@ class ApiClient {
     receiveTimeout: const Duration(seconds: 30),
     headers: {
       'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Api-Request-Signature': 'mobile-app-request',
     },
   )) {
     _dio.interceptors.add(DioInterceptor(storageService));
@@ -25,16 +27,17 @@ class ApiClient {
     ));
   }
 
-  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
+  Future<Response> get(String path,
+      {Map<String, dynamic>? queryParameters}) async {
     return await _dio.get(path, queryParameters: queryParameters);
   }
 
   Future<Response> post(
-    String path, {
-    dynamic data,
-    Map<String, dynamic>? queryParameters,
-    Options? options,
-  }) async {
+      String path, {
+        dynamic data,
+        Map<String, dynamic>? queryParameters,
+        Options? options,
+      }) async {
     print('=== API CLIENT POST ===');
     print('PATH: $path');
     print('DATA TYPE: ${data.runtimeType}');

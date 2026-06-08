@@ -4,14 +4,29 @@ import '../../../../core/network/api_constants.dart';
 
 class AuthApiService {
   final ApiClient _apiClient;
+  String? _sessionCookie;
 
   AuthApiService(this._apiClient);
+
+  void _extractSessionCookie(Response response) {
+    final cookies = response.headers['set-cookie'];
+    if (cookies != null) {
+      for (final cookie in cookies) {
+        if (cookie.contains('PHPSESSID')) {
+          _sessionCookie = cookie.split(';').first;
+          break;
+        }
+      }
+    }
+  }
 
   Future<Response> login(String email, String password) async {
     return await _apiClient.post(
       ApiConstants.login,
-      data: {'email': email, 'password': password},
-      options: Options(contentType: 'application/x-www-form-urlencoded'),
+      queryParameters: {
+        'email': email,
+        'password': password,
+      },
     );
   }
 
@@ -26,7 +41,7 @@ class AuthApiService {
     required String passwordConfirmation,
     required bool termsAndConditions,
   }) async {
-    final body = {
+    final params = {
       'first_name': firstName,
       'last_name': lastName,
       'email': email,
@@ -38,16 +53,45 @@ class AuthApiService {
       'terms_and_conditions': termsAndConditions ? '1' : '0',
     };
 
-    print('=== REGISTER BODY ===');
-    print(body);
-    print('====================');
-
     final response = await _apiClient.post(
       ApiConstants.vendorRegister,
-      data: body,
-      options: Options(contentType: 'application/x-www-form-urlencoded'),
+      queryParameters: params,
     );
 
+    _extractSessionCookie(response);
     return response;
+  }
+
+  Future<Response> logout() async {
+    return await _apiClient.post(
+      ApiConstants.logout,
+    );
+  }
+
+  Future<Response> updatePassword({
+    required String oldPassword,
+    required String password,
+    required String passwordConfirmation,
+  }) async {
+    return await _apiClient.post(
+      ApiConstants.updatePassword,
+      queryParameters: {
+        'old_password': oldPassword,
+        'password': password,
+        'password_confirmation': passwordConfirmation,
+      },
+    );
+  }
+
+  Future<Response> verifyTwoFactor({
+    required String code,
+  }) async {
+    return await _apiClient.post(
+      ApiConstants.twoFactorChallenge,
+      queryParameters: {
+        'verify_via': 'code',
+        'code': code,
+      },
+    );
   }
 }

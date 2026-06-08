@@ -49,7 +49,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> register({
+  Future<Map<String, dynamic>?> register({
     required String firstName,
     required String lastName,
     required String email,
@@ -67,7 +67,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       print('Registering with params: $firstName, $lastName, $email, $username, $mobileNumber, $vendorTitle, $passwordConfirmation, $termsAndConditions');
 
-      await _authRepository.registerVendor(
+      final response = await _authRepository.registerVendor(
         firstName: firstName,
         lastName: lastName,
         email: email,
@@ -80,12 +80,12 @@ class AuthProvider extends ChangeNotifier {
       );
       _isLoading = false;
       notifyListeners();
-      return true;
+      return response;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       _isLoading = false;
       notifyListeners();
-      return false;
+      return null;
     }
   }
 
@@ -95,4 +95,49 @@ class AuthProvider extends ChangeNotifier {
     _user = null;
     notifyListeners();
   }
+
+  Future<bool> updatePassword({
+    required String oldPassword,
+    required String password,
+    required String passwordConfirmation,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _authRepository.updatePassword(
+        oldPassword: oldPassword,
+        password: password,
+        passwordConfirmation: passwordConfirmation,
+      );
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> verifyTwoFactor({required String code}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final result = await _authRepository.verifyTwoFactor(code: code);
+      _isLoading = false;
+      notifyListeners();
+      return result;
+    } catch (e) {
+      _errorMessage = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
 }
+

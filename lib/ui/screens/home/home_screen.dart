@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
+import 'package:provider/provider.dart';
+import '../../../providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -15,7 +17,7 @@ class HomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildHeader(),
+              _buildHeader(context),
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16.w),
                 child: Column(
@@ -36,79 +38,88 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context) {
     return Container(
       height: 110.h,
       width: double.infinity,
       padding: EdgeInsets.symmetric(horizontal: 16.w),
-      child: Row(
-        children: [
-          // Profile Section - Using Expanded to prevent overflow
-          Expanded(
-            child: SizedBox(
-              height: 34.h,
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 17.h,
-                    backgroundColor: Colors.black,
-                    child: Text(
-                      'RA',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12.sp,
+      child: Consumer<AuthProvider>(
+        builder: (context, auth, child) {
+          final user = auth.user;
+          final displayName = user?.displayName ?? 'Admin Panel';
+          final initials = displayName.trim().split(' ').where((e) => e.isNotEmpty).take(2).map((e) => e[0].toUpperCase()).join();
+          final firstName = user?.firstName ?? (displayName.split(' ').first);
+
+          return Row(
+            children: [
+              // Profile Section - Using Expanded to prevent overflow
+              Expanded(
+                child: SizedBox(
+                  height: 34.h,
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 17.h,
+                        backgroundColor: Colors.black,
+                        child: Text(
+                          initials.isEmpty ? 'AP' : initials,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12.sp,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  SizedBox(width: 10.w),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Champ Retail Co.',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 11.sp,
-                            height: 1.1,
-                            fontFamily: 'Geist',
-                          ),
+                      SizedBox(width: 10.w),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Champ Retail Co.',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11.sp,
+                                height: 1.1,
+                                fontFamily: 'Geist',
+                              ),
+                            ),
+                            Text(
+                              'Hi $firstName',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 14.sp,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                                fontFamily: 'Geist',
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          'Hi Rehman',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 14.sp,
-                            fontWeight: FontWeight.w700,
-                            height: 1.2,
-                            fontFamily: 'Geist',
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-          // Action Buttons
-          SizedBox(
-            width: 128.w,
-            height: 36.h,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildHeaderButton(Iconsax.scan_barcode),
-                _buildHeaderButton(Iconsax.setting_2),
-                _buildHeaderButton(Iconsax.notification, hasNotification: true),
-              ],
-            ),
-          ),
-        ],
+              // Action Buttons
+              SizedBox(
+                width: 128.w,
+                height: 36.h,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _buildHeaderButton(Iconsax.scan_barcode),
+                    _buildHeaderButton(Iconsax.setting_2),
+                    _buildHeaderButton(Iconsax.notification, hasNotification: true),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

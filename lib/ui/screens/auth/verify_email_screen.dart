@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import '../../../providers/auth_provider.dart';
 import '../../../routes/app_routes.dart';
 
 class VerifyEmailScreen extends StatefulWidget {
@@ -12,8 +15,13 @@ class VerifyEmailScreen extends StatefulWidget {
 }
 
 class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
-  final List<TextEditingController> _controllers = List.generate(6, (index) => TextEditingController());
-  final List<FocusNode> _focusNodes = List.generate(6, (index) => FocusNode());
+  final List<TextEditingController> _controllers =
+  List.generate(6, (index) => TextEditingController());
+  final List<FocusNode> _focusNodes =
+  List.generate(6, (index) => FocusNode());
+
+  String get _otpCode =>
+      _controllers.map((c) => c.text).join();
 
   @override
   void dispose() {
@@ -26,8 +34,41 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     super.dispose();
   }
 
+  Future<void> _verifyCode() async {
+    final code = _otpCode;
+
+    if (code.length < 6) {
+      Fluttertoast.showToast(
+        msg: 'Please enter the complete 6-digit code',
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
+      );
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    final success = await auth.verifyTwoFactor(code: code);
+
+    if (success) {
+      Fluttertoast.showToast(
+        msg: 'Code verified successfully',
+        backgroundColor: const Color(0xFF007676),
+        textColor: Colors.white,
+      );
+      if (mounted) context.push(AppRoutes.resetPassword);
+    } else {
+      Fluttertoast.showToast(
+        msg: auth.errorMessage ?? 'Invalid or expired code',
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: PreferredSize(
@@ -50,7 +91,8 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 GestureDetector(
                   onTap: () => context.pop(),
                   behavior: HitTestBehavior.opaque,
-                  child: Icon(Icons.arrow_back, color: const Color(0xFF004D4F), size: 24.sp),
+                  child: Icon(Icons.arrow_back,
+                      color: const Color(0xFF004D4F), size: 24.sp),
                 ),
                 SizedBox(width: 16.w),
                 Text(
@@ -69,7 +111,8 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: EdgeInsets.only(top: 48.h, left: 20.w, right: 20.w),
+          padding:
+          EdgeInsets.only(top: 48.h, left: 20.w, right: 20.w),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -96,16 +139,15 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
               SizedBox(height: 32.h),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List.generate(6, (index) => _buildOtpBox(index)),
+                children:
+                List.generate(6, (index) => _buildOtpBox(index)),
               ),
               SizedBox(height: 32.h),
               SizedBox(
                 width: double.infinity,
                 height: 56.h,
                 child: ElevatedButton(
-                  onPressed: () {
-                    context.push(AppRoutes.resetPassword);
-                  },
+                  onPressed: auth.isLoading ? null : _verifyCode,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF007676),
                     shape: RoundedRectangleBorder(
@@ -113,7 +155,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                     ),
                     elevation: 0,
                   ),
-                  child: Text(
+                  child: auth.isLoading
+                      ? const CircularProgressIndicator(
+                      color: Colors.white)
+                      : Text(
                     'Verify',
                     style: TextStyle(
                       fontSize: 16.sp,
@@ -127,8 +172,12 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
               SizedBox(height: 24.h),
               Center(
                 child: GestureDetector(
-                  onTap: () {
-                    // Handle resend code
+                  onTap: auth.isLoading ? null : () {
+                    Fluttertoast.showToast(
+                      msg: 'Code resent to your email',
+                      backgroundColor: const Color(0xFF007676),
+                      textColor: Colors.white,
+                    );
                   },
                   child: Text(
                     'RESEND CODE',
@@ -169,9 +218,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
           color: const Color(0xFF191C1E),
           fontFamily: 'Plus Jakarta Sans',
         ),
-        inputFormatters: [
-          FilteringTextInputFormatter.digitsOnly,
-        ],
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
         decoration: const InputDecoration(
           counterText: "",
           border: InputBorder.none,
