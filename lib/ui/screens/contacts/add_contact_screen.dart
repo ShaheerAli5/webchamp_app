@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../../../providers/auth_provider.dart';
+import '../../../features/contacts/presentation/providers/contact_provider.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 class AddContactScreen extends StatefulWidget {
   const AddContactScreen({super.key});
@@ -41,6 +45,37 @@ class _AddContactScreenState extends State<AddContactScreen> {
         _mobileController.text = code;
       }
     });
+  }
+
+  Future<void> _submit() async {
+    final contactProvider = context.read<ContactProvider>();
+
+    if (_firstNameController.text.isEmpty) {
+      Fluttertoast.showToast(msg: "Please enter first name");
+      return;
+    }
+
+    if (_mobileController.text.isEmpty) {
+      Fluttertoast.showToast(msg: "Please enter mobile number");
+      return;
+    }
+
+    final success = await contactProvider.createContact(
+      phoneNumber: _mobileController.text,
+      firstName: _firstNameController.text,
+      lastName: _lastNameController.text,
+      email: _emailController.text.isEmpty ? null : _emailController.text,
+      languageCode: _selectedLanguage,
+      country: _selectedCountry,
+    );
+
+    if (success) {
+      Fluttertoast.showToast(msg: "Contact added successfully");
+      if (mounted) context.pop();
+    } else {
+      Fluttertoast.showToast(
+          msg: contactProvider.errorMessage ?? "Failed to add contact");
+    }
   }
 
   @override
@@ -170,11 +205,15 @@ class _AddContactScreenState extends State<AddContactScreen> {
                               ),
                               SizedBox(width: 12.w),
                               Expanded(
-                                child: _buildActionButton(
-                                  'Submit',
-                                  const Color(0xFF007176),
-                                  Colors.white,
-                                  () {},
+                                child: Consumer<ContactProvider>(
+                                  builder: (context, provider, child) {
+                                    return _buildActionButton(
+                                      provider.isLoading ? 'Submitting...' : 'Submit',
+                                      const Color(0xFF007176),
+                                      Colors.white,
+                                      provider.isLoading ? () {} : _submit,
+                                    );
+                                  },
                                 ),
                               ),
                             ],

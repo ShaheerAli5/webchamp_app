@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../../routes/app_routes.dart';
+import '../../../features/contacts/presentation/providers/contact_provider.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -13,6 +16,14 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   bool _isSetupCompleted = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ContactProvider>().getContacts(perPage: 100);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,46 +44,37 @@ class _ChatScreenState extends State<ChatScreen> {
               _buildSearchBar(),
               _buildFilterChips(),
               Expanded(
-                child: ListView(
-                  children: [
-                    _buildChatItem(
-                      name: 'Aazam Bashir',
-                      subtext: 'Voice call',
-                      time: '4:39 pm',
-                      icon: Icons.call_made,
-                      iconColor: Colors.grey,
-                    ),
-                    _buildChatItem(
-                      name: 'WabChamp',
-                      subtext: 'Rehman ullah :  Voice messa....',
-                      time: '4:54 pm',
-                      isUnread: true,
-                      unreadCount: '1',
-                      icon: Icons.mic,
-                      iconColor: Colors.green,
-                      isGroup: true,
-                    ),
-                    _buildChatItem(
-                      name: 'Atta',
-                      subtext: 'I will let you know',
-                      time: '4:39 pm',
-                      icon: Icons.done_all,
-                      iconColor: Colors.blue,
-                    ),
-                    _buildChatItem(
-                      name: 'Ibrahim',
-                      subtext: 'Okay',
-                      time: '4:39 pm',
-                      icon: Icons.done,
-                      iconColor: Colors.grey,
-                    ),
-                    _buildChatItem(
-                      name: 'Rehmanullah',
-                      subtext: 'typing...',
-                      time: '4:39 pm',
-                      subtextColor: Colors.green,
-                    ),
-                  ],
+                child: Consumer<ContactProvider>(
+                  builder: (context, provider, child) {
+                    if (provider.isLoading && provider.contacts.isEmpty) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    
+                    final contactsWithChats = [...provider.contacts]
+                      ..sort(_sortContactsByLatestMessage);
+                    
+                    if (contactsWithChats.isEmpty) {
+                      return const Center(child: Text("No chats yet"));
+                    }
+
+                    return ListView.builder(
+                      itemCount: contactsWithChats.length,
+                      itemBuilder: (context, index) {
+                        final contact = contactsWithChats[index];
+                        final name = _contactName(contact);
+                        final uid = _contactUid(contact);
+                        final lastMsg = _contactLatestMessage(contact);
+                        final time = _contactLatestMessageTime(contact);
+
+                        return _buildChatItem(
+                          uid: uid,
+                          name: name,
+                          subtext: lastMsg,
+                          time: time,
+                        );
+                      },
+                    );
+                  },
                 ),
               ),
             ],
@@ -111,6 +113,87 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
     );
+  }
+
+  int _sortContactsByLatestMessage(dynamic left, dynamic right) {
+    final leftTime = _contactLatestDateTime(left);
+    final rightTime = _contactLatestDateTime(right);
+
+    if (leftTime == null && rightTime == null) return 0;
+    if (leftTime == null) return 1;
+    if (rightTime == null) return -1;
+
+    return rightTime.compareTo(leftTime);
+  }
+
+  String _contactName(dynamic contact) {
+    if (contact is! Map) return 'No Name';
+
+    final firstName = contact['first_name'] ?? contact['fname'] ?? '';
+    final lastName = contact['last_name'] ?? contact['lname'] ?? '';
+    final fullName = contact['full_name'] ?? contact['name'] ?? '';
+    final name = fullName.toString().isNotEmpty
+        ? fullName.toString()
+        : '$firstName $lastName'.trim();
+
+    return name.isNotEmpty ? name : 'No Name';
+  }
+
+  String _contactUid(dynamic contact) {
+    if (contact is! Map) return '';
+
+    return contact['_uid']?.toString() ??
+        contact['uid']?.toString() ??
+        contact['id']?.toString() ??
+        '';
+  }
+
+  String _contactLatestMessage(dynamic contact) {
+    if (contact is! Map) return 'No messages yet';
+
+    final lastMessage = contact['last_message'];
+    if (lastMessage is Map) {
+      final text = lastMessage['message'] ??
+          lastMessage['text'] ??
+          lastMessage['body'] ??
+          lastMessage['message_body'] ??
+          lastMessage['description'] ??
+          lastMessage['caption'];
+
+      if (text != null && text.toString().trim().isNotEmpty) {
+        return text.toString();
+      }
+    }
+
+    final text = contact['latest_message_text'] ??
+        contact['last_message_text'] ??
+        contact['message'];
+
+    if (text != null && text.toString().trim().isNotEmpty) {
+      return text.toString();
+    }
+
+    return 'No messages yet';
+  }
+
+  String _contactLatestMessageTime(dynamic contact) {
+    final time = _contactLatestDateTime(contact);
+    if (time == null) return '';
+
+    return DateFormat('hh:mm a').format(time);
+  }
+
+  DateTime? _contactLatestDateTime(dynamic contact) {
+    if (contact is! Map) return null;
+
+    final lastMessage = contact['last_message'];
+    final rawTime = contact['latest_message'] ??
+        (lastMessage is Map ? lastMessage['created_at'] : null) ??
+        contact['updated_at'];
+
+    if (rawTime == null) return null;
+
+    return DateTime.tryParse(rawTime.toString());
   }
 
   Widget _buildSearchBar() {
@@ -201,6 +284,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildChatItem({
+    required String uid,
     required String name,
     required String subtext,
     required String time,
@@ -212,7 +296,7 @@ class _ChatScreenState extends State<ChatScreen> {
     bool isGroup = false,
   }) {
     return ListTile(
-      onTap: () => context.push('/chat-detail/$name'),
+      onTap: () => context.push('/chat-detail/$uid/$name'),
       leading: CircleAvatar(
         radius: 26.r,
         backgroundColor: const Color(0xFFF0F2F5),

@@ -55,7 +55,7 @@ class AppRoutes {
   static const String createCampaign = '/create-campaign';
   static const String addContact = '/add-contact';
   static const String uploadCsv = '/upload-csv';
-  static const String individualChat = '/chat-detail/:name';
+  static const String individualChat = '/chat-detail/:uid/:name';
   static const String createNewList = '/create-new-list';
   static const String selectContacts = '/select-contacts';
   static const String templates = '/templates';
@@ -275,8 +275,9 @@ class AppRoutes {
         GoRoute(
           path: individualChat,
           builder: (context, state) {
+            final uid = state.pathParameters['uid'] ?? '';
             final name = state.pathParameters['name'] ?? 'Chat';
-            return IndividualChatScreen(name: name);
+            return IndividualChatScreen(uid: uid, name: name);
           },
         ),
       ],

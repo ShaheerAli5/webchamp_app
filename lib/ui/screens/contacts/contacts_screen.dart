@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../providers/auth_provider.dart';
+import '../../../features/contacts/presentation/providers/contact_provider.dart';
 
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
@@ -18,6 +21,13 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchContacts();
+    });
+  }
+
+  void _fetchContacts() {
+    context.read<ContactProvider>().getContacts(perPage: 100);
   }
 
   @override
@@ -30,6 +40,14 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          await context.push('/add-contact');
+          _fetchContacts();
+        },
+        backgroundColor: const Color(0xFF007176),
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -118,13 +136,105 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
   }
 
   Widget _buildContactsList() {
-    return ListView(
-      padding: EdgeInsets.fromLTRB(16.w, 20.h, 16.w, 20.h),
-      children: [
-        _buildSearchBar(),
-        SizedBox(height: 16.h),
-        _buildEmptyState(),
-      ],
+    return Consumer<ContactProvider>(
+      builder: (context, provider, child) {
+        debugPrint("🔄 UI Rebuilding with ${provider.contacts.length} contacts");
+        if (provider.isLoading && provider.contacts.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async => _fetchContacts(),
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(16.w, 20.h, 16.w, 20.h),
+            children: [
+              _buildSearchBar(),
+              SizedBox(height: 16.h),
+              if (provider.errorMessage != null && provider.contacts.isEmpty)
+                Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40.h),
+                    child: Column(
+                      children: [
+                        Text('Error: ${provider.errorMessage}'),
+                        SizedBox(height: 16.h),
+                        ElevatedButton(
+                          onPressed: _fetchContacts,
+                          child: const Text('Try Again'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else if (provider.contacts.isEmpty)
+                _buildEmptyState()
+              else
+                ...provider.contacts.map((contact) => _buildContactItem(contact)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildContactItem(dynamic contact) {
+    final firstName = contact['first_name'] ?? contact['fname'] ?? '';
+    final lastName = contact['last_name'] ?? contact['lname'] ?? '';
+    final fullName = contact['full_name'] ?? contact['name'] ?? '';
+    final name = fullName.isNotEmpty ? fullName : '$firstName $lastName'.trim();
+    final phone = contact['wa_id'] ??
+                 contact['phone_number'] ??
+                 contact['mobile_number'] ?? 
+                 contact['phone'] ?? 
+                 contact['mobile'] ?? '';
+    final uid = contact['_uid'] ?? contact['uid'] ?? contact['id']?.toString() ?? '';
+
+    return GestureDetector(
+      onTap: () => context.push('/chat-detail/$uid/$name'),
+      child: Container(
+        margin: EdgeInsets.only(bottom: 12.h),
+        padding: EdgeInsets.all(12.w),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12.r),
+          border: Border.all(color: const Color(0xFFF2F4F7)),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: const Color(0xFFF2F4F7),
+              child: Text(
+                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+              ),
+            ),
+            SizedBox(width: 12.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name.isNotEmpty ? name : 'No Name',
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
+                  ),
+                  Text(
+                    phone,
+                    style: TextStyle(
+                      fontSize: 12.sp,
+                      color: const Color(0xFF667085),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: const Color(0xFFD0D5DD), size: 20.sp),
+          ],
+        ),
+      ),
     );
   }
 
@@ -224,7 +334,10 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
           ),
           SizedBox(height: 16.h),
           ElevatedButton(
-            onPressed: () => context.push('/add-contact'),
+            onPressed: () async {
+              await context.push('/add-contact');
+              _fetchContacts();
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
               foregroundColor: Colors.black,
@@ -267,7 +380,10 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
           ),
           SizedBox(height: 16.h),
           ElevatedButton(
-            onPressed: () => context.push('/upload-csv'),
+            onPressed: () async {
+              await context.push('/upload-csv');
+              _fetchContacts();
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
               foregroundColor: Colors.black,

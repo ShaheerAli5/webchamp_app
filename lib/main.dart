@@ -7,6 +7,9 @@ import 'core/storage/secure_storage_service.dart';
 import 'features/auth/data/services/auth_api_service.dart';
 import 'features/auth/data/repositories/auth_repository.dart';
 import 'providers/auth_provider.dart';
+import 'features/contacts/data/services/contact_api_service.dart';
+import 'features/contacts/data/repositories/contact_repository.dart';
+import 'features/contacts/presentation/providers/contact_provider.dart';
 import 'routes/app_routes.dart';
 
 void main() async {
@@ -18,6 +21,10 @@ void main() async {
   final authRepository = AuthRepository(authService, secureStorage);
   final authProvider = AuthProvider(authRepository);
 
+  final contactService = ContactApiService(apiClient);
+  final contactRepository = ContactRepository(contactService);
+  final contactProvider = ContactProvider(contactRepository);
+
   // Initialize auth status before running app
   await authProvider.checkAuthStatus();
 
@@ -25,6 +32,7 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: authProvider),
+        ChangeNotifierProvider.value(value: contactProvider),
       ],
       child: MyApp(authProvider: authProvider),
     ),

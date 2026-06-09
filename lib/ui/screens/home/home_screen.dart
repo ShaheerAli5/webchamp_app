@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../features/contacts/presentation/providers/contact_provider.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -241,81 +243,94 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildMetricGrid() {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      crossAxisSpacing: 8.w,
-      mainAxisSpacing: 8.h,
-      childAspectRatio: 175 / 130,
-      children: [
-        _buildMetricCard('TOTAL\nCONTACTS', '0', Iconsax.user, AppColors.navActive),
-        _buildMetricCard('TOTAL\nGROUPS', '0', Iconsax.people, const Color(0xFF6D8C00)),
-        _buildMetricCard('TOTAL\nCAMPAIGNS', '0', Iconsax.volume_high, const Color(0xFF8B002D)),
-        _buildMetricCard('TOTAL\nTEMPLATES', '0', Iconsax.layer, const Color(0xFF6D8C00)),
-        _buildMetricCard('TOTAL\nBOT REPLIES', '0', Iconsax.box_1, const Color(0xFF6B8E23)),
-        _buildMetricCard('ACTIVE\nTEAM MEMBERS', '0', Iconsax.user_edit, Colors.red.shade900),
-        _buildMetricCard('MESSAGES\nIN QUEUE', '0', Iconsax.add_square, const Color(0xFF6B8E23)),
-        _buildMetricCard('MESSAGES\nPROCESSED', '0', Iconsax.tick_square, const Color(0xFF6B8E23)),
-      ],
+    return Consumer<ContactProvider>(
+      builder: (context, contactProvider, child) {
+        return GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          crossAxisSpacing: 8.w,
+          mainAxisSpacing: 8.h,
+          childAspectRatio: 175 / 130,
+          children: [
+            _buildMetricCard(
+              'TOTAL\nCONTACTS',
+              contactProvider.contacts.length.toString(),
+              Iconsax.user,
+              AppColors.navActive,
+              onTap: () => context.go('/contacts'),
+            ),
+            _buildMetricCard('TOTAL\nGROUPS', '0', Iconsax.people, const Color(0xFF6D8C00)),
+            _buildMetricCard('TOTAL\nCAMPAIGNS', '0', Iconsax.volume_high, const Color(0xFF8B002D)),
+            _buildMetricCard('TOTAL\nTEMPLATES', '0', Iconsax.layer, const Color(0xFF6D8C00)),
+            _buildMetricCard('TOTAL\nBOT REPLIES', '0', Iconsax.box_1, const Color(0xFF6B8E23)),
+            _buildMetricCard('ACTIVE\nTEAM MEMBERS', '0', Iconsax.user_edit, Colors.red.shade900),
+            _buildMetricCard('MESSAGES\nIN QUEUE', '0', Iconsax.add_square, const Color(0xFF6B8E23)),
+            _buildMetricCard('MESSAGES\nPROCESSED', '0', Iconsax.tick_square, const Color(0xFF6B8E23)),
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, Color iconColor) {
-    return Container(
-      padding: EdgeInsets.all(16.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.cardBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 10.sp,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                    height: 1.2,
+  Widget _buildMetricCard(String title, String value, IconData icon, Color iconColor, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.all(16.w),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.cardBorder),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 10.sp,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                      height: 1.2,
+                    ),
                   ),
                 ),
-              ),
-              Icon(icon, color: iconColor, size: 20),
-            ],
-          ),
-          const Spacer(),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18.sp,
-              fontWeight: FontWeight.w700,
-              color: Colors.black,
+                Icon(icon, color: iconColor, size: 20),
+              ],
             ),
-          ),
-          SizedBox(height: 8.h),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              'MANAGE',
+            const Spacer(),
+            Text(
+              value,
               style: TextStyle(
-                fontSize: 8.sp,
+                fontSize: 18.sp,
                 fontWeight: FontWeight.w700,
-                color: AppColors.textSecondary,
+                color: Colors.black,
               ),
             ),
-          ),
-        ],
+            SizedBox(height: 8.h),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'MANAGE',
+                style: TextStyle(
+                  fontSize: 8.sp,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

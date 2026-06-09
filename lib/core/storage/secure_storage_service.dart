@@ -5,6 +5,7 @@ class SecureStorageService {
 
   static const String _keyToken = 'auth_token';
   static const String _keyUser = 'user_data';
+  static const String _keySession = 'session_cookie';
 
   Future<void> saveToken(String token) async {
     await _storage.write(key: _keyToken, value: token);
@@ -12,6 +13,14 @@ class SecureStorageService {
 
   Future<String?> getToken() async {
     return await _storage.read(key: _keyToken);
+  }
+
+  Future<void> saveSession(String session) async {
+    await _storage.write(key: _keySession, value: session);
+  }
+
+  Future<String?> getSession() async {
+    return await _storage.read(key: _keySession);
   }
 
   Future<void> deleteToken() async {
