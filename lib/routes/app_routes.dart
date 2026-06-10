@@ -37,6 +37,7 @@ import '../ui/screens/settings/bot_settings_screen.dart';
 
 import '../ui/screens/chat/create_new_list_screen.dart';
 import '../ui/screens/chat/select_contacts_screen.dart';
+import '../ui/screens/chat/call_screen.dart';
 
 class AppRoutes {
   static const String home = '/';
@@ -54,8 +55,10 @@ class AppRoutes {
   static const String settings = '/settings';
   static const String createCampaign = '/create-campaign';
   static const String addContact = '/add-contact';
+  static const String editContact = '/edit-contact';
   static const String uploadCsv = '/upload-csv';
   static const String individualChat = '/chat-detail/:uid/:name';
+  static const String call = '/call/:channelName/:isVideo';
   static const String createNewList = '/create-new-list';
   static const String selectContacts = '/select-contacts';
   static const String templates = '/templates';
@@ -179,6 +182,13 @@ class AppRoutes {
           builder: (context, state) => const AddContactScreen(),
         ),
         GoRoute(
+          path: editContact,
+          builder: (context, state) {
+            final contactData = state.extra as Map<String, dynamic>?;
+            return AddContactScreen(contactData: contactData);
+          },
+        ),
+        GoRoute(
           path: uploadCsv,
           builder: (context, state) => const UploadCsvScreen(),
         ),
@@ -192,7 +202,10 @@ class AppRoutes {
         ),
         GoRoute(
           path: templates,
-          builder: (context, state) => const TemplatesScreen(),
+          builder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>?;
+            return TemplatesScreen(extra: extra);
+          },
         ),
         GoRoute(
           path: addTemplate,
@@ -278,6 +291,14 @@ class AppRoutes {
             final uid = state.pathParameters['uid'] ?? '';
             final name = state.pathParameters['name'] ?? 'Chat';
             return IndividualChatScreen(uid: uid, name: name);
+          },
+        ),
+        GoRoute(
+          path: call,
+          builder: (context, state) {
+            final channelName = state.pathParameters['channelName'] ?? '';
+            final isVideo = state.pathParameters['isVideo'] == 'true';
+            return CallScreen(channelName: channelName, isVideo: isVideo);
           },
         ),
       ],

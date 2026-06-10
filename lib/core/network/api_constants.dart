@@ -13,22 +13,42 @@ class ApiConstants {
   static const String createContact = '/vendor/contact/create';
   static String updateContact(String phoneNumber) =>
       '/vendor/contact/update/$phoneNumber';
+  static String deleteContact(String phoneNumber) =>
+      '/vendor/contact/delete/$phoneNumber';
   static const String assignTeamMember = '/vendor/contact/assign-team-member';
+
+  // ✅ FIXED — correct chat history endpoint (chat-data returns pure JSON)
+  static String chatHistory(String contactUid) =>
+      '/vendor/whatsapp/contact/chat-data/$contactUid';
+
+  // ✅ REMOVED — contactMessages list of 7 wrong guesses, all returned 404
+  // Use chatHistory() above instead
+
+  // ✅ KEPT — chat-box-data still used for labels/team members sidebar data
   static String contactChatBoxData(String contactUid) =>
       '/vendor/whatsapp/contact/chat-box-data/$contactUid';
-  static List<String> contactMessages(String contactUid) => [
-        '/vendor/whatsapp/contact/chat/messages/$contactUid',
-        '/vendor/whatsapp/contact/chat/$contactUid/messages',
-        '/vendor/whatsapp/contact/chat-messages/$contactUid',
-        '/vendor/whatsapp/contact/messages/$contactUid',
-        '/vendor/whatsapp/contact/chat/messages-data/$contactUid',
-        '/vendor/whatsapp/contact/chat/message-data/$contactUid',
-        '/vendor/whatsapp/contact/chat-history/$contactUid',
-      ];
+
+  // Unread count — from API doc
+  static const String unreadCount = '/vendor/whatsapp/chat/unread-count';
+
+  // Clear chat history — from API doc
+  static String clearChatHistory(String contactUid) =>
+      '/vendor/whatsapp/contact/chat/clear-history/$contactUid';
+
+  // Labels
   static const String createLabel = '/vendor/whatsapp/contact/create-label';
   static const String updateLabel = '/vendor/whatsapp/contact/chat/edit-label';
   static String deleteLabel(String labelUid) =>
       '/vendor/whatsapp/contact/chat/delete-label/$labelUid';
-  static const String assignLabels = '/vendor/whatsapp/contact/chat/assign-labels';
-  static const String sendMessage = '/vendor/whatsapp/contact/chat/send-message';
+  static const String assignLabels =
+      '/vendor/whatsapp/contact/chat/assign-labels';
+
+  // Messaging
+  static const String sendMessage = '/vendor/whatsapp/contact/chat/send';
+  static const String sendMedia = '/vendor/whatsapp/contact/chat/send-media';
+  static const String sendTemplate = '/vendor/whatsapp/contact/chat/send-template';
+
+  // ✅ FIXED — was full URL, now relative path so Bearer token is included
+  static const String uploadAudio =
+      '/media/upload-temp-media/whatsapp_audio';
 }

@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import '../../../features/contacts/presentation/providers/contact_provider.dart';
 
-class TemplatesScreen extends StatelessWidget {
-  const TemplatesScreen({super.key});
+class TemplatesScreen extends StatefulWidget {
+  final Map<String, dynamic>? extra;
+  const TemplatesScreen({super.key, this.extra});
+
+  @override
+  State<TemplatesScreen> createState() => _TemplatesScreenState();
+}
+
+class _TemplatesScreenState extends State<TemplatesScreen> {
+  Map<String, dynamic>? get contact => widget.extra?['contact'];
 
   @override
   Widget build(BuildContext context) {
@@ -36,12 +46,12 @@ class TemplatesScreen extends StatelessWidget {
                     child: const Icon(Icons.arrow_back, color: Colors.black),
                   ),
                 ),
-                SizedBox(width: 12.w), // Exact 12px gap from design
+                SizedBox(width: 12.w),
                 Text(
-                  'Templates',
+                  contact != null ? 'Send Template to ${contact!['first_name'] ?? contact!['name'] ?? 'Contact'}' : 'Templates',
                   style: TextStyle(
                     color: Colors.black,
-                    fontSize: 20.sp,
+                    fontSize: contact != null ? 16.sp : 20.sp,
                     fontWeight: FontWeight.w600,
                     fontFamily: 'Plus Jakarta Sans',
                   ),
@@ -66,7 +76,7 @@ class TemplatesScreen extends StatelessWidget {
                     status: 'Approved',
                     statusColor: const Color(0xFFE7F6EC),
                     statusTextColor: const Color(0xFF027A48),
-                    language: 'English (US)',
+                    language: 'en_US',
                     category: 'Marketing',
                     updatedOn: '2023-11-20 14:30',
                   ),
@@ -76,18 +86,20 @@ class TemplatesScreen extends StatelessWidget {
                     status: 'Pending',
                     statusColor: const Color(0xFFFFF9E5),
                     statusTextColor: const Color(0xFFB54708),
-                    language: 'English (US)',
+                    language: 'en_US',
                     category: 'Marketing',
                     updatedOn: '2023-11-20 14:30',
                   ),
-                  SizedBox(height: 24.h),
-                  Row(
-                    children: [
-                      Expanded(child: _buildActionBtn('Manage on Meta')),
-                      SizedBox(width: 16.w),
-                      Expanded(child: _buildActionBtn('Sync Templates')),
-                    ],
-                  ),
+                  if (contact == null) ...[
+                    SizedBox(height: 24.h),
+                    Row(
+                      children: [
+                        Expanded(child: _buildActionBtn('Manage on Meta')),
+                        SizedBox(width: 16.w),
+                        Expanded(child: _buildActionBtn('Sync Templates')),
+                      ],
+                    ),
+                  ],
                   SizedBox(height: 80.h), 
                 ],
               ),
@@ -95,10 +107,10 @@ class TemplatesScreen extends StatelessWidget {
           ),
         ],
       ),
-      floatingActionButton: GestureDetector(
+      floatingActionButton: contact == null ? GestureDetector(
         onTap: () => context.push('/add-template'),
         child: _buildFAB(),
-      ),
+      ) : null,
     );
   }
 
@@ -205,29 +217,80 @@ class TemplatesScreen extends StatelessWidget {
           SizedBox(height: 14.h),
           const Divider(color: Color(0xFFE8E8EC), height: 1),
           SizedBox(height: 14.h),
-          Row(
-            children: [
-              _buildCardButton(Icons.visibility_outlined, 'View'),
-              SizedBox(width: 8.w),
-              _buildCardButton(Icons.edit_outlined, 'Edit'),
-              const Spacer(),
-              Row(
-                children: [
-                  Icon(Icons.delete_outline, color: const Color(0xFFD92D20), size: 18.sp),
-                  SizedBox(width: 4.w),
-                  Text(
-                    'Delete',
-                    style: TextStyle(
-                      color: const Color(0xFFD92D20),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14.sp,
+          if (contact != null)
+             _buildActionButton(
+                'Send Template',
+                const Color(0xFF007176),
+                Colors.white,
+                () => _sendTemplate(title, language),
+              )
+          else
+            Row(
+              children: [
+                _buildCardButton(Icons.visibility_outlined, 'View'),
+                SizedBox(width: 8.w),
+                _buildCardButton(Icons.edit_outlined, 'Edit'),
+                const Spacer(),
+                Row(
+                  children: [
+                    Icon(Icons.delete_outline, color: const Color(0xFFD92D20), size: 18.sp),
+                    SizedBox(width: 4.w),
+                    Text(
+                      'Delete',
+                      style: TextStyle(
+                        color: const Color(0xFFD92D20),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14.sp,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                  ],
+                ),
+              ],
+            ),
         ],
+      ),
+    );
+  }
+
+  void _sendTemplate(String templateName, String languageCode) async {
+    final uid = contact!['_uid'] ?? contact!['uid'];
+    if (uid == null) return;
+
+    final provider = context.read<ContactProvider>();
+    final success = await provider.sendTemplateMessage(
+      contactUid: uid.toString(),
+      templateName: templateName,
+      languageCode: languageCode,
+    );
+    
+    if (success) {
+      Fluttertoast.showToast(msg: "Template sent successfully");
+      if (mounted) context.pop();
+    } else {
+      Fluttertoast.showToast(
+          msg: provider.errorMessage ?? "Failed to send template");
+    }
+  }
+
+  Widget _buildActionButton(String label, Color bgColor, Color textColor, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 40.h,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12.r),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: textColor,
+            fontSize: 14.sp,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
     );
   }
@@ -312,7 +375,7 @@ class TemplatesScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(17.86.r),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),

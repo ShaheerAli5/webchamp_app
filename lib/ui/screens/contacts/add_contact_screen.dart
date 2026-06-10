@@ -7,7 +7,8 @@ import '../../../features/contacts/presentation/providers/contact_provider.dart'
 import 'package:fluttertoast/fluttertoast.dart';
 
 class AddContactScreen extends StatefulWidget {
-  const AddContactScreen({super.key});
+  final Map<String, dynamic>? contactData;
+  const AddContactScreen({super.key, this.contactData});
 
   @override
   State<AddContactScreen> createState() => _AddContactScreenState();
@@ -17,12 +18,31 @@ class _AddContactScreenState extends State<AddContactScreen> {
   bool _optOutMarketing = false;
   bool _enableReplyBot = true;
   String? _selectedCountry;
+
   String? _selectedLanguage;
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _mobileController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _otherInfoController = TextEditingController();
+
+  bool get isEditing => widget.contactData != null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (isEditing) {
+      final data = widget.contactData!;
+      _firstNameController.text = data['first_name'] ?? data['fname'] ?? '';
+      _lastNameController.text = data['last_name'] ?? data['lname'] ?? '';
+      _mobileController.text = data['wa_id'] ?? data['phone_number'] ?? '';
+      _emailController.text = data['email'] ?? '';
+      _selectedCountry = data['country'];
+      _selectedLanguage = data['language_code'] ?? data['language'];
+      _optOutMarketing = data['whatsapp_opt_out'] == '1' || data['whatsapp_opt_out'] == true;
+      _enableReplyBot = data['disable_reply_bot'] != '1' && data['disable_reply_bot'] != true;
+    }
+  }
 
   final Map<String, String> _countryCodes = {
     'Pakistan': '92',
@@ -40,7 +60,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
   void _onCountryChanged(String? country) {
     setState(() {
       _selectedCountry = country;
-      if (country != null && _countryCodes.containsKey(country)) {
+      if (!isEditing && country != null && _countryCodes.containsKey(country)) {
         String code = _countryCodes[country]!;
         _mobileController.text = code;
       }
@@ -60,21 +80,33 @@ class _AddContactScreenState extends State<AddContactScreen> {
       return;
     }
 
-    final success = await contactProvider.createContact(
-      phoneNumber: _mobileController.text,
-      firstName: _firstNameController.text,
-      lastName: _lastNameController.text,
-      email: _emailController.text.isEmpty ? null : _emailController.text,
-      languageCode: _selectedLanguage,
-      country: _selectedCountry,
-    );
+    bool success;
+    if (isEditing) {
+      success = await contactProvider.updateContact(
+        _mobileController.text,
+        firstName: _firstNameController.text,
+        lastName: _lastNameController.text,
+        email: _emailController.text.isEmpty ? null : _emailController.text,
+        languageCode: _selectedLanguage,
+        country: _selectedCountry,
+      );
+    } else {
+      success = await contactProvider.createContact(
+        phoneNumber: _mobileController.text,
+        firstName: _firstNameController.text,
+        lastName: _lastNameController.text,
+        email: _emailController.text.isEmpty ? null : _emailController.text,
+        languageCode: _selectedLanguage,
+        country: _selectedCountry,
+      );
+    }
 
     if (success) {
-      Fluttertoast.showToast(msg: "Contact added successfully");
+      Fluttertoast.showToast(msg: isEditing ? "Contact updated successfully" : "Contact added successfully");
       if (mounted) context.pop();
     } else {
       Fluttertoast.showToast(
-          msg: contactProvider.errorMessage ?? "Failed to add contact");
+          msg: contactProvider.errorMessage ?? (isEditing ? "Failed to update contact" : "Failed to add contact"));
     }
   }
 
@@ -118,7 +150,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
                 ),
                 SizedBox(width: 12.w),
                 Text(
-                  'Add New Contact',
+                  isEditing ? 'Edit Contact' : 'Add New Contact',
                   style: TextStyle(
                     color: Colors.black,
                     fontSize: 18.sp,
@@ -208,7 +240,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
                                 child: Consumer<ContactProvider>(
                                   builder: (context, provider, child) {
                                     return _buildActionButton(
-                                      provider.isLoading ? 'Submitting...' : 'Submit',
+                                      provider.isLoading ? 'Submitting...' : (isEditing ? 'Update' : 'Submit'),
                                       const Color(0xFF007176),
                                       Colors.white,
                                       provider.isLoading ? () {} : _submit,
@@ -284,14 +316,14 @@ class _AddContactScreenState extends State<AddContactScreen> {
           SizedBox(height: 8.h),
           SizedBox(
             height: 44.h,
-            child: _buildTextField('eg. 92 344 1234567', controller: _mobileController),
+            child: _buildTextField('eg. 92 344 1234567', controller: _mobileController, enabled: !isEditing),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTextField(String hint, {int maxLines = 1, TextEditingController? controller}) {
+  Widget _buildTextField(String hint, {int maxLines = 1, TextEditingController? controller, bool enabled = true}) {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12.r),
@@ -306,9 +338,10 @@ class _AddContactScreenState extends State<AddContactScreen> {
       child: TextField(
         controller: controller,
         maxLines: maxLines,
+        enabled: enabled,
         style: TextStyle(
           fontSize: 14.sp,
-          color: const Color(0xFF151C27),
+          color: enabled ? const Color(0xFF151C27) : Colors.grey,
           fontFamily: 'Plus Jakarta Sans',
           fontWeight: FontWeight.w400,
           height: 20 / 14,
@@ -323,7 +356,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
             height: 20 / 14,
           ),
           filled: true,
-          fillColor: const Color(0xFFF4F4F4),
+          fillColor: enabled ? const Color(0xFFF4F4F4) : const Color(0xFFE8E8EC),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12.r),
             borderSide: BorderSide.none,

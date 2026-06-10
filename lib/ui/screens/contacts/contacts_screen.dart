@@ -3,8 +3,6 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../../../core/theme/app_colors.dart';
-import '../../../providers/auth_provider.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
 
 class ContactsScreen extends StatefulWidget {
@@ -28,6 +26,20 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
 
   void _fetchContacts() {
     context.read<ContactProvider>().getContacts(perPage: 100);
+  }
+
+  String _sanitizeText(String? text) {
+    if (text == null || text.trim().isEmpty) return '';
+    try {
+      // Remove characters that cause malformed UTF-16
+      return text.runes
+          .where((r) => r <= 0xFFFF || (r >= 0x10000 && r <= 0x10FFFF))
+          .map((r) => String.fromCharCode(r))
+          .join()
+          .trim();
+    } catch (_) {
+      return text.replaceAll(RegExp(r'[^\x00-\x7F]'), '').trim();
+    }
   }
 
   @override
@@ -182,12 +194,12 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
     final lastName = contact['last_name'] ?? contact['lname'] ?? '';
     final fullName = contact['full_name'] ?? contact['name'] ?? '';
     final name = fullName.isNotEmpty ? fullName : '$firstName $lastName'.trim();
-    final phone = contact['wa_id'] ??
+    final phone = (contact['wa_id'] ??
                  contact['phone_number'] ??
                  contact['mobile_number'] ?? 
                  contact['phone'] ?? 
-                 contact['mobile'] ?? '';
-    final uid = contact['_uid'] ?? contact['uid'] ?? contact['id']?.toString() ?? '';
+                 contact['mobile'] ?? '').toString();
+    final uid = (contact['_uid'] ?? contact['uid'] ?? contact['id'] ?? '').toString();
 
     return GestureDetector(
       onTap: () => context.push('/chat-detail/$uid/$name'),
@@ -204,7 +216,7 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
             CircleAvatar(
               backgroundColor: const Color(0xFFF2F4F7),
               child: Text(
-                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                _sanitizeText(name).isNotEmpty ? _sanitizeText(name)[0].toUpperCase() : '?',
                 style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
               ),
             ),
@@ -214,7 +226,7 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    name.isNotEmpty ? name : 'No Name',
+                    _sanitizeText(name).isNotEmpty ? _sanitizeText(name) : 'No Name',
                     style: TextStyle(
                       fontSize: 14.sp,
                       fontWeight: FontWeight.w600,
@@ -222,7 +234,7 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
                     ),
                   ),
                   Text(
-                    phone,
+                    _sanitizeText(phone),
                     style: TextStyle(
                       fontSize: 12.sp,
                       color: const Color(0xFF667085),
@@ -231,11 +243,142 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: const Color(0xFFD0D5DD), size: 20.sp),
+            PopupMenuButton<String>(
+              padding: EdgeInsets.zero,
+              icon: Icon(Icons.more_vert, color: const Color(0xFFD0D5DD), size: 18.sp),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+              constraints: BoxConstraints(minWidth: 140.w),
+              offset: const Offset(0, 30),
+              onSelected: (value) => _handleContactAction(value, contact),
+              itemBuilder: (context) => [
+                _buildPopupItem('edit', Iconsax.edit_2, 'Edit', Colors.black),
+                _buildPopupItem('delete', Iconsax.trash, 'Delete', Colors.red),
+                _buildPopupItem('template', Iconsax.message, 'Template', Colors.black),
+              ],
+            ),
           ],
         ),
       ),
     );
+  }
+
+  PopupMenuItem<String> _buildPopupItem(String value, IconData icon, String label, Color color) {
+    return PopupMenuItem(
+      value: value,
+      height: 32.h,
+      padding: EdgeInsets.symmetric(horizontal: 12.w),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16.sp, color: color),
+          SizedBox(width: 10.w),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13.sp,
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontFamily: 'Inter',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleContactAction(String action, dynamic contact) {
+    switch (action) {
+      case 'edit':
+        _showEditContactDialog(contact);
+        break;
+      case 'delete':
+        _showDeleteConfirmation(contact);
+        break;
+      case 'template':
+        _showSendTemplateDialog(contact);
+        break;
+    }
+  }
+
+  void _showEditContactDialog(dynamic contact) {
+    // Navigate to add contact screen with data or show a dialog
+    // For now, let's just push to a new route /edit-contact
+    context.push('/edit-contact', extra: contact).then((_) => _fetchContacts());
+  }
+
+  void _showDeleteConfirmation(dynamic contact) {
+    final name = contact['full_name'] ?? contact['first_name'] ?? 'this contact';
+    final phone = contact['wa_id'] ?? contact['phone_number'] ?? '';
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        title: Text(
+          'Delete Contact',
+          style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Are you sure you want to delete $name?\nThis action cannot be undone.',
+          style: TextStyle(fontSize: 14.sp, color: const Color(0xFF667085)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: const Color(0xFF667085),
+                fontSize: 14.sp,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final uid = contact['_uid'] ?? contact['uid'];
+              final phone = contact['wa_id'] ?? contact['phone_number'] ?? '';
+              final identifier = uid ?? phone;
+
+              if (identifier != null && identifier.toString().isNotEmpty) {
+                final contactProvider = context.read<ContactProvider>();
+                final success = await contactProvider.deleteContact(identifier.toString());
+                
+                if (!mounted) return;
+                
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Contact deleted successfully')),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        contactProvider.errorMessage ?? 'Failed to delete contact',
+                      ),
+                    ),
+                  );
+                }
+              }
+            },
+            child: Text(
+              'Delete',
+              style: TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+                fontSize: 14.sp,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSendTemplateDialog(dynamic contact) {
+    // Navigate to templates or show a selection dialog
+    context.push('/templates', extra: {'contact': contact});
   }
 
   Widget _buildSearchBar() {

@@ -14,6 +14,7 @@ class ApiClient {
     headers: {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
       'Api-Request-Signature': 'mobile-app-request',
     },
   )) {
@@ -28,8 +29,9 @@ class ApiClient {
   }
 
   Future<Response> get(String path,
-      {Map<String, dynamic>? queryParameters}) async {
-    return await _dio.get(path, queryParameters: queryParameters);
+      {Map<String, dynamic>? queryParameters, Options? options}) async {
+    return await _dio.get(path,
+        queryParameters: queryParameters, options: options);
   }
 
   Future<Response> post(

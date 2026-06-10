@@ -1,11 +1,45 @@
 import 'package:dio/dio.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_constants.dart';
+import 'package:flutter/foundation.dart';
 
 class ContactApiService {
   final ApiClient _apiClient;
 
   ContactApiService(this._apiClient);
+
+  String? _csrfToken;
+
+  // Call this once after login or before first POST
+  Future<void> fetchCsrfToken([String? contactUid]) async {
+    try {
+      // If no UID is provided, we try to use a default or first contact if available
+      // but ideally we should always pass a context-relevant UID.
+      if (contactUid == null) {
+        debugPrint('⚠️ fetchCsrfToken called without contactUid');
+        return;
+      }
+
+      final response = await _apiClient.get(
+        ApiConstants.chatHistory(contactUid),
+        options: Options(responseType: ResponseType.plain),
+      );
+      if (response.data is String) {
+        final tokenRegex = RegExp(r'"csrf_token"\s*:\s*"([^"]+)"');
+        final match = tokenRegex.firstMatch(response.data as String);
+        if (match != null) {
+          setCsrfToken(match.group(1)!);
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to fetch CSRF token: $e');
+    }
+  }
+
+  void setCsrfToken(String token) {
+    _csrfToken = token;
+    debugPrint('✅ CSRF token updated: $token');
+  }
 
   // API 1 - Get All Contacts
   Future<Response> getContacts({
@@ -80,13 +114,21 @@ class ContactApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.updateContact(phoneNumber),
-      queryParameters: {
+      data: {
         if (firstName != null) 'first_name': firstName,
         if (lastName != null) 'last_name': lastName,
         if (email != null) 'email': email,
         if (languageCode != null) 'language_code': languageCode,
         if (country != null) 'country': country,
       },
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    );
+  }
+
+  // API 4.1 - Delete Contact
+  Future<Response> deleteContact(String phoneNumber) async {
+    return await _apiClient.get(
+      ApiConstants.deleteContact(phoneNumber),
     );
   }
 
@@ -97,52 +139,40 @@ class ContactApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.assignTeamMember,
-      queryParameters: {
+      data: {
         'phone_number': phoneNumber,
         'username_or_email': usernameOrEmail,
       },
+      options: Options(contentType: Headers.formUrlEncodedContentType),
     );
   }
 
-  // API 6 - Get Contact Chat Box Data
+  // ✅ FIXED — fetches actual chat messages
+  Future<Response> getChatHistory(String contactUid) async {
+    return await _apiClient.get(
+      ApiConstants.chatHistory(contactUid),
+    );
+  }
+
+  // ✅ KEPT — still used for labels/team members only
   Future<Response> getContactChatBoxData(String contactUid) async {
     return await _apiClient.get(
       ApiConstants.contactChatBoxData(contactUid),
     );
   }
 
-  Future<Response> getContactMessages(String contactUid) async {
-    DioException? lastError;
-
-    for (final path in ApiConstants.contactMessages(contactUid)) {
-      try {
-        return await _apiClient.get(path);
-      } on DioException catch (e) {
-        lastError = e;
-        final statusCode = e.response?.statusCode;
-        if (statusCode != 404 && statusCode != 405) {
-          rethrow;
-        }
-      }
-    }
-
-    for (final queryKey in ['contactUid', 'contact_uid']) {
-      try {
-        return await _apiClient.get(
-          '/vendor/whatsapp/contact/chat/messages',
-          queryParameters: {queryKey: contactUid},
-        );
-      } on DioException catch (e) {
-        lastError = e;
-        final statusCode = e.response?.statusCode;
-        if (statusCode != 404 && statusCode != 405) {
-          rethrow;
-        }
-      }
-    }
-
-    throw lastError ?? Exception('Unable to fetch contact messages');
+  // ✅ NEW — unread count for badge
+  Future<Response> getUnreadCount() async {
+    return await _apiClient.get(ApiConstants.unreadCount);
   }
+
+  // ✅ NEW — clear chat history
+  Future<Response> clearChatHistory(String contactUid) async {
+    return await _apiClient.post(
+      ApiConstants.clearChatHistory(contactUid),
+    );
+  }
+
 
   // API 7 - Create Label
   Future<Response> createLabel({
@@ -152,11 +182,12 @@ class ContactApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.createLabel,
-      queryParameters: {
+      data: {
         'title': title,
         'text_color': textColor,
         'bg_color': bgColor,
       },
+      options: Options(contentType: Headers.formUrlEncodedContentType),
     );
   }
 
@@ -169,12 +200,13 @@ class ContactApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.updateLabel,
-      queryParameters: {
+      data: {
         'labelUid': labelUid,
         'title': title,
         'text_color': textColor,
         'bg_color': bgColor,
       },
+      options: Options(contentType: Headers.formUrlEncodedContentType),
     );
   }
 
@@ -192,10 +224,11 @@ class ContactApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.assignLabels,
-      queryParameters: {
+      data: {
         'contactUid': contactUid,
         'contact_labels': contactLabels,
       },
+      options: Options(contentType: Headers.formUrlEncodedContentType),
     );
   }
 
@@ -204,12 +237,84 @@ class ContactApiService {
     required String contactUid,
     required String message,
   }) async {
+    if (_csrfToken == null) await fetchCsrfToken(contactUid);
+
     return await _apiClient.post(
       ApiConstants.sendMessage,
-      queryParameters: {
-        'contactUid': contactUid,
-        'message': message,
+      data: {
+        'contact_uid': contactUid,
+        'message_body': message,
+        if (_csrfToken != null) '_token': _csrfToken,
       },
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    );
+  }
+
+  // API 12 - Send Template
+  Future<Response> sendTemplate({
+    required String contactUid,
+    required String templateName,
+    required String languageCode,
+  }) async {
+    return await _apiClient.post(
+      ApiConstants.sendTemplate,
+      data: {
+        'contact_uid': contactUid,
+        'template_name': templateName,
+        'language_code': languageCode,
+      },
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    );
+  }
+
+  // API 13 - Send Media
+  Future<Response> sendMedia({
+    required String contactUid,
+    required String fileName,
+    String mediaType = 'audio',
+    bool isRecordedAudio = false,
+  }) async {
+    if (_csrfToken == null) await fetchCsrfToken(contactUid);
+
+    return await _apiClient.post(
+      ApiConstants.sendMedia,
+      data: {
+        'contact_uid': contactUid,
+        'media_type': mediaType,
+        'uploaded_media_file_name': fileName,
+        if (mediaType == 'audio') 'is_recorded_audio': isRecordedAudio ? '1' : '0',
+        if (_csrfToken != null) '_token': _csrfToken,
+      },
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    );
+  }
+
+  // API 14 - Upload Media
+  Future<Response> uploadMedia(String filePath, {required String contactUid, String type = 'audio'}) async {
+    if (_csrfToken == null) await fetchCsrfToken(contactUid);
+
+    final file = await MultipartFile.fromFile(
+      filePath,
+      filename: filePath.split('/').last,
+    );
+
+    final formData = FormData.fromMap({
+      'filepond': file,
+      if (_csrfToken != null) '_token': _csrfToken,
+    });
+
+    String endpoint = ApiConstants.uploadAudio;
+    if (type == 'image') {
+      endpoint = '/media/upload-temp-media/whatsapp_image';
+    } else if (type == 'video') {
+      endpoint = '/media/upload-temp-media/whatsapp_video';
+    } else if (type == 'document') {
+      endpoint = '/media/upload-temp-media/whatsapp_document';
+    }
+
+    return await _apiClient.post(
+      endpoint,
+      data: formData,
     );
   }
 }

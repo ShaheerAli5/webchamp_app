@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
@@ -16,13 +17,52 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   bool _isSetupCompleted = true;
+  Timer? _pollingTimer;
+  bool _isPolling = false;
+  String _activeFilter = 'all';
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ContactProvider>().getContacts(perPage: 100);
+      _fetchContacts();
+      _startPolling();
     });
+  }
+
+  Future<void> _fetchContacts() async {
+    await context.read<ContactProvider>().getContacts(perPage: 100);
+  }
+
+  String _sanitizeText(String? text) {
+    if (text == null || text.trim().isEmpty) return '';
+    try {
+      // Remove characters that cause malformed UTF-16
+      return text.runes
+          .where((r) => r <= 0xFFFF || (r >= 0x10000 && r <= 0x10FFFF))
+          .map((r) => String.fromCharCode(r))
+          .join()
+          .trim();
+    } catch (_) {
+      return text.replaceAll(RegExp(r'[^\x00-\x7F]'), '').trim();
+    }
+  }
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      if (mounted && !_isPolling) {
+        _isPolling = true;
+        await _fetchContacts();
+        _isPolling = false;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -52,25 +92,34 @@ class _ChatScreenState extends State<ChatScreen> {
                     
                     final contactsWithChats = [...provider.contacts]
                       ..sort(_sortContactsByLatestMessage);
+
+                    final filtered = _activeFilter == 'unread'
+                        ? contactsWithChats
+                            .where((c) => (c['unread_messages_count'] ?? 0) > 0)
+                            .toList()
+                        : contactsWithChats;
                     
-                    if (contactsWithChats.isEmpty) {
+                    if (filtered.isEmpty) {
                       return const Center(child: Text("No chats yet"));
                     }
 
                     return ListView.builder(
-                      itemCount: contactsWithChats.length,
+                      itemCount: filtered.length,
                       itemBuilder: (context, index) {
-                        final contact = contactsWithChats[index];
+                        final contact = filtered[index];
                         final name = _contactName(contact);
                         final uid = _contactUid(contact);
                         final lastMsg = _contactLatestMessage(contact);
                         final time = _contactLatestMessageTime(contact);
+                        final unreadCount = contact['unread_messages_count'];
 
                         return _buildChatItem(
                           uid: uid,
-                          name: name,
-                          subtext: lastMsg,
+                          name: _sanitizeText(name),
+                          subtext: _sanitizeText(lastMsg),
                           time: time,
+                          isUnread: (unreadCount ?? 0) > 0,
+                          unreadCount: unreadCount?.toString(),
                         );
                       },
                     );
@@ -149,31 +198,49 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String _contactLatestMessage(dynamic contact) {
-    if (contact is! Map) return 'No messages yet';
+    if (contact is! Map) return '';
 
     final lastMessage = contact['last_message'];
     if (lastMessage is Map) {
+      // 1. Check for explicit text content
       final text = lastMessage['message'] ??
           lastMessage['text'] ??
           lastMessage['body'] ??
           lastMessage['message_body'] ??
-          lastMessage['description'] ??
           lastMessage['caption'];
 
       if (text != null && text.toString().trim().isNotEmpty) {
         return text.toString();
       }
+
+      // 2. Check for type based identification
+      final type = (lastMessage['message_type'] ?? lastMessage['type'] ?? '').toString().toLowerCase();
+      if (type == 'audio' || type == 'voice' || type == 'ptt') return 'voice';
+      if (type == 'image') return '📷 Image';
+      if (type == 'video') return '🎥 Video';
+      if (type == 'document') return '📄 Document';
+
+      // 3. Check webhook deep extraction
+      final data = lastMessage['__data'];
+      if (data is Map) {
+        try {
+          final msg = data['webhook_responses']?['incoming']?[0]?['changes']?[0]?['value']?['messages']?[0];
+          final wType = msg?['type']?.toString().toLowerCase();
+          if (wType == 'audio' || wType == 'voice' || wType == 'ptt') return 'voice';
+          if (wType == 'image') return '📷 Image';
+          if (wType == 'video') return '🎥 Video';
+          if (wType == 'document') return '📄 Document';
+        } catch (_) {}
+      }
+
+      // Fallback based on wamid existence
+      if (lastMessage['wamid'] != null) return '📎 Media message';
+
+      final agoTime = lastMessage['formatted_message_ago_time'];
+      if (agoTime != null) return '🕐 $agoTime';
     }
 
-    final text = contact['latest_message_text'] ??
-        contact['last_message_text'] ??
-        contact['message'];
-
-    if (text != null && text.toString().trim().isNotEmpty) {
-      return text.toString();
-    }
-
-    return 'No messages yet';
+    return '';
   }
 
   String _contactLatestMessageTime(dynamic contact) {
@@ -241,10 +308,17 @@ class _ChatScreenState extends State<ChatScreen> {
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.symmetric(horizontal: 16.w),
         children: [
-          _buildChip('All', isSelected: true),
-          _buildChip('Unread 11'),
-          _buildChip('Groups 7'),
-          _buildChip('New List', isAction: true, hasAddIcon: true, onTap: () => context.push(AppRoutes.createNewList)),
+          _buildChip('All',
+              isSelected: _activeFilter == 'all',
+              onTap: () => setState(() => _activeFilter = 'all')),
+          _buildChip('Unread',
+              isSelected: _activeFilter == 'unread',
+              onTap: () => setState(() => _activeFilter = 'unread')),
+          _buildChip('Groups'),
+          _buildChip('New List',
+              isAction: true,
+              hasAddIcon: true,
+              onTap: () => context.push(AppRoutes.createNewList)),
         ],
       ),
     );
@@ -300,15 +374,30 @@ class _ChatScreenState extends State<ChatScreen> {
       leading: CircleAvatar(
         radius: 26.r,
         backgroundColor: const Color(0xFFF0F2F5),
-        child: Icon(isGroup ? Icons.group : Icons.person, color: Colors.black54, size: 28.sp),
+        child: _sanitizeText(name).isNotEmpty
+            ? Text(
+                _sanitizeText(name)[0].toUpperCase(),
+                style: TextStyle(
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black54,
+                ),
+              )
+            : Icon(isGroup ? Icons.group : Icons.person,
+                color: Colors.black54, size: 28.sp),
       ),
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            name,
-            style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.bold),
+          Expanded(
+            child: Text(
+              name,
+              style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
+          SizedBox(width: 8.w),
           Text(
             time,
             style: TextStyle(

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../data/repositories/contact_repository.dart';
 
@@ -54,7 +55,7 @@ class ContactProvider extends ChangeNotifier {
         );
       }
 
-      _contacts = parsedContacts;
+      _contacts = parsedContacts.whereType<Map>().toList();
       debugPrint('✅ Final Parsed Contacts Count: ${_contacts.length}');
 
       _isLoading = false;
@@ -346,11 +347,34 @@ class ContactProvider extends ChangeNotifier {
         languageCode: languageCode,
         country: country,
       );
-      _isLoading = false;
-      notifyListeners();
+      // Automatically refresh contacts list after updating
+      await getContacts(perPage: 100);
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> deleteContact(String phoneNumber) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final result = await _repository.deleteContact(phoneNumber);
+
+      if (result is Map &&
+          (result['result'] == 'failed' || result['reaction'] == 0)) {
+        throw Exception(result['message'] ?? 'Failed to delete contact');
+      }
+
+      // Automatically refresh contacts list after deleting one
+      await getContacts(perPage: 100);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -380,11 +404,14 @@ class ContactProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> getContactChatBoxData(String contactUid) async {
-    _isLoading = true;
-    _errorMessage = null;
-    _messages = [];
-    notifyListeners();
+  Future<bool> getContactChatBoxData(String contactUid,
+      {bool showLoading = true}) async {
+    if (showLoading) {
+      _isLoading = true;
+      _errorMessage = null;
+      _messages = [];
+      notifyListeners();
+    }
     try {
       final result = await _repository.getContactChatBoxData(contactUid);
 
@@ -408,36 +435,42 @@ class ContactProvider extends ChangeNotifier {
         _mapValue(clientModels, 'vendorMessagingUsers'),
       ]);
 
-      _messages = _extractLargestMessageList([
-        result,
-        data,
-        clientModels,
-        _mapValue(clientModels, 'chat_box_data'),
-        _mapValue(data, 'chat_box_data'),
-      ]);
-
-      if (_messages.isEmpty) {
-        try {
-          final messagesResult = await _repository.getContactMessages(contactUid);
-          _messages = _extractLargestMessageList([messagesResult]);
-        } catch (e) {
-          debugPrint('Messages history endpoint failed: $e');
-        }
+      // ✅ NEW — call correct chat history endpoint
+      dynamic chatResult;
+      try {
+        chatResult = await _repository.getChatHistory(contactUid);
+      } catch (e) {
+        debugPrint('❌ Chat history failed: $e');
       }
+
+      _messages = _extractLargestMessageList([result, chatResult]);
+
+      // Always sort descending (newest first) for reverse ListView
+      if (_messages.isNotEmpty) {
+        _messages.sort((a, b) {
+          final aTime = (a['created_at'] ?? a['messaged_at'] ?? a['timestamp'] ?? '').toString();
+          final bTime = (b['created_at'] ?? b['messaged_at'] ?? b['timestamp'] ?? '').toString();
+          return bTime.compareTo(aTime);
+        });
+      }
+      debugPrint('✅ Messages loaded: ${_messages.length}');
 
       if (_messages.isEmpty) {
         _messages = _messagesFromLoadedContact(contactUid);
+        debugPrint('No messages available in chat history for $contactUid');
       }
 
       debugPrint('Final Parsed Messages Count: ${_messages.length}');
 
-      _isLoading = false;
+      if (showLoading) _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
-      _isLoading = false;
-      notifyListeners();
+      if (showLoading) {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _isLoading = false;
+        notifyListeners();
+      }
       return false;
     }
   }
@@ -495,28 +528,53 @@ class ContactProvider extends ChangeNotifier {
   }
 
   List<dynamic> _extractMessageList(dynamic value) {
+    if (value == null) return [];
+
     if (value is List) {
       return value.where(_looksLikeMessage).toList();
     }
 
     if (value is Map) {
-      for (final key in [
+      // 1. Check these keys in order of likelihood
+      final keysToTry = [
+        'whatsappMessageLogs',
         'messages',
         'chat_messages',
         'contactMessages',
         'messageData',
         'records',
-        'data',
-      ]) {
+      ];
+
+      for (final key in keysToTry) {
         final nestedValue = value[key];
-        if (nestedValue is List || nestedValue is Map) {
-          final messages = _extractMessageList(nestedValue);
+        if (nestedValue is List) {
+          final messages = nestedValue.where(_looksLikeMessage).toList();
           if (messages.isNotEmpty) return messages;
+        }
+        if (nestedValue is Map) {
+          // Handle object keyed by uid: {"uid1": {...}, "uid2": {...}}
+          final asList = nestedValue.values.where(_looksLikeMessage).toList();
+          if (asList.isNotEmpty) return asList;
         }
       }
 
-      final values = value.values.where(_looksLikeMessage).toList();
-      if (values.isNotEmpty) return values;
+      // 2. Specialized check for wrappers common in your APIs
+      if (value['data'] != null) {
+        final fromData = _extractMessageList(value['data']);
+        if (fromData.isNotEmpty) return fromData;
+      }
+      if (value['client_models'] != null) {
+        final fromClientModels = _extractMessageList(value['client_models']);
+        if (fromClientModels.isNotEmpty) return fromClientModels;
+      }
+
+      // 3. Fallback: Check if any value in the Map is a List of messages
+      for (final val in value.values) {
+        if (val is List) {
+          final messages = val.where(_looksLikeMessage).toList();
+          if (messages.isNotEmpty) return messages;
+        }
+      }
     }
 
     return [];
@@ -525,26 +583,35 @@ class ContactProvider extends ChangeNotifier {
   bool _looksLikeMessage(dynamic value) {
     if (value is! Map) return false;
 
-    final hasMessageText = value.containsKey('message') ||
+    // Must have some form of message content OR a uid that identifies it as a message
+    final hasContent = value.containsKey('message') ||
         value.containsKey('text') ||
         value.containsKey('body') ||
         value.containsKey('message_body') ||
-        value.containsKey('description') ||
-        value.containsKey('__data');
-    final hasMessageMeta = value.containsKey('is_incoming_message') ||
-        value.containsKey('message_type') ||
-        value.containsKey('status') ||
         value.containsKey('wamid') ||
-        value.containsKey('messaging_contact_wa_id');
+        value.containsKey('whatsapp_message_id') ||
+        value.containsKey('uploaded_media_file_name') ||
+        value.containsKey('media_url') ||
+        value.containsKey('attachment_url') ||
+        (value['__data'] is Map && value['__data']['media_values'] != null) ||
+        value.containsKey('_uid') ||
+        value.containsKey('uid');
 
-    return hasMessageText && hasMessageMeta;
+    final hasMeta = value.containsKey('is_incoming_message') ||
+        value.containsKey('status') ||
+        value.containsKey('direction') ||
+        value.containsKey('contacts__id') ||
+        value.containsKey('created_at') ||
+        value.containsKey('messaged_at') ||
+        value.containsKey('timestamp');
+
+    return hasContent && (hasMeta || value.containsKey('_uid'));
   }
 
   Future<bool> sendMessage({
     required String contactUid,
     required String message,
   }) async {
-    _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
@@ -553,11 +620,235 @@ class ContactProvider extends ChangeNotifier {
         message: message,
       );
       // Refresh chat data after sending message
-      await getContactChatBoxData(contactUid);
+      await getContactChatBoxData(contactUid, showLoading: false);
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> sendTemplateMessage({
+    required String contactUid,
+    required String templateName,
+    required String languageCode,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final result = await _repository.sendTemplate(
+        contactUid: contactUid,
+        templateName: templateName,
+        languageCode: languageCode,
+      );
+
+      if (result is Map &&
+          (result['result'] == 'failed' || result['reaction'] == 0)) {
+        throw Exception(result['message'] ?? 'Failed to send template');
+      }
+
+      // Refresh chat data after sending template
+      await getContactChatBoxData(contactUid, showLoading: false);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> sendVoiceMessage({
+    required String contactUid,
+    required String filePath,
+  }) async {
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      // Validate file exists before uploading
+      final file = File(filePath);
+      if (!await file.exists()) {
+        _errorMessage = 'Audio file not found at: $filePath';
+        notifyListeners();
+        return false;
+      }
+
+      final uploadResult = await _repository.uploadMedia(filePath, contactUid: contactUid, type: 'audio');
+      debugPrint('⬆️ Voice upload result: $uploadResult');
+
+      if (uploadResult is! Map) {
+        _errorMessage = 'Upload failed — unexpected server response';
+        notifyListeners();
+        return false;
+      }
+
+      // Robust extraction based on backend response: response.data['data']['fileName']
+      final fileName = uploadResult['data']?['fileName'] ?? 
+                       uploadResult['fileName'] ?? 
+                       uploadResult['data']?['file_name'];
+
+      if (fileName == null || fileName.toString().isEmpty) {
+        _errorMessage = 'Upload failed — server did not return filename.';
+        debugPrint('❌ No filename in upload result: $uploadResult');
+        notifyListeners();
+        return false;
+      }
+
+      debugPrint('🚀 Sending media with filename: $fileName');
+      await _repository.sendMedia(
+        contactUid: contactUid,
+        fileName: fileName.toString(),
+        mediaType: 'audio',
+        isRecordedAudio: true,
+      );
+
+      await getContactChatBoxData(contactUid, showLoading: false);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> sendImageMessage({
+    required String contactUid,
+    required String filePath,
+  }) async {
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        _errorMessage = 'Image file not found at: $filePath';
+        notifyListeners();
+        return false;
+      }
+
+      final uploadResult = await _repository.uploadMedia(filePath, contactUid: contactUid, type: 'image');
+
+      if (uploadResult is! Map) {
+        _errorMessage = 'Upload failed — unexpected server response';
+        notifyListeners();
+        return false;
+      }
+
+      final fileName = uploadResult['data']?['fileName'] ?? 
+                       uploadResult['fileName'] ?? 
+                       uploadResult['data']?['file_name'];
+
+      if (fileName == null || fileName.toString().isEmpty) {
+        _errorMessage = 'Upload failed — server did not return filename.';
+        notifyListeners();
+        return false;
+      }
+
+      await _repository.sendMedia(
+        contactUid: contactUid,
+        fileName: fileName.toString(),
+        mediaType: 'image',
+      );
+
+      await getContactChatBoxData(contactUid, showLoading: false);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> sendVideoMessage({
+    required String contactUid,
+    required String filePath,
+  }) async {
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        _errorMessage = 'Video file not found at: $filePath';
+        notifyListeners();
+        return false;
+      }
+
+      final uploadResult = await _repository.uploadMedia(filePath, contactUid: contactUid, type: 'video');
+
+      if (uploadResult is! Map) {
+        _errorMessage = 'Upload failed — unexpected server response';
+        notifyListeners();
+        return false;
+      }
+
+      final fileName = uploadResult['data']?['fileName'] ?? 
+                       uploadResult['fileName'] ?? 
+                       uploadResult['data']?['file_name'];
+
+      if (fileName == null || fileName.toString().isEmpty) {
+        _errorMessage = 'Upload failed — server did not return filename.';
+        notifyListeners();
+        return false;
+      }
+
+      await _repository.sendMedia(
+        contactUid: contactUid,
+        fileName: fileName.toString(),
+        mediaType: 'video',
+      );
+
+      await getContactChatBoxData(contactUid, showLoading: false);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> sendDocumentMessage({
+    required String contactUid,
+    required String filePath,
+  }) async {
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        _errorMessage = 'Document not found at: $filePath';
+        notifyListeners();
+        return false;
+      }
+
+      final uploadResult = await _repository.uploadMedia(filePath, contactUid: contactUid, type: 'document');
+
+      if (uploadResult is! Map) {
+        _errorMessage = 'Upload failed — unexpected server response';
+        notifyListeners();
+        return false;
+      }
+
+      final fileName = uploadResult['data']?['fileName'] ?? 
+                       uploadResult['fileName'] ?? 
+                       uploadResult['data']?['file_name'];
+
+      if (fileName == null || fileName.toString().isEmpty) {
+        _errorMessage = 'Upload failed — server did not return filename.';
+        notifyListeners();
+        return false;
+      }
+
+      await _repository.sendMedia(
+        contactUid: contactUid,
+        fileName: fileName.toString(),
+        mediaType: 'document',
+      );
+
+      await getContactChatBoxData(contactUid, showLoading: false);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
       return false;
     }
