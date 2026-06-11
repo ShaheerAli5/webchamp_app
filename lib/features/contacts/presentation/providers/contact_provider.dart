@@ -77,6 +77,12 @@ class ContactProvider extends ChangeNotifier {
       
       final result = Helpers.sanitizeData(rawResult);
       
+      // LOG THE RAW DATA TO DEBUG COUNTRIES ISSUE
+      debugPrint('🔍 DEBUG: RAW API RESPONSE KEYS: ${result.keys.toList()}');
+      if (result['client_models'] != null) {
+         debugPrint('🔍 DEBUG: client_models KEYS: ${result['client_models'].keys.toList()}');
+      }
+
       // Extract contacts list using a robust parser
       List<dynamic> newContacts = _parseContactsResponse(result);
       
@@ -135,9 +141,12 @@ class ContactProvider extends ChangeNotifier {
       print('Total Contacts: ${_contacts.length}');
       print('Has More Pages: $_hasMore');
 
-      // Extract metadata
+      // Extract metadata - Ensure these are called after result is ready
       _availableGroups = _extractGroupsFromResponse(result);
       _availableCountries = _extractCountriesFromResponse(result);
+      
+      debugPrint('🌍 DEBUG: Countries Found: ${_availableCountries.length}');
+      debugPrint('👥 DEBUG: Groups Found: ${_availableGroups.length}');
 
       _isFetchingContacts = false;
       _isLoading = false;
@@ -319,6 +328,30 @@ class ContactProvider extends ChangeNotifier {
         value.containsKey('fname');
   }
 
+  Future<void> getContactMetadata() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final result = await _repository.getContactMetadata();
+      final data = Helpers.sanitizeData(result);
+      
+      debugPrint('🔍 METADATA KEYS: ${data.keys.toList()}');
+      if (data['client_models'] != null) {
+        debugPrint('🔍 METADATA client_models KEYS: ${data['client_models'].keys.toList()}');
+      }
+
+      _availableGroups = _extractGroupsFromResponse(data);
+      _availableCountries = _extractCountriesFromResponse(data);
+      
+      debugPrint('🌍 Metadata: Found ${_availableCountries.length} countries and ${_availableGroups.length} groups');
+    } catch (e) {
+      debugPrint('❌ Error fetching metadata: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> getContact({
     String? phoneNumber,
     String? email,
@@ -376,7 +409,12 @@ class ContactProvider extends ChangeNotifier {
         customInputFields: customInputFields,
       );
 
-      if (result['reaction'] == 0 || result['success'] == false) {
+      final isSuccessful = result['reaction'] == 1 || 
+                           result['success'] == true || 
+                           result['status'] == 'success' ||
+                           result['result'] == 'success';
+
+      if (!isSuccessful) {
         throw Exception(
           result['message'] ??
               result['data']?['message'] ??
@@ -1014,16 +1052,43 @@ class ContactProvider extends ChangeNotifier {
 
   List<dynamic> _extractCountriesFromResponse(dynamic result) {
     if (result is! Map) return _availableCountries;
-    final clientModels = result['client_models'];
+    
+    final clientModels = result['client_models'] ?? (result['data'] is Map ? result['data']['client_models'] : null);
+    final data = result['data'] ?? result;
+    
+    dynamic found;
+    final keys = ['countries', 'all_countries', 'allCountries', 'country_list', 'countryList', 'country_data', 'countries_data'];
+    
+    // Check client_models
     if (clientModels is Map) {
-      final countries = clientModels['countries'];
-      if (countries is List) return countries;
+      for (var key in keys) {
+        if (clientModels[key] != null) {
+          found = clientModels[key];
+          break;
+        }
+      }
     }
-    final data = result['data'];
-    if (data is Map) {
-      final countries = data['countries'];
-      if (countries is List) return countries;
+    
+    // Check data/root
+    if (found == null && data is Map) {
+      for (var key in keys) {
+        if (data[key] != null) {
+          found = data[key];
+          break;
+        }
+      }
     }
+
+    if (found is List && found.isNotEmpty) {
+      debugPrint('✅ Found ${found.length} countries in response');
+      return found;
+    }
+    
+    if (found is Map && found.isNotEmpty) {
+      debugPrint('✅ Found countries as MAP, converting to LIST');
+      return found.values.toList();
+    }
+
     return _availableCountries;
   }
 

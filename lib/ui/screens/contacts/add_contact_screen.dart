@@ -75,10 +75,8 @@ class _AddContactScreenState extends State<AddContactScreen> {
   Future<void> _loadMetadataAndContact() async {
     final provider = context.read<ContactProvider>();
     
-    // Ensure we have groups and countries
-    if (provider.availableGroups.isEmpty || provider.availableCountries.isEmpty) {
-      await provider.getContacts();
-    }
+    // Fetch specific metadata for the form
+    await provider.getContactMetadata();
     
     if (isEditing) {
       final phone = _mobileController.text;
@@ -450,44 +448,110 @@ class _AddContactScreenState extends State<AddContactScreen> {
   Widget _buildCountryDropdown() {
     final countries = context.watch<ContactProvider>().availableCountries;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4F4F4),
-        borderRadius: BorderRadius.circular(12.r),
-      ),
-      padding: EdgeInsets.symmetric(horizontal: 16.w),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<dynamic>(
-          value: _selectedCountryId,
-          hint: Text(
-            countries.isEmpty ? 'Loading countries...' : 'Select country',
-            style: TextStyle(
-              color: const Color(0xFF98A2B3),
-              fontSize: 14.sp,
-              fontFamily: 'Plus Jakarta Sans',
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-          isExpanded: true,
-          icon: Icon(Icons.keyboard_arrow_down, color: const Color(0xFF667085), size: 20.sp),
-          items: countries.map((country) {
-            final id = country['id'] ?? country['countries__id'];
-            final name = country['name'] ?? country['countries__name'] ?? 'Unknown';
-            return DropdownMenuItem<dynamic>(
-              value: id,
-              child: Text(
-                name,
+    if (countries.isEmpty) {
+      return _buildTextField('Loading countries...', enabled: false);
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Autocomplete<Map<String, dynamic>>(
+          displayStringForOption: (option) => (option['name'] ?? option['countries__name'] ?? '').toString(),
+          optionsBuilder: (TextEditingValue textEditingValue) {
+            if (textEditingValue.text.isEmpty) {
+              return countries.cast<Map<String, dynamic>>();
+            }
+            return countries.where((country) {
+              final name = (country['name'] ?? country['countries__name'] ?? '').toString().toLowerCase();
+              return name.contains(textEditingValue.text.toLowerCase());
+            }).cast<Map<String, dynamic>>();
+          },
+          onSelected: (option) {
+            final id = option['id'] ?? option['countries__id'];
+            _onCountryChanged(id);
+          },
+          fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+            // Synchronize controller with selection if it exists
+            if (_selectedCountryId != null && controller.text.isEmpty) {
+              final selected = countries.firstWhere(
+                (c) => (c['id'] ?? c['countries__id']) == _selectedCountryId,
+                orElse: () => null,
+              );
+              if (selected != null) {
+                controller.text = (selected['name'] ?? selected['countries__name'] ?? '').toString();
+              }
+            }
+
+            return Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12.r),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 2,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: TextField(
+                controller: controller,
+                focusNode: focusNode,
                 style: TextStyle(
                   fontSize: 14.sp,
                   color: const Color(0xFF151C27),
                   fontFamily: 'Plus Jakarta Sans',
                 ),
+                decoration: InputDecoration(
+                  hintText: 'Search country...',
+                  hintStyle: TextStyle(
+                    color: const Color(0xFF98A2B3),
+                    fontSize: 14.sp,
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF4F4F4),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12.r),
+                    borderSide: BorderSide.none,
+                  ),
+                  suffixIcon: Icon(Icons.search, size: 20.sp, color: const Color(0xFF98A2B3)),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16.w),
+                ),
               ),
             );
-          }).toList(),
-          onChanged: _onCountryChanged,
-        ),
-      ),
+          },
+          optionsViewBuilder: (context, onSelected, options) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                elevation: 4,
+                borderRadius: BorderRadius.circular(12.r),
+                child: Container(
+                  width: constraints.maxWidth,
+                  constraints: BoxConstraints(maxHeight: 250.h),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12.r),
+                  ),
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    itemCount: options.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      final option = options.elementAt(index);
+                      return ListTile(
+                        title: Text(
+                          (option['name'] ?? option['countries__name'] ?? '').toString(),
+                          style: TextStyle(fontSize: 14.sp),
+                        ),
+                        onTap: () => onSelected(option),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

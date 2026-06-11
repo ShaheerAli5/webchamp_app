@@ -57,6 +57,11 @@ class ContactApiService {
     );
   }
 
+  // API 1.5 - Get Contact Create/Edit Metadata
+  Future<Response> getContactMetadata() async {
+    return await _apiClient.get('/vendor/contact/create');
+  }
+
   // API 2 - Get Single Contact
   Future<Response> getContact({
     String? phoneNumber,
@@ -99,18 +104,18 @@ class ContactApiService {
 
     final data = {
       'phone_number': phoneNumber,
-      'phone': phoneNumber, // Added for new API schema support
+      'phone': phoneNumber,
       'first_name': firstName,
-      'name': '$firstName ${lastName ?? ''}'.trim(), // Added for new API schema support
+      'name': '$firstName ${lastName ?? ''}'.trim(),
       if (lastName != null) 'last_name': lastName,
       if (email != null) 'email': email,
-      if (address != null) 'address': address, // Added for new API schema support
+      if (address != null) 'address': address,
       'language_code': languageCode ?? 'en',
       'country': country,
       if (contactGroups != null) 'contact_groups': contactGroups,
-      if (whatsappOptOut != null) 'whatsapp_opt_out': whatsappOptOut,
-      if (enableAiBot != null) 'enable_ai_bot': enableAiBot,
-      if (enableReplyBot != null) 'enable_reply_bot': enableReplyBot,
+      'whatsapp_opt_out': (whatsappOptOut == true) ? '1' : '0',
+      'enable_ai_bot': (enableAiBot == true) ? '1' : '0',
+      'enable_reply_bot': (enableReplyBot == true) ? '1' : '0',
       if (customInputFields != null) 'custom_input_fields': customInputFields,
     };
 
@@ -119,6 +124,7 @@ class ContactApiService {
     return await _apiClient.post(
       ApiConstants.createContact,
       data: data,
+      options: Options(contentType: Headers.formUrlEncodedContentType),
     );
   }
 
@@ -146,15 +152,16 @@ class ContactApiService {
       'language_code': languageCode ?? 'en',
       'country': country,
       if (contactGroups != null) 'contact_groups': contactGroups,
-      if (whatsappOptOut != null) 'whatsapp_opt_out': whatsappOptOut,
-      if (enableAiBot != null) 'enable_ai_bot': enableAiBot,
-      if (enableReplyBot != null) 'enable_reply_bot': enableReplyBot,
+      'whatsapp_opt_out': (whatsappOptOut == true) ? '1' : '0',
+      'enable_ai_bot': (enableAiBot == true) ? '1' : '0',
+      'enable_reply_bot': (enableReplyBot == true) ? '1' : '0',
       if (customInputFields != null) 'custom_input_fields': customInputFields,
     };
 
     return await _apiClient.put(
       ApiConstants.updateContact(contactUid),
       data: data,
+      options: Options(contentType: Headers.formUrlEncodedContentType),
     );
   }
 

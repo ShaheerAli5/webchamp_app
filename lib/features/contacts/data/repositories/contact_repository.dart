@@ -51,6 +51,19 @@ class ContactRepository {
     }
   }
 
+  Future<dynamic> getContactMetadata() async {
+    try {
+      final response = await _apiService.getContactMetadata();
+      debugPrint('--- METADATA API DEBUG ---');
+      debugPrint('URL: ${response.realUri}');
+      debugPrint('Status: ${response.statusCode}');
+      return response.data;
+    } on DioException catch (e) {
+      debugPrint('❌ METADATA API ERROR: ${e.message}');
+      throw Exception(_extractError(e));
+    }
+  }
+
   Future<dynamic> getContact({
     String? phoneNumber,
     String? email,
