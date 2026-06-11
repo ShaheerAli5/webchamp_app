@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'core/network/api_client.dart';
@@ -39,10 +40,23 @@ void main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final AuthProvider authProvider;
   
   const MyApp({super.key, required this.authProvider});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = AppRoutes.createRouter(widget.authProvider);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +69,7 @@ class MyApp extends StatelessWidget {
           title: 'Wab Champ',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
-          routerConfig: AppRoutes.createRouter(authProvider),
+          routerConfig: _router,
         );
       },
     );

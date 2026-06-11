@@ -10,6 +10,9 @@ class ContactProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  // New flag to specifically guard getContacts from parallel execution
+  bool _isFetchingContacts = false;
+
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
@@ -33,11 +36,16 @@ class ContactProvider extends ChangeNotifier {
     int? perPage,
     int? page,
   }) async {
+    // 🛡️ GUARD: Prevent concurrent contact fetching to avoid API spam
+    if (_isFetchingContacts) return false;
+    
+    _isFetchingContacts = true;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      debugPrint('🚀 Fetching contacts: search=$search, page=${page ?? "all"}');
       final result = await _repository.getContacts(
         search: search,
         perPage: perPage ?? 100,
@@ -47,9 +55,12 @@ class ContactProvider extends ChangeNotifier {
       final parsedContacts = _parseContactsResponse(result);
 
       if (page == null) {
+        // Initial page (usually 1) is already in result, avoid requesting it again in loop
+        final int firstPage = _extractCurrentPage(result) ?? 1;
         await _loadRemainingContactPages(
           parsedContacts,
           result,
+          currentPage: firstPage,
           search: search,
           perPage: perPage ?? 100,
         );
@@ -58,12 +69,14 @@ class ContactProvider extends ChangeNotifier {
       _contacts = parsedContacts.whereType<Map>().toList();
       debugPrint('✅ Final Parsed Contacts Count: ${_contacts.length}');
 
+      _isFetchingContacts = false;
       _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
       debugPrint('❌ Error in getContacts: $e');
       _errorMessage = e.toString();
+      _isFetchingContacts = false;
       _isLoading = false;
       notifyListeners();
       return false;
@@ -71,17 +84,8 @@ class ContactProvider extends ChangeNotifier {
   }
 
   List<dynamic> _parseContactsResponse(dynamic result) {
-    debugPrint(
-      'Contacts API Raw Response Keys: ${result is Map ? result.keys.toList() : "Not a Map"}',
-    );
-
     if (result is Map<String, dynamic>) {
       final clientModels = result['client_models'];
-
-      if (clientModels is Map<String, dynamic>) {
-        debugPrint('Client Models Keys: ${clientModels.keys.toList()}');
-        _logPaginationInfo(clientModels['contactsPaginatePage']);
-      }
 
       return _extractLargestContactList([
         if (clientModels is Map<String, dynamic>) clientModels['contacts'],
@@ -105,24 +109,40 @@ class ContactProvider extends ChangeNotifier {
   Future<void> _loadRemainingContactPages(
     List<dynamic> parsedContacts,
     dynamic firstResult, {
+    required int currentPage,
     String? search,
     required int perPage,
   }) async {
-    final visitedPages = <int>{};
+    final visitedPages = <int>{currentPage};
     var nextPage = _extractNextContactsPage(firstResult);
 
+    // Stop if we hit 20 pages to prevent hitting rate limits (Laravel limit is 60 req/min)
     while (nextPage != null && visitedPages.length < 20 && visitedPages.add(nextPage)) {
-      debugPrint('Loading contacts page: $nextPage');
+      debugPrint('📥 Loading extra contacts page: $nextPage');
 
-      final result = await _repository.getContacts(
-        search: search,
-        perPage: perPage,
-        page: nextPage,
-      );
+      try {
+        final result = await _repository.getContacts(
+          search: search,
+          perPage: perPage,
+          page: nextPage,
+        );
 
-      _mergeContacts(parsedContacts, _parseContactsResponse(result));
-      nextPage = _extractNextContactsPage(result);
+        _mergeContacts(parsedContacts, _parseContactsResponse(result));
+        nextPage = _extractNextContactsPage(result);
+      } catch (e) {
+        debugPrint('⚠️ Failed to load page $nextPage: $e');
+        break; // Stop pagination on error
+      }
     }
+  }
+
+  int? _extractCurrentPage(dynamic result) {
+    if (result is! Map<String, dynamic>) return null;
+    final clientModels = result['client_models'];
+    if (clientModels is! Map<String, dynamic>) return null;
+    final paginatePage = clientModels['contactsPaginatePage'];
+    if (paginatePage is Map) return paginatePage['current_page'];
+    return null;
   }
 
   int? _extractNextContactsPage(dynamic result) {
@@ -132,18 +152,35 @@ class ContactProvider extends ChangeNotifier {
     if (clientModels is! Map<String, dynamic>) return null;
 
     final paginatePage = clientModels['contactsPaginatePage'];
-    if (paginatePage is int && paginatePage > 0) return paginatePage;
-
-    if (paginatePage is String) {
-      return int.tryParse(paginatePage);
-    }
 
     if (paginatePage is Map) {
-      final nextPage = paginatePage['next_page'] ??
+      final next = paginatePage['next_page'] ??
           paginatePage['next_page_url'] ??
           paginatePage['current_page'];
-      if (nextPage is int && nextPage > 0) return nextPage;
-      if (nextPage is String) return int.tryParse(nextPage);
+      
+      if (next is int) {
+        // If it's returning the current page as 'next', we need to increment it or stop
+        // Some APIs use 'current_page' as the key even in pagination objects
+        if (next == paginatePage['current_page']) {
+          final lastPage = paginatePage['last_page'];
+          if (lastPage is int && next < lastPage) return next + 1;
+          return null;
+        }
+        return next > 0 ? next : null;
+      }
+      
+      if (next is String) {
+        // Try parsing numeric string
+        final parsed = int.tryParse(next);
+        if (parsed != null) return parsed;
+        
+        // Handle URL like "...?page=2"
+        if (next.contains('page=')) {
+          final uri = Uri.tryParse(next);
+          final pageStr = uri?.queryParameters['page'];
+          if (pageStr != null) return int.tryParse(pageStr);
+        }
+      }
     }
 
     return null;
@@ -224,19 +261,6 @@ class ContactProvider extends ChangeNotifier {
         value.containsKey('mobile_number');
   }
 
-  void _logPaginationInfo(dynamic paginatePage) {
-    if (paginatePage is! Map) return;
-
-    final currentPage = paginatePage['current_page'];
-    final lastPage = paginatePage['last_page'];
-    final perPage = paginatePage['per_page'];
-    final total = paginatePage['total'];
-
-    debugPrint(
-      'Contacts pagination: page=$currentPage lastPage=$lastPage perPage=$perPage total=$total',
-    );
-  }
-
   Future<bool> getContact({
     String? phoneNumber,
     String? email,
@@ -288,10 +312,6 @@ class ContactProvider extends ChangeNotifier {
         otherInfo: otherInfo,
       );
 
-      debugPrint(
-        'Create Contact API Response Keys: ${result.keys.toList()}',
-      );
-
       if (result['reaction'] == 0 || result['success'] == false) {
         throw Exception(
           result['message'] ??
@@ -301,23 +321,8 @@ class ContactProvider extends ChangeNotifier {
         );
       }
 
-      final createdContacts = _extractLargestContactList([
-        result,
-        result['data'],
-        result['contact'],
-        result['data']?['contact'],
-        result['client_models'],
-        result['client_models']?['contacts'],
-      ]);
-
       // Automatically refresh contacts list after creating a new one
       await getContacts(perPage: 100);
-
-      if (_contacts.isEmpty && createdContacts.isNotEmpty) {
-        _contacts = createdContacts;
-        notifyListeners();
-      }
-
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -347,7 +352,6 @@ class ContactProvider extends ChangeNotifier {
         languageCode: languageCode,
         country: country,
       );
-      // Automatically refresh contacts list after updating
       await getContacts(perPage: 100);
       return true;
     } catch (e) {
@@ -370,7 +374,6 @@ class ContactProvider extends ChangeNotifier {
         throw Exception(result['message'] ?? 'Failed to delete contact');
       }
 
-      // Automatically refresh contacts list after deleting one
       await getContacts(perPage: 100);
       return true;
     } catch (e) {
@@ -435,7 +438,6 @@ class ContactProvider extends ChangeNotifier {
         _mapValue(clientModels, 'vendorMessagingUsers'),
       ]);
 
-      // ✅ NEW — call correct chat history endpoint
       dynamic chatResult;
       try {
         chatResult = await _repository.getChatHistory(contactUid);
@@ -445,7 +447,6 @@ class ContactProvider extends ChangeNotifier {
 
       _messages = _extractLargestMessageList([result, chatResult]);
 
-      // Always sort descending (newest first) for reverse ListView
       if (_messages.isNotEmpty) {
         _messages.sort((a, b) {
           final aTime = (a['created_at'] ?? a['messaged_at'] ?? a['timestamp'] ?? '').toString();
@@ -453,14 +454,10 @@ class ContactProvider extends ChangeNotifier {
           return bTime.compareTo(aTime);
         });
       }
-      debugPrint('✅ Messages loaded: ${_messages.length}');
 
       if (_messages.isEmpty) {
         _messages = _messagesFromLoadedContact(contactUid);
-        debugPrint('No messages available in chat history for $contactUid');
       }
-
-      debugPrint('Final Parsed Messages Count: ${_messages.length}');
 
       if (showLoading) _isLoading = false;
       notifyListeners();
@@ -535,7 +532,6 @@ class ContactProvider extends ChangeNotifier {
     }
 
     if (value is Map) {
-      // 1. Check these keys in order of likelihood
       final keysToTry = [
         'whatsappMessageLogs',
         'messages',
@@ -552,13 +548,11 @@ class ContactProvider extends ChangeNotifier {
           if (messages.isNotEmpty) return messages;
         }
         if (nestedValue is Map) {
-          // Handle object keyed by uid: {"uid1": {...}, "uid2": {...}}
           final asList = nestedValue.values.where(_looksLikeMessage).toList();
           if (asList.isNotEmpty) return asList;
         }
       }
 
-      // 2. Specialized check for wrappers common in your APIs
       if (value['data'] != null) {
         final fromData = _extractMessageList(value['data']);
         if (fromData.isNotEmpty) return fromData;
@@ -568,7 +562,6 @@ class ContactProvider extends ChangeNotifier {
         if (fromClientModels.isNotEmpty) return fromClientModels;
       }
 
-      // 3. Fallback: Check if any value in the Map is a List of messages
       for (final val in value.values) {
         if (val is List) {
           final messages = val.where(_looksLikeMessage).toList();
@@ -583,7 +576,6 @@ class ContactProvider extends ChangeNotifier {
   bool _looksLikeMessage(dynamic value) {
     if (value is! Map) return false;
 
-    // Must have some form of message content OR a uid that identifies it as a message
     final hasContent = value.containsKey('message') ||
         value.containsKey('text') ||
         value.containsKey('body') ||
@@ -619,7 +611,6 @@ class ContactProvider extends ChangeNotifier {
         contactUid: contactUid,
         message: message,
       );
-      // Refresh chat data after sending message
       await getContactChatBoxData(contactUid, showLoading: false);
       return true;
     } catch (e) {
@@ -649,7 +640,6 @@ class ContactProvider extends ChangeNotifier {
         throw Exception(result['message'] ?? 'Failed to send template');
       }
 
-      // Refresh chat data after sending template
       await getContactChatBoxData(contactUid, showLoading: false);
       return true;
     } catch (e) {
@@ -667,7 +657,6 @@ class ContactProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      // Validate file exists before uploading
       final file = File(filePath);
       if (!await file.exists()) {
         _errorMessage = 'Audio file not found at: $filePath';
@@ -676,7 +665,6 @@ class ContactProvider extends ChangeNotifier {
       }
 
       final uploadResult = await _repository.uploadMedia(filePath, contactUid: contactUid, type: 'audio');
-      debugPrint('⬆️ Voice upload result: $uploadResult');
 
       if (uploadResult is! Map) {
         _errorMessage = 'Upload failed — unexpected server response';
@@ -684,19 +672,16 @@ class ContactProvider extends ChangeNotifier {
         return false;
       }
 
-      // Robust extraction based on backend response: response.data['data']['fileName']
       final fileName = uploadResult['data']?['fileName'] ?? 
                        uploadResult['fileName'] ?? 
                        uploadResult['data']?['file_name'];
 
       if (fileName == null || fileName.toString().isEmpty) {
         _errorMessage = 'Upload failed — server did not return filename.';
-        debugPrint('❌ No filename in upload result: $uploadResult');
         notifyListeners();
         return false;
       }
 
-      debugPrint('🚀 Sending media with filename: $fileName');
       await _repository.sendMedia(
         contactUid: contactUid,
         fileName: fileName.toString(),
