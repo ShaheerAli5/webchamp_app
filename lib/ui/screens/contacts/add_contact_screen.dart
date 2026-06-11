@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../../../providers/auth_provider.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
@@ -17,52 +16,130 @@ class AddContactScreen extends StatefulWidget {
 class _AddContactScreenState extends State<AddContactScreen> {
   bool _optOutMarketing = false;
   bool _enableReplyBot = true;
-  String? _selectedCountry;
+  bool _enableAiBot = true;
+  
+  dynamic _selectedCountryId;
+  String? _selectedLanguage = 'en';
+  List<int> _selectedGroups = [];
 
-  String? _selectedLanguage;
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _mobileController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _otherInfoController = TextEditingController();
+  final TextEditingController _addressController = TextEditingController();
 
   bool get isEditing => widget.contactData != null;
 
   @override
   void initState() {
     super.initState();
+    _initializeData();
+    
+    // Fetch fresh data from API
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadMetadataAndContact();
+    });
+  }
+
+  void _initializeData() {
     if (isEditing) {
       final data = widget.contactData!;
-      _firstNameController.text = data['first_name'] ?? data['fname'] ?? '';
-      _lastNameController.text = data['last_name'] ?? data['lname'] ?? '';
-      _mobileController.text = data['wa_id'] ?? data['phone_number'] ?? '';
-      _emailController.text = data['email'] ?? '';
-      _selectedCountry = data['country'];
-      _selectedLanguage = data['language_code'] ?? data['language'];
-      _optOutMarketing = data['whatsapp_opt_out'] == '1' || data['whatsapp_opt_out'] == true;
-      _enableReplyBot = data['disable_reply_bot'] != '1' && data['disable_reply_bot'] != true;
+      _firstNameController.text = (data['first_name'] ?? data['fname'] ?? '').toString();
+      _lastNameController.text = (data['last_name'] ?? data['lname'] ?? '').toString();
+      _mobileController.text = (data['wa_id'] ?? data['phone_number'] ?? data['mobile_number'] ?? '').toString();
+      _emailController.text = (data['email'] ?? '').toString();
+      _addressController.text = (data['address'] ?? '').toString();
+      
+      _selectedLanguage = data['language_code'] ?? data['language'] ?? 'en';
+      _optOutMarketing = data['whatsapp_opt_out'] == '1' || data['whatsapp_opt_out'] == true || data['opt_out'] == 1 || data['opt_out'] == true;
+      _enableReplyBot = data['enable_reply_bot'] == true || data['disable_reply_bot'] == false || data['disable_reply_bot'] == 0 || data['disable_reply_bot'] == '0';
+      _enableAiBot = data['enable_ai_bot'] == true;
+      
+      if (data['contact_groups'] is List) {
+        try {
+           _selectedGroups = List<int>.from(data['contact_groups'].map((e) => e is int ? e : int.parse(e.toString())));
+        } catch (_) {}
+      }
+      
+      final countryVal = data['country'];
+      if (countryVal != null) {
+        if (countryVal is int) {
+          _selectedCountryId = countryVal;
+        } else if (countryVal is Map && countryVal['id'] != null) {
+          _selectedCountryId = countryVal['id'];
+        }
+      }
     }
   }
 
-  final Map<String, String> _countryCodes = {
-    'Pakistan': '92',
-    'United States': '1',
-    'United Kingdom': '44',
-    'United Arab Emirates': '971',
-    'Saudi Arabia': '966',
-    'India': '91',
-    'Canada': '1',
-    'Australia': '61',
-  };
+  Future<void> _loadMetadataAndContact() async {
+    final provider = context.read<ContactProvider>();
+    
+    // Ensure we have groups and countries
+    if (provider.availableGroups.isEmpty || provider.availableCountries.isEmpty) {
+      await provider.getContacts();
+    }
+    
+    if (isEditing) {
+      final phone = _mobileController.text;
+      final email = _emailController.text;
+      
+      if (phone.isNotEmpty || email.isNotEmpty) {
+        await provider.getContact(
+          phoneNumber: phone.isNotEmpty ? phone : null,
+          email: email.isNotEmpty ? email : null,
+        );
+        
+        if (provider.selectedContact != null && mounted) {
+          setState(() {
+            final data = provider.selectedContact!;
+            _firstNameController.text = (data['first_name'] ?? data['fname'] ?? _firstNameController.text).toString();
+            _lastNameController.text = (data['last_name'] ?? data['lname'] ?? _lastNameController.text).toString();
+            _emailController.text = (data['email'] ?? _emailController.text).toString();
+            _addressController.text = (data['address'] ?? _addressController.text).toString();
+            
+            _selectedLanguage = data['language_code'] ?? data['language'] ?? _selectedLanguage;
+            _optOutMarketing = data['whatsapp_opt_out'] == '1' || data['whatsapp_opt_out'] == true || data['opt_out'] == 1 || data['opt_out'] == true;
+            _enableReplyBot = data['enable_reply_bot'] == true || data['disable_reply_bot'] == false || data['disable_reply_bot'] == 0 || data['disable_reply_bot'] == '0';
+            _enableAiBot = data['enable_ai_bot'] == true;
 
-  final List<String> _languages = ['English', 'Urdu'];
+            if (data['contact_groups'] is List) {
+              try {
+                 _selectedGroups = List<int>.from(data['contact_groups'].map((e) => e is int ? e : int.parse(e.toString())));
+              } catch (_) {}
+            }
 
-  void _onCountryChanged(String? country) {
+            final countryVal = data['country'];
+            if (countryVal != null) {
+              if (countryVal is int) {
+                _selectedCountryId = countryVal;
+              } else if (countryVal is Map && countryVal['id'] != null) {
+                _selectedCountryId = countryVal['id'];
+              }
+            }
+          });
+        }
+      }
+    }
+    
+    if (mounted) setState(() {});
+  }
+
+  final List<Map<String, String>> _languages = [
+    {'code': 'en', 'name': 'English'},
+    {'code': 'ur', 'name': 'Urdu'},
+  ];
+
+  void _onCountryChanged(dynamic countryId) {
     setState(() {
-      _selectedCountry = country;
-      if (!isEditing && country != null && _countryCodes.containsKey(country)) {
-        String code = _countryCodes[country]!;
-        _mobileController.text = code;
+      _selectedCountryId = countryId;
+      if (!isEditing && countryId != null) {
+        final provider = context.read<ContactProvider>();
+        final countries = provider.availableCountries;
+        final country = countries.firstWhere((c) => c['id'] == countryId || c['countries__id'] == countryId, orElse: () => null);
+        if (country != null) {
+          _mobileController.text = (country['phone_code'] ?? country['code'] ?? '').toString();
+        }
       }
     });
   }
@@ -70,43 +147,71 @@ class _AddContactScreenState extends State<AddContactScreen> {
   Future<void> _submit() async {
     final contactProvider = context.read<ContactProvider>();
 
-    if (_firstNameController.text.isEmpty) {
-      Fluttertoast.showToast(msg: "Please enter first name");
+    if (_firstNameController.text.trim().isEmpty) {
+      Fluttertoast.showToast(msg: "First name is required");
       return;
     }
 
-    if (_mobileController.text.isEmpty) {
-      Fluttertoast.showToast(msg: "Please enter mobile number");
+    if (_selectedCountryId == null) {
+      Fluttertoast.showToast(msg: "Country is required");
+      return;
+    }
+
+    if (!isEditing && _mobileController.text.trim().isEmpty) {
+      Fluttertoast.showToast(msg: "Phone number is required");
+      return;
+    }
+
+    final email = _emailController.text.trim();
+    final address = _addressController.text.trim();
+    if (email.isNotEmpty && !email.contains('@')) {
+      Fluttertoast.showToast(msg: "Enter a valid email");
       return;
     }
 
     bool success;
     if (isEditing) {
+      final uid = widget.contactData!['_uid']?.toString() ?? widget.contactData!['uid']?.toString();
+      if (uid == null) {
+        Fluttertoast.showToast(msg: "Error: Contact UID not found");
+        return;
+      }
+
       success = await contactProvider.updateContact(
-        _mobileController.text,
-        firstName: _firstNameController.text,
-        lastName: _lastNameController.text,
-        email: _emailController.text.isEmpty ? null : _emailController.text,
+        uid,
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        email: email.isEmpty ? null : email,
+        address: address.isEmpty ? null : address,
         languageCode: _selectedLanguage,
-        country: _selectedCountry,
+        country: _selectedCountryId,
+        contactGroups: _selectedGroups,
+        whatsappOptOut: _optOutMarketing,
+        enableAiBot: _enableAiBot,
+        enableReplyBot: _enableReplyBot,
       );
     } else {
       success = await contactProvider.createContact(
-        phoneNumber: _mobileController.text,
-        firstName: _firstNameController.text,
-        lastName: _lastNameController.text,
-        email: _emailController.text.isEmpty ? null : _emailController.text,
+        phoneNumber: _mobileController.text.trim(),
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        email: email.isEmpty ? null : email,
+        address: address.isEmpty ? null : address,
         languageCode: _selectedLanguage,
-        country: _selectedCountry,
+        country: _selectedCountryId,
+        contactGroups: _selectedGroups,
+        whatsappOptOut: _optOutMarketing,
+        enableAiBot: _enableAiBot,
+        enableReplyBot: _enableReplyBot,
       );
     }
 
     if (success) {
-      Fluttertoast.showToast(msg: isEditing ? "Contact updated successfully" : "Contact added successfully");
+      Fluttertoast.showToast(msg: isEditing ? "Contact updated successfully" : "Contact created successfully");
       if (mounted) context.pop();
     } else {
       Fluttertoast.showToast(
-          msg: contactProvider.errorMessage ?? (isEditing ? "Failed to update contact" : "Failed to add contact"));
+          msg: contactProvider.errorMessage ?? (isEditing ? "Failed to update contact" : "Failed to create contact"));
     }
   }
 
@@ -116,7 +221,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
     _lastNameController.dispose();
     _mobileController.dispose();
     _emailController.dispose();
-    _otherInfoController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
@@ -124,45 +229,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
-      appBar: PreferredSize(
-        preferredSize: Size.fromHeight(57.h),
-        child: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(bottom: BorderSide(color: Color(0xFFE8E8EC), width: 1)),
-          ),
-          padding: EdgeInsets.symmetric(horizontal: 16.w),
-          child: AppBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            titleSpacing: 0,
-            automaticallyImplyLeading: false,
-            title: Row(
-              children: [
-                GestureDetector(
-                  onTap: () => context.pop(),
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    height: 40.h,
-                    alignment: Alignment.center,
-                    child: Icon(Icons.arrow_back, size: 20.sp, color: Colors.black),
-                  ),
-                ),
-                SizedBox(width: 12.w),
-                Text(
-                  isEditing ? 'Edit Contact' : 'Add New Contact',
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'Inter',
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      appBar: _buildAppBar(),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -192,72 +259,84 @@ class _AddContactScreenState extends State<AddContactScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildFieldContainer('FIRST NAME', _buildTextField('Enter first name', controller: _firstNameController)),
+                          _buildFieldContainer('FIRST NAME *', _buildTextField('Enter first name', controller: _firstNameController)),
                           _buildFieldContainer('LAST NAME', _buildTextField('Enter last name', controller: _lastNameController)),
-                          _buildFieldContainer('COUNTRY', _buildCountryDropdown()),
+                          _buildFieldContainer('COUNTRY *', _buildCountryDropdown()),
                           _buildMobileFieldContainer(),
                           _buildFieldContainer('LANGUAGE', _buildLanguageDropdown()),
-                          _buildFieldContainer('EMAIL', _buildTextField('email@example.com', controller: _emailController)),
-                          _buildFieldContainer('GROUPS', _buildDropdownField('Select groups')),
+                          _buildFieldContainer('EMAIL', _buildTextField('Enter email', controller: _emailController)),
+                          _buildFieldContainer('ADDRESS', _buildTextField('Enter address', controller: _addressController)),
+                          _buildFieldContainer('GROUPS', _buildGroupsMultiSelect()),
                           SizedBox(height: 8.h),
                           _buildSwitchRow(
-                            'Opt out marketing messages',
+                            'WhatsApp Opt Out',
                             _optOutMarketing,
                             (val) => setState(() => _optOutMarketing = val),
                           ),
                           SizedBox(height: 12.h),
                           _buildSwitchRow(
-                            'Enable reply bot',
+                            'Enable AI Bot',
+                            _enableAiBot,
+                            (val) => setState(() => _enableAiBot = val),
+                          ),
+                          SizedBox(height: 12.h),
+                          _buildSwitchRow(
+                            'Enable Reply Bot',
                             _enableReplyBot,
                             (val) => setState(() => _enableReplyBot = val),
                           ),
                           SizedBox(height: 16.h),
-                          const Divider(color: Color(0xFFE8E8EC)),
-                          SizedBox(height: 16.h),
-                          _buildFieldContainer('OTHER INFORMATION', _buildTextField('', maxLines: 4, controller: _otherInfoController), height: 112.h),
                         ],
                       ),
                     ),
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 20.h),
-                      child: Column(
-                        children: [
-                          SizedBox(height: 24.h),
-                          const Divider(color: Color(0xFFE8E8EC)),
-                          SizedBox(height: 24.h),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildActionButton(
-                                  'Close',
-                                  const Color(0xFFF2F4F7),
-                                  const Color(0xFF344054),
-                                  () => context.pop(),
-                                ),
-                              ),
-                              SizedBox(width: 12.w),
-                              Expanded(
-                                child: Consumer<ContactProvider>(
-                                  builder: (context, provider, child) {
-                                    return _buildActionButton(
-                                      provider.isLoading ? 'Submitting...' : (isEditing ? 'Update' : 'Submit'),
-                                      const Color(0xFF007176),
-                                      Colors.white,
-                                      provider.isLoading ? () {} : _submit,
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+                    _buildBottomActions(),
                   ],
                 ),
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return PreferredSize(
+      preferredSize: Size.fromHeight(57.h),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(bottom: BorderSide(color: Color(0xFFE8E8EC), width: 1)),
+        ),
+        padding: EdgeInsets.symmetric(horizontal: 16.w),
+        child: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          titleSpacing: 0,
+          automaticallyImplyLeading: false,
+          title: Row(
+            children: [
+              GestureDetector(
+                onTap: () => context.pop(),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  height: 40.h,
+                  alignment: Alignment.center,
+                  child: Icon(Icons.arrow_back, size: 20.sp, color: Colors.black),
+                ),
+              ),
+              SizedBox(width: 12.w),
+              Text(
+                isEditing ? 'Edit Contact' : 'Create New Contact',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -297,7 +376,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'MOBILE NUMBER',
+            'PHONE NUMBER ${isEditing ? "" : "*"}',
             style: TextStyle(
               fontSize: 10.sp,
               fontWeight: FontWeight.bold,
@@ -305,18 +384,19 @@ class _AddContactScreenState extends State<AddContactScreen> {
               fontFamily: 'Inter',
             ),
           ),
-          Text(
-            'Number should be with country code without 0 or +',
-            style: TextStyle(
-              fontSize: 9.sp,
-              color: const Color(0xFF98A2B3),
-              fontFamily: 'Inter',
+          if (!isEditing)
+            Text(
+              'Include country code without 0 or +',
+              style: TextStyle(
+                fontSize: 9.sp,
+                color: const Color(0xFF98A2B3),
+                fontFamily: 'Inter',
+              ),
             ),
-          ),
           SizedBox(height: 8.h),
           SizedBox(
             height: 44.h,
-            child: _buildTextField('eg. 92 344 1234567', controller: _mobileController, enabled: !isEditing),
+            child: _buildTextField('eg. 923441234567', controller: _mobileController, enabled: !isEditing),
           ),
         ],
       ),
@@ -368,6 +448,8 @@ class _AddContactScreenState extends State<AddContactScreen> {
   }
 
   Widget _buildCountryDropdown() {
+    final countries = context.watch<ContactProvider>().availableCountries;
+
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFF4F4F4),
@@ -375,31 +457,30 @@ class _AddContactScreenState extends State<AddContactScreen> {
       ),
       padding: EdgeInsets.symmetric(horizontal: 16.w),
       child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedCountry,
+        child: DropdownButton<dynamic>(
+          value: _selectedCountryId,
           hint: Text(
-            'Select country',
+            countries.isEmpty ? 'Loading countries...' : 'Select country',
             style: TextStyle(
               color: const Color(0xFF98A2B3),
               fontSize: 14.sp,
               fontFamily: 'Plus Jakarta Sans',
               fontWeight: FontWeight.w400,
-              height: 20 / 14,
             ),
           ),
           isExpanded: true,
           icon: Icon(Icons.keyboard_arrow_down, color: const Color(0xFF667085), size: 20.sp),
-          items: _countryCodes.keys.map((String country) {
-            return DropdownMenuItem<String>(
-              value: country,
+          items: countries.map((country) {
+            final id = country['id'] ?? country['countries__id'];
+            final name = country['name'] ?? country['countries__name'] ?? 'Unknown';
+            return DropdownMenuItem<dynamic>(
+              value: id,
               child: Text(
-                country,
+                name,
                 style: TextStyle(
                   fontSize: 14.sp,
                   color: const Color(0xFF151C27),
                   fontFamily: 'Plus Jakarta Sans',
-                  fontWeight: FontWeight.w400,
-                  height: 20 / 14,
                 ),
               ),
             );
@@ -426,23 +507,19 @@ class _AddContactScreenState extends State<AddContactScreen> {
               color: const Color(0xFF98A2B3),
               fontSize: 14.sp,
               fontFamily: 'Plus Jakarta Sans',
-              fontWeight: FontWeight.w400,
-              height: 20 / 14,
             ),
           ),
           isExpanded: true,
           icon: Icon(Icons.keyboard_arrow_down, color: const Color(0xFF667085), size: 20.sp),
-          items: _languages.map((String language) {
+          items: _languages.map((lang) {
             return DropdownMenuItem<String>(
-              value: language,
+              value: lang['code'],
               child: Text(
-                language,
+                lang['name']!,
                 style: TextStyle(
                   fontSize: 14.sp,
                   color: const Color(0xFF151C27),
                   fontFamily: 'Plus Jakarta Sans',
-                  fontWeight: FontWeight.w400,
-                  height: 20 / 14,
                 ),
               ),
             );
@@ -457,29 +534,94 @@ class _AddContactScreenState extends State<AddContactScreen> {
     );
   }
 
-  Widget _buildDropdownField(String hint) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4F4F4),
-        borderRadius: BorderRadius.circular(12.r),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            hint,
-            style: TextStyle(
-              color: const Color(0xFF98A2B3),
-              fontSize: 14.sp,
-              fontFamily: 'Plus Jakarta Sans',
-              fontWeight: FontWeight.w400,
-              height: 20 / 14,
+  Widget _buildGroupsMultiSelect() {
+    final availableGroups = context.watch<ContactProvider>().availableGroups;
+    
+    String text = _selectedGroups.isEmpty 
+        ? 'Select groups' 
+        : availableGroups
+            .where((g) => _selectedGroups.contains(g['id'] ?? g['contact_groups__id']))
+            .map((g) => g['name'] ?? g['contact_groups__name'] ?? '')
+            .where((name) => name.isNotEmpty)
+            .join(', ');
+
+    return GestureDetector(
+      onTap: () => _showGroupsDialog(availableGroups),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF4F4F4),
+          borderRadius: BorderRadius.circular(12.r),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: _selectedGroups.isEmpty ? const Color(0xFF98A2B3) : const Color(0xFF151C27),
+                  fontSize: 14.sp,
+                  fontFamily: 'Plus Jakarta Sans',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
-          ),
-          Icon(Icons.keyboard_arrow_down, color: const Color(0xFF667085), size: 20.sp),
-        ],
+            Icon(Icons.keyboard_arrow_down, color: const Color(0xFF667085), size: 20.sp),
+          ],
+        ),
       ),
+    );
+  }
+
+  void _showGroupsDialog(List<dynamic> availableGroups) {
+    if (availableGroups.isEmpty) {
+      Fluttertoast.showToast(msg: "No groups available. Please create them in the web portal.");
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Select Groups'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: availableGroups.map((group) {
+                    final id = group['id'] ?? group['contact_groups__id'];
+                    final name = group['name'] ?? group['contact_groups__name'] ?? 'Unnamed Group';
+                    final isSelected = _selectedGroups.contains(id);
+                    
+                    return CheckboxListTile(
+                      title: Text(name),
+                      value: isSelected,
+                      activeColor: const Color(0xFF007176),
+                      onChanged: (val) {
+                        setDialogState(() {
+                          if (val == true) {
+                            if (id != null) _selectedGroups.add(id);
+                          } else {
+                            _selectedGroups.remove(id);
+                          }
+                        });
+                        setState(() {});
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done', style: TextStyle(color: Color(0xFF007176))),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -508,6 +650,44 @@ class _AddContactScreenState extends State<AddContactScreen> {
               color: const Color(0xFF344054),
               fontFamily: 'Inter',
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomActions() {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 20.h),
+      child: Column(
+        children: [
+          SizedBox(height: 24.h),
+          const Divider(color: Color(0xFFE8E8EC)),
+          SizedBox(height: 24.h),
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  'Close',
+                  const Color(0xFFF2F4F7),
+                  const Color(0xFF344054),
+                  () => context.pop(),
+                ),
+              ),
+              SizedBox(width: 12.w),
+              Expanded(
+                child: Consumer<ContactProvider>(
+                  builder: (context, provider, child) {
+                    return _buildActionButton(
+                      provider.isLoading ? 'Processing...' : (isEditing ? 'Update Contact' : 'Save'),
+                      const Color(0xFF007176),
+                      Colors.white,
+                      provider.isLoading ? () {} : _submit,
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ],
       ),

@@ -7,8 +7,27 @@ import '../../../providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final provider = context.read<ContactProvider>();
+        // Only fetch if empty to prevent resetting pagination state
+        if (provider.contacts.isEmpty) {
+          provider.getContacts();
+        }
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -255,18 +274,21 @@ class HomeScreen extends StatelessWidget {
           children: [
             _buildMetricCard(
               'TOTAL\nCONTACTS',
-              contactProvider.contacts.length.toString(),
-              Iconsax.user,
-              AppColors.navActive,
+              (contactProvider.total > 0
+                      ? contactProvider.total
+                      : contactProvider.contacts.length)
+                  .toString(),
+              Icons.person,
+              const Color(0xFF007176),
               onTap: () => context.go('/contacts'),
             ),
-            _buildMetricCard('TOTAL\nGROUPS', '0', Iconsax.people, const Color(0xFF6D8C00)),
-            _buildMetricCard('TOTAL\nCAMPAIGNS', '0', Iconsax.volume_high, const Color(0xFF8B002D)),
-            _buildMetricCard('TOTAL\nTEMPLATES', '0', Iconsax.layer, const Color(0xFF6D8C00)),
-            _buildMetricCard('TOTAL\nBOT REPLIES', '0', Iconsax.box_1, const Color(0xFF6B8E23)),
-            _buildMetricCard('ACTIVE\nTEAM MEMBERS', '0', Iconsax.user_edit, Colors.red.shade900),
-            _buildMetricCard('MESSAGES\nIN QUEUE', '0', Iconsax.add_square, const Color(0xFF6B8E23)),
-            _buildMetricCard('MESSAGES\nPROCESSED', '0', Iconsax.tick_square, const Color(0xFF6B8E23)),
+            _buildMetricCard('TOTAL\nGROUPS', '0', Icons.group_work_rounded, const Color(0xFF6D8C00)),
+            _buildMetricCard('TOTAL\nCAMPAIGNS', '0', Icons.campaign, const Color(0xFF8B002D)),
+            _buildMetricCard('TOTAL\nTEMPLATES', '0', Icons.layers_rounded, const Color(0xFF6D8C00)),
+            _buildMetricCard('TOTAL\nBOT REPLIES', '0', Icons.inventory_2_rounded, const Color(0xFF6B8E23)),
+            _buildMetricCard('ACTIVE\nTEAM MEMBERS', '0', Icons.person_off_rounded, const Color(0xFFD92D20)),
+            _buildMetricCard('MESSAGES\nIN QUEUE', '0', Icons.schedule_send_rounded, const Color(0xFF6B8E23)),
+            _buildMetricCard('MESSAGES\nPROCESSED', '0', Icons.task_alt_rounded, const Color(0xFF007176)),
           ],
         );
       },

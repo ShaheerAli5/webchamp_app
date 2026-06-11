@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../data/repositories/contact_repository.dart';
+import '../../../../core/utils/helpers.dart';
 
 class ContactProvider extends ChangeNotifier {
   final ContactRepository _repository;
@@ -19,6 +20,20 @@ class ContactProvider extends ChangeNotifier {
   List<dynamic> _contacts = [];
   List<dynamic> get contacts => _contacts;
 
+  List<dynamic> _availableGroups = [];
+  List<dynamic> get availableGroups => _availableGroups;
+
+  List<dynamic> _availableCountries = [];
+  List<dynamic> get availableCountries => _availableCountries;
+
+  int _total = 0;
+  int get total => _total;
+
+  int _currentPage = 1;
+  bool _hasMore = true;
+  bool get hasMore => _hasMore;
+  String? _lastSearch;
+
   Map<String, dynamic>? _selectedContact;
   Map<String, dynamic>? get selectedContact => _selectedContact;
 
@@ -33,168 +48,209 @@ class ContactProvider extends ChangeNotifier {
 
   Future<bool> getContacts({
     String? search,
-    int? perPage,
-    int? page,
+    bool loadMore = false,
   }) async {
-    // 🛡️ GUARD: Prevent concurrent contact fetching to avoid API spam
+    // 🛡️ GUARD: Prevent concurrent contact fetching
     if (_isFetchingContacts) return false;
+    if (loadMore && !_hasMore) return false;
+
+    if (!loadMore) {
+      _currentPage = 1;
+      _hasMore = true;
+    } else {
+      _currentPage++;
+    }
     
     _isFetchingContacts = true;
     _isLoading = true;
     _errorMessage = null;
+    _lastSearch = search;
     notifyListeners();
 
     try {
-      debugPrint('🚀 Fetching contacts: search=$search, page=${page ?? "all"}');
-      final result = await _repository.getContacts(
+      print('Loading Page: $_currentPage');
+      var rawResult = await _repository.getContacts(
         search: search,
-        perPage: perPage ?? 100,
-        page: page,
+        page: _currentPage,
+        perPage: 100,
       );
-
-      final parsedContacts = _parseContactsResponse(result);
-
-      if (page == null) {
-        // Initial page (usually 1) is already in result, avoid requesting it again in loop
-        final int firstPage = _extractCurrentPage(result) ?? 1;
-        await _loadRemainingContactPages(
-          parsedContacts,
-          result,
-          currentPage: firstPage,
-          search: search,
-          perPage: perPage ?? 100,
-        );
+      
+      final result = Helpers.sanitizeData(rawResult);
+      
+      // Extract contacts list using a robust parser
+      List<dynamic> newContacts = _parseContactsResponse(result);
+      
+      if (!loadMore) {
+        // Clear only on initial load or pull-to-refresh
+        _contacts.clear();
+      }
+      
+      // 🛡️ Defensive: Filter duplicates if any
+      final existingUids = _contacts.map(_extractUid).toSet();
+      for (var contact in newContacts) {
+        final uid = _extractUid(contact);
+        if (uid == null || !existingUids.contains(uid)) {
+          _contacts.add(contact);
+          if (uid != null) existingUids.add(uid);
+        }
       }
 
-      _contacts = parsedContacts.whereType<Map>().toList();
-      debugPrint('✅ Final Parsed Contacts Count: ${_contacts.length}');
+      // Handle pagination object - Priority to root response['pagination']
+      dynamic pagination = result['pagination'];
+      if (pagination == null && result['data'] is Map) {
+        pagination = result['data']['pagination'];
+      }
+      if (pagination == null && result['client_models'] is Map) {
+        pagination = result['client_models']['contactsPaginatePage'];
+      }
+      
+      if (pagination is Map) {
+        _total = _toInt(pagination['total']) ?? _toInt(pagination['count']) ?? _contacts.length;
+        
+        final backendCurrentPage = _toInt(pagination['current_page']);
+        final backendLastPage = _toInt(pagination['last_page']);
+        
+        if (pagination.containsKey('has_more_pages')) {
+          _hasMore = pagination['has_more_pages'] == true;
+        } else if (backendCurrentPage != null && backendLastPage != null) {
+          _hasMore = backendCurrentPage < backendLastPage;
+        } else {
+          _hasMore = _contacts.length < _total;
+        }
+
+        if (backendCurrentPage != null) {
+          _currentPage = backendCurrentPage;
+        }
+        
+        debugPrint('Backend Pagination: total=$_total, hasMore=$_hasMore, currentPage=$_currentPage');
+      } else {
+        _total = _extractTotal(result) ?? _contacts.length;
+        _hasMore = _contacts.length < _total;
+        debugPrint('Fallback Pagination: total=$_total, hasMore=$_hasMore');
+      }
+      
+      // User requested specific logs
+      print('Current Page: $_currentPage');
+      print('New Contacts: ${newContacts.length}');
+      print('Total Contacts: ${_contacts.length}');
+      print('Has More Pages: $_hasMore');
+
+      // Extract metadata
+      _availableGroups = _extractGroupsFromResponse(result);
+      _availableCountries = _extractCountriesFromResponse(result);
 
       _isFetchingContacts = false;
       _isLoading = false;
       notifyListeners();
       return true;
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('❌ Error in getContacts: $e');
+      debugPrint('Stacktrace: $stack');
       _errorMessage = e.toString();
       _isFetchingContacts = false;
       _isLoading = false;
+      if (loadMore) {
+        _currentPage--; // Rollback page on failure
+      }
       notifyListeners();
       return false;
     }
   }
 
-  List<dynamic> _parseContactsResponse(dynamic result) {
-    if (result is Map<String, dynamic>) {
+  String? _extractUid(dynamic contact) {
+    if (contact is! Map) return null;
+    return (contact['_uid'] ?? contact['uid'] ?? contact['id'] ?? contact['wa_id'])?.toString();
+  }
+
+  bool _determineHasMore(dynamic result, int currentLoaded, int totalAvailable) {
+    if (result is Map) {
       final clientModels = result['client_models'];
+      final data = result['data'];
+      final paginate = (clientModels is Map ? clientModels['contactsPaginatePage'] : null) ??
+                       (data is Map ? data['contactsPaginatePage'] : null) ??
+                       result['contactsPaginatePage'];
 
-      return _extractLargestContactList([
-        if (clientModels is Map<String, dynamic>) clientModels['contacts'],
-        if (clientModels is Map<String, dynamic>) clientModels['contactsPaginatePage'],
-        if (clientModels is Map<String, dynamic>)
-          _mapValue(clientModels['contactsPaginatePage'], 'data'),
-        result['data'],
-        _mapValue(result['data'], 'contacts'),
-        _mapValue(result['data'], 'data'),
-        result['contacts'],
-      ]);
+      if (paginate is Map) {
+        final lastPage = _toInt(paginate['last_page']);
+        final currentPage = _toInt(paginate['current_page']);
+        if (lastPage != null && currentPage != null) {
+          return currentPage < lastPage;
+        }
+      } else if (paginate is int) {
+        // If the backend returns just a number for contactsPaginatePage, 
+        // it might represent the last page or current page. 
+        // Based on user prompt "Use this value to determine whether more pages exist",
+        // if it's total pages:
+        return _currentPage < paginate;
+      }
+    }
+    
+    // Fallback: compare loaded count with total
+    return currentLoaded < totalAvailable;
+  }
+
+  List<dynamic> _parseContactsResponse(dynamic result) {
+    if (result == null || result is! Map) {
+      return result is List ? result : [];
     }
 
-    if (result is List) {
-      return result.where(_looksLikeContact).toList();
+    // Use the exact backend path: response.data['client_models']['contacts']
+    final clientModels = result['client_models'];
+    if (clientModels is Map) {
+      final contacts = clientModels['contacts'];
+      if (contacts is Map) {
+        final contactsList = contacts.values.toList();
+        debugPrint('Contacts Map Count: ${contacts.length}');
+        return contactsList;
+      } else if (contacts is List) {
+        debugPrint('Contacts List Count: ${contacts.length}');
+        return contacts;
+      }
     }
 
+    // Fallback for different API response structures
+    final rootContacts = result['contacts'];
+    if (rootContacts is Map) {
+      final contactsList = rootContacts.values.toList();
+      debugPrint('Contacts Map Count (root): ${rootContacts.length}');
+      return contactsList;
+    } else if (rootContacts is List) {
+      debugPrint('Contacts List Count (root): ${rootContacts.length}');
+      return rootContacts;
+    }
+
+    debugPrint('⚠️ No contacts found in client_models.contacts or contacts field.');
     return [];
   }
 
-  Future<void> _loadRemainingContactPages(
-    List<dynamic> parsedContacts,
-    dynamic firstResult, {
-    required int currentPage,
-    String? search,
-    required int perPage,
-  }) async {
-    final visitedPages = <int>{currentPage};
-    var nextPage = _extractNextContactsPage(firstResult);
-
-    // Stop if we hit 20 pages to prevent hitting rate limits (Laravel limit is 60 req/min)
-    while (nextPage != null && visitedPages.length < 20 && visitedPages.add(nextPage)) {
-      debugPrint('📥 Loading extra contacts page: $nextPage');
-
-      try {
-        final result = await _repository.getContacts(
-          search: search,
-          perPage: perPage,
-          page: nextPage,
-        );
-
-        _mergeContacts(parsedContacts, _parseContactsResponse(result));
-        nextPage = _extractNextContactsPage(result);
-      } catch (e) {
-        debugPrint('⚠️ Failed to load page $nextPage: $e');
-        break; // Stop pagination on error
-      }
+  int? _extractTotal(dynamic result) {
+    if (result is! Map) return null;
+    final data = result['data'] ?? result;
+    final clientModels = result['client_models'];
+    
+    // Check various common total keys
+    final paginate = (clientModels is Map ? clientModels['contactsPaginatePage'] : null) ?? 
+                     (data is Map ? data['contactsPaginatePage'] : null);
+    
+    if (paginate is Map) {
+      final total = paginate['total'] ?? paginate['total_records'] ?? paginate['count'];
+      if (total != null) return _toInt(total);
     }
-  }
 
-  int? _extractCurrentPage(dynamic result) {
-    if (result is! Map<String, dynamic>) return null;
-    final clientModels = result['client_models'];
-    if (clientModels is! Map<String, dynamic>) return null;
-    final paginatePage = clientModels['contactsPaginatePage'];
-    if (paginatePage is Map) return paginatePage['current_page'];
-    return null;
-  }
-
-  int? _extractNextContactsPage(dynamic result) {
-    if (result is! Map<String, dynamic>) return null;
-
-    final clientModels = result['client_models'];
-    if (clientModels is! Map<String, dynamic>) return null;
-
-    final paginatePage = clientModels['contactsPaginatePage'];
-
-    if (paginatePage is Map) {
-      final next = paginatePage['next_page'] ??
-          paginatePage['next_page_url'] ??
-          paginatePage['current_page'];
-      
-      if (next is int) {
-        // If it's returning the current page as 'next', we need to increment it or stop
-        // Some APIs use 'current_page' as the key even in pagination objects
-        if (next == paginatePage['current_page']) {
-          final lastPage = paginatePage['last_page'];
-          if (lastPage is int && next < lastPage) return next + 1;
-          return null;
-        }
-        return next > 0 ? next : null;
-      }
-      
-      if (next is String) {
-        // Try parsing numeric string
-        final parsed = int.tryParse(next);
-        if (parsed != null) return parsed;
-        
-        // Handle URL like "...?page=2"
-        if (next.contains('page=')) {
-          final uri = Uri.tryParse(next);
-          final pageStr = uri?.queryParameters['page'];
-          if (pageStr != null) return int.tryParse(pageStr);
-        }
-      }
+    final keys = ['total', 'total_records', 'all_contacts_count', 'count', 'contacts_count'];
+    for (var key in keys) {
+      final val = result[key] ?? (clientModels is Map ? clientModels[key] : null) ?? (data is Map ? data[key] : null);
+      if (val != null) return _toInt(val);
     }
 
     return null;
   }
 
-  void _mergeContacts(List<dynamic> contacts, List<dynamic> incomingContacts) {
-    final existingIds = contacts.map(_contactIdentity).whereType<String>().toSet();
-
-    for (final contact in incomingContacts) {
-      final identity = _contactIdentity(contact);
-      if (identity == null || existingIds.add(identity)) {
-        contacts.add(contact);
-      }
-    }
+  int? _toInt(dynamic val) {
+    if (val == null) return null;
+    if (val is int) return val;
+    if (val is double) return val.toInt();
+    return int.tryParse(val.toString());
   }
 
   String? _contactIdentity(dynamic contact) {
@@ -258,7 +314,9 @@ class ContactProvider extends ChangeNotifier {
         value.containsKey('contacts__id') ||
         value.containsKey('phone_number') ||
         value.containsKey('wa_id') ||
-        value.containsKey('mobile_number');
+        value.containsKey('mobile_number') ||
+        value.containsKey('first_name') ||
+        value.containsKey('fname');
   }
 
   Future<bool> getContact({
@@ -287,14 +345,17 @@ class ContactProvider extends ChangeNotifier {
 
   Future<bool> createContact({
     required String phoneNumber,
-    String? firstName,
+    required String firstName,
     String? lastName,
     String? email,
+    String? address,
     String? languageCode,
-    String? country,
+    required dynamic country,
+    List<int>? contactGroups,
     bool? whatsappOptOut,
+    bool? enableAiBot,
     bool? enableReplyBot,
-    String? otherInfo,
+    Map<String, dynamic>? customInputFields,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -305,11 +366,14 @@ class ContactProvider extends ChangeNotifier {
         firstName: firstName,
         lastName: lastName,
         email: email,
+        address: address,
         languageCode: languageCode,
         country: country,
+        contactGroups: contactGroups,
         whatsappOptOut: whatsappOptOut,
+        enableAiBot: enableAiBot,
         enableReplyBot: enableReplyBot,
-        otherInfo: otherInfo,
+        customInputFields: customInputFields,
       );
 
       if (result['reaction'] == 0 || result['success'] == false) {
@@ -322,7 +386,7 @@ class ContactProvider extends ChangeNotifier {
       }
 
       // Automatically refresh contacts list after creating a new one
-      await getContacts(perPage: 100);
+      await getContacts();
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -333,26 +397,51 @@ class ContactProvider extends ChangeNotifier {
   }
 
   Future<bool> updateContact(
-    String phoneNumber, {
-    String? firstName,
+    String contactUid, {
+    required String firstName,
     String? lastName,
     String? email,
+    String? address,
     String? languageCode,
-    String? country,
+    required dynamic country,
+    List<int>? contactGroups,
+    bool? whatsappOptOut,
+    bool? enableAiBot,
+    bool? enableReplyBot,
+    Map<String, dynamic>? customInputFields,
   }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
       await _repository.updateContact(
-        phoneNumber,
+        contactUid,
         firstName: firstName,
         lastName: lastName,
         email: email,
+        address: address,
         languageCode: languageCode,
         country: country,
+        contactGroups: contactGroups,
+        whatsappOptOut: whatsappOptOut,
+        enableAiBot: enableAiBot,
+        enableReplyBot: enableReplyBot,
+        customInputFields: customInputFields,
       );
-      await getContacts(perPage: 100);
+      
+      // Refresh current page to see updates
+      await getContacts();
+      
+      // If we are editing a selected contact, refresh its data too
+      if (_selectedContact != null) {
+        final uid = _selectedContact!['_uid']?.toString() ?? _selectedContact!['uid']?.toString();
+        if (uid == contactUid) {
+          // Re-fetch or update local map
+          // Since getContact uses phoneNumber/email, we might need a getContactByUid if it exists
+          // For now, refreshing list is the primary requirement
+        }
+      }
+
       return true;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -374,7 +463,7 @@ class ContactProvider extends ChangeNotifier {
         throw Exception(result['message'] ?? 'Failed to delete contact');
       }
 
-      await getContacts(perPage: 100);
+      await getContacts();
       return true;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -906,6 +995,36 @@ class ContactProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  List<dynamic> _extractGroupsFromResponse(dynamic result) {
+    if (result is! Map) return _availableGroups;
+    final clientModels = result['client_models'];
+    if (clientModels is Map) {
+      final groups = clientModels['contactGroups'] ?? clientModels['groups'];
+      if (groups is List) return groups;
+    }
+    final data = result['data'];
+    if (data is Map) {
+      final groups = data['contactGroups'] ?? data['groups'];
+      if (groups is List) return groups;
+    }
+    return _availableGroups;
+  }
+
+  List<dynamic> _extractCountriesFromResponse(dynamic result) {
+    if (result is! Map) return _availableCountries;
+    final clientModels = result['client_models'];
+    if (clientModels is Map) {
+      final countries = clientModels['countries'];
+      if (countries is List) return countries;
+    }
+    final data = result['data'];
+    if (data is Map) {
+      final countries = data['countries'];
+      if (countries is List) return countries;
+    }
+    return _availableCountries;
   }
 
   Future<bool> assignLabels({

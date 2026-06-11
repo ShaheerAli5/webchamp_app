@@ -363,6 +363,22 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                     phone,
                     style: TextStyle(fontSize: 14.sp, color: Colors.grey),
                   ),
+                SizedBox(height: 16.h),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context); // Close info sheet
+                    context.push('/edit-contact', extra: contact).then((_) {
+                      provider.getContacts(); // Refresh list
+                    });
+                  },
+                  icon: const Icon(Icons.edit, size: 18),
+                  label: const Text("Edit Contact"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF007176),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
+                  ),
+                ),
                 SizedBox(height: 24.h),
                 Expanded(
                   child: ListView(
@@ -623,7 +639,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   Future<void> _loadChatData() async {
     final provider = context.read<ContactProvider>();
     if (provider.contacts.isEmpty) {
-      await provider.getContacts(perPage: 100);
+      await provider.getContacts();
     }
     await provider.getContactChatBoxData(widget.uid);
   }

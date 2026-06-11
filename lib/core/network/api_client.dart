@@ -18,11 +18,12 @@ class ApiClient {
       'Api-Request-Signature': 'mobile-app-request',
     },
   )) {
+    print('ApiClient Initialized with Base URL: ${ApiConstants.baseUrl}');
     _dio.interceptors.add(DioInterceptor(storageService));
     _dio.interceptors.add(LogInterceptor(
       requestBody: true,
       requestHeader: true,
-      responseBody: true,
+      responseBody: false, // 🛡️ Disabled to prevent crashes from malformed UTF-16 in dirty data
       responseHeader: true,
       error: true,
     ));
@@ -46,6 +47,44 @@ class ApiClient {
     print('DATA: $data');
     print('======================');
     return await _dio.post(
+      path,
+      data: data,
+      queryParameters: queryParameters,
+      options: options,
+    );
+  }
+
+  Future<Response> put(
+      String path, {
+        dynamic data,
+        Map<String, dynamic>? queryParameters,
+        Options? options,
+      }) async {
+    return await _dio.put(
+      path,
+      data: data,
+      queryParameters: queryParameters,
+      options: options,
+    );
+  }
+
+  Future<Response> patch(
+      String path, {
+        dynamic data,
+        Map<String, dynamic>? queryParameters,
+        Options? options,
+      }) async {
+    return await _dio.patch(
+      path,
+      data: data,
+      queryParameters: queryParameters,
+      options: options,
+    );
+  }
+
+  Future<Response> delete(String path,
+      {dynamic data, Map<String, dynamic>? queryParameters, Options? options}) async {
+    return await _dio.delete(
       path,
       data: data,
       queryParameters: queryParameters,

@@ -44,15 +44,15 @@ class ContactApiService {
   // API 1 - Get All Contacts
   Future<Response> getContacts({
     String? search,
+    int page = 1,
     int? perPage,
-    int? page,
   }) async {
     return await _apiClient.get(
       ApiConstants.contactsData,
       queryParameters: {
         if (search != null) 'search': search,
-        'per_page': perPage ?? 100,
-        if (page != null) 'page': page,
+        'page': page,
+        if (perPage != null) 'per_page': perPage,
       },
     );
   }
@@ -71,57 +71,90 @@ class ContactApiService {
     );
   }
 
+  /**
+   * BACKEND OPTIMIZATION NOTES (for Server-side):
+   * 1. DB Indexes: Ensure 'phone_number', 'phone', 'vendor_id', and 'email' are indexed.
+   * 2. Performance: Use DB transactions. Avoid N+1 queries by eager loading 'groups' and 'labels'.
+   * 3. Response: Return 201 Created on success. Keep response payload minimal (only the new contact object).
+   */
+
   // API 3 - Create Contact
   Future<Response> createContact({
     required String phoneNumber,
-    String? firstName,
+    required String firstName,
     String? lastName,
     String? email,
+    String? address,
     String? languageCode,
-    String? country,
+    required dynamic country,
+    List<int>? contactGroups,
     bool? whatsappOptOut,
+    bool? enableAiBot,
     bool? enableReplyBot,
-    String? otherInfo,
+    Map<String, dynamic>? customInputFields,
   }) async {
+    // Strict validation
+    if (phoneNumber.isEmpty) throw Exception('Phone number is required');
+    if (firstName.isEmpty) throw Exception('First name is required');
+
     final data = {
       'phone_number': phoneNumber,
-      if (firstName != null && firstName.isNotEmpty) 'first_name': firstName,
-      if (lastName != null && lastName.isNotEmpty) 'last_name': lastName,
-      if (email != null && email.isNotEmpty) 'email': email,
-      if (languageCode != null && languageCode.isNotEmpty)
-        'language_code': languageCode,
-      if (country != null && country.isNotEmpty) 'country': country,
-      if (whatsappOptOut != null) 'whatsapp_opt_out': whatsappOptOut ? '1' : '0',
-      if (enableReplyBot != null) 'disable_reply_bot': enableReplyBot ? '0' : '1',
-      if (otherInfo != null && otherInfo.isNotEmpty) 'other_info': otherInfo,
+      'phone': phoneNumber, // Added for new API schema support
+      'first_name': firstName,
+      'name': '$firstName ${lastName ?? ''}'.trim(), // Added for new API schema support
+      if (lastName != null) 'last_name': lastName,
+      if (email != null) 'email': email,
+      if (address != null) 'address': address, // Added for new API schema support
+      'language_code': languageCode ?? 'en',
+      'country': country,
+      if (contactGroups != null) 'contact_groups': contactGroups,
+      if (whatsappOptOut != null) 'whatsapp_opt_out': whatsappOptOut,
+      if (enableAiBot != null) 'enable_ai_bot': enableAiBot,
+      if (enableReplyBot != null) 'enable_reply_bot': enableReplyBot,
+      if (customInputFields != null) 'custom_input_fields': customInputFields,
     };
+
+    debugPrint('🚀 Creating Contact with payload: $data');
 
     return await _apiClient.post(
       ApiConstants.createContact,
       data: data,
-      options: Options(contentType: Headers.formUrlEncodedContentType),
     );
   }
 
   // API 4 - Update Contact
   Future<Response> updateContact(
-    String phoneNumber, {
-    String? firstName,
+    String contactUid, {
+    required String firstName,
     String? lastName,
     String? email,
+    String? address,
     String? languageCode,
-    String? country,
+    required dynamic country,
+    List<int>? contactGroups,
+    bool? whatsappOptOut,
+    bool? enableAiBot,
+    bool? enableReplyBot,
+    Map<String, dynamic>? customInputFields,
   }) async {
-    return await _apiClient.post(
-      ApiConstants.updateContact(phoneNumber),
-      data: {
-        if (firstName != null) 'first_name': firstName,
-        if (lastName != null) 'last_name': lastName,
-        if (email != null) 'email': email,
-        if (languageCode != null) 'language_code': languageCode,
-        if (country != null) 'country': country,
-      },
-      options: Options(contentType: Headers.formUrlEncodedContentType),
+    final data = {
+      'first_name': firstName,
+      'name': '$firstName ${lastName ?? ''}'.trim(),
+      if (lastName != null) 'last_name': lastName,
+      if (email != null) 'email': email,
+      if (address != null) 'address': address,
+      'language_code': languageCode ?? 'en',
+      'country': country,
+      if (contactGroups != null) 'contact_groups': contactGroups,
+      if (whatsappOptOut != null) 'whatsapp_opt_out': whatsappOptOut,
+      if (enableAiBot != null) 'enable_ai_bot': enableAiBot,
+      if (enableReplyBot != null) 'enable_reply_bot': enableReplyBot,
+      if (customInputFields != null) 'custom_input_fields': customInputFields,
+    };
+
+    return await _apiClient.put(
+      ApiConstants.updateContact(contactUid),
+      data: data,
     );
   }
 

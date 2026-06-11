@@ -11,8 +11,8 @@ class ApiConstants {
   static const String contactsData = '/vendor/contact/contacts-data';
   static const String contact = '/vendor/contact/contact';
   static const String createContact = '/vendor/contact/create';
-  static String updateContact(String phoneNumber) =>
-      '/vendor/contact/update/$phoneNumber';
+  static String updateContact(String contactUid) =>
+      '/vendor/contact/update/$contactUid';
   static String deleteContact(String phoneNumber) =>
       '/vendor/contact/delete/$phoneNumber';
   static const String assignTeamMember = '/vendor/contact/assign-team-member';

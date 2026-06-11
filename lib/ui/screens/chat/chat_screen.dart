@@ -8,6 +8,8 @@ import 'package:intl/intl.dart';
 import '../../../routes/app_routes.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
 
+import '../../../core/utils/helpers.dart';
+
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
 
@@ -26,37 +28,26 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchContacts();
-      _startPolling();
+      // Polling is disabled to prevent repeated Page 1 reloads
+      // and to respect pagination state.
+      // _startPolling();
     });
   }
 
   Future<void> _fetchContacts() async {
-    await context.read<ContactProvider>().getContacts(perPage: 100);
-  }
-
-  String _sanitizeText(String? text) {
-    if (text == null || text.trim().isEmpty) return '';
-    try {
-      // Remove characters that cause malformed UTF-16
-      return text.runes
-          .where((r) => r <= 0xFFFF || (r >= 0x10000 && r <= 0x10FFFF))
-          .map((r) => String.fromCharCode(r))
-          .join()
-          .trim();
-    } catch (_) {
-      return text.replaceAll(RegExp(r'[^\x00-\x7F]'), '').trim();
+    final provider = context.read<ContactProvider>();
+    // Only fetch if we don't have contacts yet or if it's a fresh start
+    if (provider.contacts.isEmpty) {
+      await provider.getContacts();
     }
   }
 
+  String _sanitizeText(String? text) {
+    return Helpers.sanitizeString(text).trim();
+  }
+
   void _startPolling() {
-    _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
-      if (mounted && !_isPolling) {
-        _isPolling = true;
-        await _fetchContacts();
-        _isPolling = false;
-      }
-    });
+    // Logic removed to prevent Issue #1 (Repeated Page 1 reloads)
   }
 
   @override

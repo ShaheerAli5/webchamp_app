@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import '../../../../core/network/api_constants.dart';
 import '../services/contact_api_service.dart';
 
 class ContactRepository {
@@ -10,17 +12,41 @@ class ContactRepository {
 
   Future<dynamic> getContacts({
     String? search,
+    int page = 1,
     int? perPage,
-    int? page,
   }) async {
     try {
       final response = await _apiService.getContacts(
         search: search,
-        perPage: perPage,
         page: page,
+        perPage: perPage,
       );
+
+      debugPrint('--- CONTACTS API DEBUG ---');
+      debugPrint('Status Code: ${response.statusCode}');
+      debugPrint('Base URL: ${ApiConstants.baseUrl}');
+      debugPrint('Final URL: ${response.realUri}');
+      
+      // 🛡️ Safe logging: catch potential UTF-16 errors during debug printing
+      try {
+        String dataStr = response.data.toString();
+        debugPrint('Response Data: ${dataStr.length > 2000 ? '${dataStr.substring(0, 2000)}...' : dataStr}');
+      } catch (e) {
+        debugPrint('Response Data: [Error stringifying data, likely malformed UTF-16]');
+      }
+      debugPrint('--------------------------');
+
       return response.data;
     } on DioException catch (e) {
+      debugPrint('❌ CONTACTS API ERROR: ${e.message}');
+      debugPrint('Error Type: ${e.type}');
+      
+      if (e.error is SocketException) {
+        debugPrint('DNS/Network Error: Failed to resolve ${ApiConstants.baseUrl}. Please check device internet.');
+        throw Exception('Network error: Cannot reach server. Please check your internet connection.');
+      }
+
+      debugPrint('Error Response: ${e.response?.data}');
       throw Exception(_extractError(e));
     }
   }
@@ -42,14 +68,17 @@ class ContactRepository {
 
   Future<dynamic> createContact({
     required String phoneNumber,
-    String? firstName,
+    required String firstName,
     String? lastName,
     String? email,
+    String? address,
     String? languageCode,
-    String? country,
+    required dynamic country,
+    List<int>? contactGroups,
     bool? whatsappOptOut,
+    bool? enableAiBot,
     bool? enableReplyBot,
-    String? otherInfo,
+    Map<String, dynamic>? customInputFields,
   }) async {
     try {
       final response = await _apiService.createContact(
@@ -57,11 +86,14 @@ class ContactRepository {
         firstName: firstName,
         lastName: lastName,
         email: email,
+        address: address,
         languageCode: languageCode,
         country: country,
+        contactGroups: contactGroups,
         whatsappOptOut: whatsappOptOut,
+        enableAiBot: enableAiBot,
         enableReplyBot: enableReplyBot,
-        otherInfo: otherInfo,
+        customInputFields: customInputFields,
       );
       
       final data = response.data;
@@ -76,21 +108,33 @@ class ContactRepository {
   }
 
   Future<dynamic> updateContact(
-    String phoneNumber, {
-    String? firstName,
+    String contactUid, {
+    required String firstName,
     String? lastName,
     String? email,
+    String? address,
     String? languageCode,
-    String? country,
+    required dynamic country,
+    List<int>? contactGroups,
+    bool? whatsappOptOut,
+    bool? enableAiBot,
+    bool? enableReplyBot,
+    Map<String, dynamic>? customInputFields,
   }) async {
     try {
       final response = await _apiService.updateContact(
-        phoneNumber,
+        contactUid,
         firstName: firstName,
         lastName: lastName,
         email: email,
+        address: address,
         languageCode: languageCode,
         country: country,
+        contactGroups: contactGroups,
+        whatsappOptOut: whatsappOptOut,
+        enableAiBot: enableAiBot,
+        enableReplyBot: enableReplyBot,
+        customInputFields: customInputFields,
       );
       
       final data = response.data;
@@ -218,7 +262,7 @@ class ContactRepository {
         try {
           final decoded = jsonDecode(rawJson);
           if (decoded is Map) {
-            final messageList = decoded.values.toList();
+            final messageList = decoded.values.whereType<Map>().toList();
             messageList.sort((a, b) {
               final aTime = (a['created_at'] ?? a['messaged_at'] ?? '').toString();
               final bTime = (b['created_at'] ?? b['messaged_at'] ?? '').toString();
