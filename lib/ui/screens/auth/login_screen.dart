@@ -139,15 +139,19 @@ class _LoginScreenState extends State<LoginScreen> {
                                   return;
                                 }
                                 
+                                print('Attempting login in UI...');
                                 final success = await auth.login(
-                                  _emailController.text,
+                                  _emailController.text.trim().toLowerCase(),
                                   _passwordController.text,
                                 );
+                                print('Login result in UI: $success');
                                 
                                 if (context.mounted) {
                                   if (success) {
+                                    print('Navigating to Home...');
                                     context.go('/');
                                   } else {
+                                    print('Login failed: ${auth.errorMessage}');
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(content: Text(auth.errorMessage ?? 'Login failed')),
                                     );

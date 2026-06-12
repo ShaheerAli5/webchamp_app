@@ -47,13 +47,27 @@ class ContactApiService {
     int page = 1,
     int? perPage,
   }) async {
+    final Map<String, dynamic> queryParams = {
+      if (search != null) 'search': search,
+      'page': page,
+      if (perPage != null) ...{
+        'per_page': perPage,
+        'perPage': perPage,
+        'limit': perPage,
+        'length': perPage,
+        'pageSize': perPage,
+        'count': perPage,
+      },
+      // Some APIs use offset instead of page
+      if (page > 1 && perPage != null) 'offset': (page - 1) * perPage,
+    };
+
+    debugPrint('🌐 [API] GET CONTACTS - URL: ${ApiConstants.baseUrl}${ApiConstants.contactsData}');
+    debugPrint('🌐 [API] GET CONTACTS - Params: $queryParams');
+
     return await _apiClient.get(
       ApiConstants.contactsData,
-      queryParameters: {
-        if (search != null) 'search': search,
-        'page': page,
-        if (perPage != null) 'per_page': perPage,
-      },
+      queryParameters: queryParams,
     );
   }
 

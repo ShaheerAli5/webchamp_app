@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:intl_phone_field/intl_phone_field.dart';
+import 'package:intl_phone_field/countries.dart';
 
 class AddContactScreen extends StatefulWidget {
   final Map<String, dynamic>? contactData;
@@ -18,7 +20,6 @@ class _AddContactScreenState extends State<AddContactScreen> {
   bool _enableReplyBot = true;
   bool _enableAiBot = true;
   
-  dynamic _selectedCountryId;
   String? _selectedLanguage = 'en';
   List<int> _selectedGroups = [];
 
@@ -28,11 +29,20 @@ class _AddContactScreenState extends State<AddContactScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
 
+  String _completePhoneNumber = '';
+  String _initialCountryCode = 'PK'; // Default
+  // ignore: unused_field
+  String _selectedCountryName = 'Pakistan';
+  String _selectedCountryIso = 'PK';
+  // ignore: unused_field
+  String _selectedCountryDialCode = '92';
+
   bool get isEditing => widget.contactData != null;
 
   @override
   void initState() {
     super.initState();
+    _setInitialCountryFromLocale();
     _initializeData();
     
     // Fetch fresh data from API
@@ -41,12 +51,33 @@ class _AddContactScreenState extends State<AddContactScreen> {
     });
   }
 
+  void _setInitialCountryFromLocale() {
+    try {
+      final String? countryCode = WidgetsBinding.instance.platformDispatcher.locale.countryCode;
+      if (countryCode != null && countryCode.isNotEmpty) {
+        setState(() {
+          _initialCountryCode = countryCode;
+          _selectedCountryIso = countryCode;
+        });
+      }
+    } catch (_) {}
+  }
+
   void _initializeData() {
     if (isEditing) {
       final data = widget.contactData!;
       _firstNameController.text = (data['first_name'] ?? data['fname'] ?? '').toString();
       _lastNameController.text = (data['last_name'] ?? data['lname'] ?? '').toString();
-      _mobileController.text = (data['wa_id'] ?? data['phone_number'] ?? data['mobile_number'] ?? '').toString();
+      
+      String phone = (data['wa_id'] ?? data['phone_number'] ?? data['mobile_number'] ?? '').toString();
+      if (phone.startsWith('+')) {
+        _completePhoneNumber = phone;
+      } else if (phone.isNotEmpty) {
+        _completePhoneNumber = '+$phone';
+      }
+      
+      _mobileController.text = _extractLocalNumber(phone);
+
       _emailController.text = (data['email'] ?? '').toString();
       _addressController.text = (data['address'] ?? '').toString();
       
@@ -60,14 +91,44 @@ class _AddContactScreenState extends State<AddContactScreen> {
            _selectedGroups = List<int>.from(data['contact_groups'].map((e) => e is int ? e : int.parse(e.toString())));
         } catch (_) {}
       }
-      
-      final countryVal = data['country'];
-      if (countryVal != null) {
-        if (countryVal is int) {
-          _selectedCountryId = countryVal;
-        } else if (countryVal is Map && countryVal['id'] != null) {
-          _selectedCountryId = countryVal['id'];
-        }
+
+      if (_completePhoneNumber.isNotEmpty) {
+        _determineCountryFromPhone(_completePhoneNumber);
+      }
+    }
+  }
+
+  String _extractLocalNumber(String phone) {
+    if (phone.isEmpty) return '';
+    // If it starts with +, we want to remove the dial code if we can, 
+    // but IntlPhoneField is smart enough to handle some cases.
+    // We'll try to find the longest matching dial code.
+    String local = phone.startsWith('+') ? phone.substring(1) : phone;
+    
+    // Sort countries by dial code length descending to match the longest prefix
+    List<Country> sortedCountries = List.from(countries)..sort((a, b) => b.dialCode.length.compareTo(a.dialCode.length));
+    
+    for (var country in sortedCountries) {
+      if (local.startsWith(country.dialCode)) {
+        return local.substring(country.dialCode.length);
+      }
+    }
+    return local;
+  }
+
+  void _determineCountryFromPhone(String phone) {
+    String local = phone.startsWith('+') ? phone.substring(1) : phone;
+    List<Country> sortedCountries = List.from(countries)..sort((a, b) => b.dialCode.length.compareTo(a.dialCode.length));
+
+    for (var country in sortedCountries) {
+      if (local.startsWith(country.dialCode)) {
+        setState(() {
+          _initialCountryCode = country.code;
+          _selectedCountryIso = country.code;
+          _selectedCountryDialCode = country.dialCode;
+          _selectedCountryName = country.name;
+        });
+        break;
       }
     }
   }
@@ -79,7 +140,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
     await provider.getContactMetadata();
     
     if (isEditing) {
-      final phone = _mobileController.text;
+      final phone = _completePhoneNumber.isNotEmpty ? _completePhoneNumber : _mobileController.text;
       final email = _emailController.text;
       
       if (phone.isNotEmpty || email.isNotEmpty) {
@@ -106,15 +167,6 @@ class _AddContactScreenState extends State<AddContactScreen> {
                  _selectedGroups = List<int>.from(data['contact_groups'].map((e) => e is int ? e : int.parse(e.toString())));
               } catch (_) {}
             }
-
-            final countryVal = data['country'];
-            if (countryVal != null) {
-              if (countryVal is int) {
-                _selectedCountryId = countryVal;
-              } else if (countryVal is Map && countryVal['id'] != null) {
-                _selectedCountryId = countryVal['id'];
-              }
-            }
           });
         }
       }
@@ -128,18 +180,20 @@ class _AddContactScreenState extends State<AddContactScreen> {
     {'code': 'ur', 'name': 'Urdu'},
   ];
 
-  void _onCountryChanged(dynamic countryId) {
-    setState(() {
-      _selectedCountryId = countryId;
-      if (!isEditing && countryId != null) {
-        final provider = context.read<ContactProvider>();
-        final countries = provider.availableCountries;
-        final country = countries.firstWhere((c) => c['id'] == countryId || c['countries__id'] == countryId, orElse: () => null);
-        if (country != null) {
-          _mobileController.text = (country['phone_code'] ?? country['code'] ?? '').toString();
-        }
+  dynamic _getCountryValue() {
+    final provider = context.read<ContactProvider>();
+    final availableCountries = provider.availableCountries;
+    
+    // Try to find the internal ID from availableCountries list if it matches our ISO code
+    for (var c in availableCountries) {
+      final iso = (c['iso'] ?? c['code'] ?? c['iso_code'] ?? '').toString().toUpperCase();
+      if (iso == _selectedCountryIso.toUpperCase()) {
+        return c['id'] ?? c['countries__id'];
       }
-    });
+    }
+    
+    // Fallback to ISO code if no ID found
+    return _selectedCountryIso;
   }
 
   Future<void> _submit() async {
@@ -150,12 +204,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
       return;
     }
 
-    if (_selectedCountryId == null) {
-      Fluttertoast.showToast(msg: "Country is required");
-      return;
-    }
-
-    if (!isEditing && _mobileController.text.trim().isEmpty) {
+    if (_completePhoneNumber.isEmpty || _completePhoneNumber == '+') {
       Fluttertoast.showToast(msg: "Phone number is required");
       return;
     }
@@ -166,6 +215,8 @@ class _AddContactScreenState extends State<AddContactScreen> {
       Fluttertoast.showToast(msg: "Enter a valid email");
       return;
     }
+
+    final countryValue = _getCountryValue();
 
     bool success;
     if (isEditing) {
@@ -182,7 +233,7 @@ class _AddContactScreenState extends State<AddContactScreen> {
         email: email.isEmpty ? null : email,
         address: address.isEmpty ? null : address,
         languageCode: _selectedLanguage,
-        country: _selectedCountryId,
+        country: countryValue,
         contactGroups: _selectedGroups,
         whatsappOptOut: _optOutMarketing,
         enableAiBot: _enableAiBot,
@@ -190,13 +241,13 @@ class _AddContactScreenState extends State<AddContactScreen> {
       );
     } else {
       success = await contactProvider.createContact(
-        phoneNumber: _mobileController.text.trim(),
+        phoneNumber: _completePhoneNumber, 
         firstName: _firstNameController.text.trim(),
         lastName: _lastNameController.text.trim(),
         email: email.isEmpty ? null : email,
         address: address.isEmpty ? null : address,
         languageCode: _selectedLanguage,
-        country: _selectedCountryId,
+        country: countryValue,
         contactGroups: _selectedGroups,
         whatsappOptOut: _optOutMarketing,
         enableAiBot: _enableAiBot,
@@ -259,7 +310,6 @@ class _AddContactScreenState extends State<AddContactScreen> {
                         children: [
                           _buildFieldContainer('FIRST NAME *', _buildTextField('Enter first name', controller: _firstNameController)),
                           _buildFieldContainer('LAST NAME', _buildTextField('Enter last name', controller: _lastNameController)),
-                          _buildFieldContainer('COUNTRY *', _buildCountryDropdown()),
                           _buildMobileFieldContainer(),
                           _buildFieldContainer('LANGUAGE', _buildLanguageDropdown()),
                           _buildFieldContainer('EMAIL', _buildTextField('Enter email', controller: _emailController)),
@@ -382,19 +432,58 @@ class _AddContactScreenState extends State<AddContactScreen> {
               fontFamily: 'Inter',
             ),
           ),
-          if (!isEditing)
-            Text(
-              'Include country code without 0 or +',
-              style: TextStyle(
-                fontSize: 9.sp,
-                color: const Color(0xFF98A2B3),
-                fontFamily: 'Inter',
-              ),
-            ),
           SizedBox(height: 8.h),
-          SizedBox(
-            height: 44.h,
-            child: _buildTextField('eg. 923441234567', controller: _mobileController, enabled: !isEditing),
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12.r),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: IntlPhoneField(
+              controller: _mobileController,
+              initialCountryCode: _initialCountryCode,
+              enabled: !isEditing,
+              disableLengthCheck: false,
+              textAlignVertical: TextAlignVertical.center,
+              style: TextStyle(
+                fontSize: 14.sp,
+                color: !isEditing ? const Color(0xFF151C27) : Colors.grey,
+                fontFamily: 'Plus Jakarta Sans',
+              ),
+              decoration: InputDecoration(
+                hintText: 'Phone Number',
+                hintStyle: TextStyle(
+                  color: const Color(0xFF98A2B3),
+                  fontSize: 14.sp,
+                ),
+                filled: true,
+                fillColor: !isEditing ? const Color(0xFFF4F4F4) : const Color(0xFFE8E8EC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12.r),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: EdgeInsets.symmetric(horizontal: 16.w),
+                counterText: '', // Hide the counter
+              ),
+              languageCode: "en",
+              onChanged: (phone) {
+                _completePhoneNumber = phone.completeNumber;
+                _selectedCountryIso = phone.countryISOCode;
+                _selectedCountryDialCode = phone.countryCode;
+              },
+              onCountryChanged: (country) {
+                setState(() {
+                  _selectedCountryIso = country.code;
+                  _selectedCountryDialCode = country.dialCode;
+                  _selectedCountryName = country.name;
+                });
+              },
+            ),
           ),
         ],
       ),
@@ -442,116 +531,6 @@ class _AddContactScreenState extends State<AddContactScreen> {
           contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: maxLines > 1 ? 12.h : 0),
         ),
       ),
-    );
-  }
-
-  Widget _buildCountryDropdown() {
-    final countries = context.watch<ContactProvider>().availableCountries;
-
-    if (countries.isEmpty) {
-      return _buildTextField('Loading countries...', enabled: false);
-    }
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Autocomplete<Map<String, dynamic>>(
-          displayStringForOption: (option) => (option['name'] ?? option['countries__name'] ?? '').toString(),
-          optionsBuilder: (TextEditingValue textEditingValue) {
-            if (textEditingValue.text.isEmpty) {
-              return countries.cast<Map<String, dynamic>>();
-            }
-            return countries.where((country) {
-              final name = (country['name'] ?? country['countries__name'] ?? '').toString().toLowerCase();
-              return name.contains(textEditingValue.text.toLowerCase());
-            }).cast<Map<String, dynamic>>();
-          },
-          onSelected: (option) {
-            final id = option['id'] ?? option['countries__id'];
-            _onCountryChanged(id);
-          },
-          fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-            // Synchronize controller with selection if it exists
-            if (_selectedCountryId != null && controller.text.isEmpty) {
-              final selected = countries.firstWhere(
-                (c) => (c['id'] ?? c['countries__id']) == _selectedCountryId,
-                orElse: () => null,
-              );
-              if (selected != null) {
-                controller.text = (selected['name'] ?? selected['countries__name'] ?? '').toString();
-              }
-            }
-
-            return Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12.r),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 2,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
-              ),
-              child: TextField(
-                controller: controller,
-                focusNode: focusNode,
-                style: TextStyle(
-                  fontSize: 14.sp,
-                  color: const Color(0xFF151C27),
-                  fontFamily: 'Plus Jakarta Sans',
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Search country...',
-                  hintStyle: TextStyle(
-                    color: const Color(0xFF98A2B3),
-                    fontSize: 14.sp,
-                  ),
-                  filled: true,
-                  fillColor: const Color(0xFFF4F4F4),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12.r),
-                    borderSide: BorderSide.none,
-                  ),
-                  suffixIcon: Icon(Icons.search, size: 20.sp, color: const Color(0xFF98A2B3)),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16.w),
-                ),
-              ),
-            );
-          },
-          optionsViewBuilder: (context, onSelected, options) {
-            return Align(
-              alignment: Alignment.topLeft,
-              child: Material(
-                elevation: 4,
-                borderRadius: BorderRadius.circular(12.r),
-                child: Container(
-                  width: constraints.maxWidth,
-                  constraints: BoxConstraints(maxHeight: 250.h),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12.r),
-                  ),
-                  child: ListView.builder(
-                    padding: EdgeInsets.zero,
-                    shrinkWrap: true,
-                    itemCount: options.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final option = options.elementAt(index);
-                      return ListTile(
-                        title: Text(
-                          (option['name'] ?? option['countries__name'] ?? '').toString(),
-                          style: TextStyle(fontSize: 14.sp),
-                        ),
-                        onTap: () => onSelected(option),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 

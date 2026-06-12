@@ -1,3 +1,5 @@
+// auth_api_service.dart
+
 import 'package:dio/dio.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_constants.dart';
@@ -55,7 +57,7 @@ class AuthApiService {
 
     final response = await _apiClient.post(
       ApiConstants.vendorRegister,
-      queryParameters: params,
+      data: params,
     );
 
     _extractSessionCookie(response);
@@ -75,7 +77,7 @@ class AuthApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.updatePassword,
-      queryParameters: {
+      data: {
         'old_password': oldPassword,
         'password': password,
         'password_confirmation': passwordConfirmation,
@@ -88,7 +90,7 @@ class AuthApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.twoFactorChallenge,
-      queryParameters: {
+      data: {
         'verify_via': 'code',
         'code': code,
       },

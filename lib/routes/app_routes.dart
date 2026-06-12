@@ -89,12 +89,20 @@ class AppRoutes {
         final isLoggedIn = authProvider.isLoggedIn;
         final isAuthRoute = state.matchedLocation == login || state.matchedLocation == signup || state.matchedLocation == forgotPassword;
 
+        print('--- ROUTER REDIRECT ---');
+        print('Location: ${state.matchedLocation}');
+        print('isLoggedIn: $isLoggedIn');
+        print('isAuthRoute: $isAuthRoute');
+
         if (!isLoggedIn && !isAuthRoute) {
+          print('Redirecting to LOGIN');
           return login;
         }
         if (isLoggedIn && isAuthRoute) {
+          print('Redirecting to HOME');
           return home;
         }
+        print('No redirection needed');
         return null;
       },
       routes: [

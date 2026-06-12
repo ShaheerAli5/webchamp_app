@@ -31,18 +31,29 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> login(String email, String password) async {
+    print('=== PROVIDER LOGIN START ===');
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      print('Calling repository login for $email...');
       _user = await _authRepository.login(email, password);
-      _isLoggedIn = true;
+      _isLoggedIn = _user != null;
+      print('Provider Login Success: $_isLoggedIn');
+      if (_user != null) {
+        print('User Email: ${_user!.email}');
+        print('User ID: ${_user!.id}');
+      }
+      
       _isLoading = false;
       notifyListeners();
-      return true;
-    } catch (e) {
-      _errorMessage = e.toString();
+      return _isLoggedIn;
+    } catch (e, stack) {
+      print('Provider Login Error: $e');
+      print('Stacktrace: $stack');
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _isLoggedIn = false;
       _isLoading = false;
       notifyListeners();
       return false;
@@ -78,6 +89,7 @@ class AuthProvider extends ChangeNotifier {
         passwordConfirmation: passwordConfirmation,
         termsAndConditions: termsAndConditions,
       );
+      print('Registration Response: $response');
       _isLoading = false;
       notifyListeners();
       return response;

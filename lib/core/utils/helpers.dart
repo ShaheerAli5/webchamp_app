@@ -65,4 +65,11 @@ class Helpers {
     }
     return data;
   }
+
+  static int? toInt(dynamic val) {
+    if (val == null) return null;
+    if (val is int) return val;
+    if (val is double) return val.toInt();
+    return int.tryParse(val.toString());
+  }
 }

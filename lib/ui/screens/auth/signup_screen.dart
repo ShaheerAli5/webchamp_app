@@ -253,9 +253,21 @@ class _SignupScreenState extends State<SignupScreen> {
                               );
                               
                               if (context.mounted) {
-                                if (response != null && response['reaction'] == 1) {
-                                  final data = response['data'];
-                                  final activationRequired = data != null && data['activation_required'] == true;
+                                final isSuccessful = response != null && (
+                                  response['reaction'] == 1 || 
+                                  response['reaction'] == '1' ||
+                                  response['status'] == 'success' ||
+                                  response['result'] == 'success' ||
+                                  response['success'] == true
+                                );
+
+                                if (isSuccessful) {
+                                  final data = response!['data'];
+                                  final activationRequired = data != null && (
+                                    data['activation_required'] == true ||
+                                    data['activation_required'] == 1 ||
+                                    data['activation_required'] == '1'
+                                  );
                                   
                                   final message = response['message'] ?? 'Registration successful! Please check your email to activate your account.';
                                   
@@ -300,7 +312,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                 } else {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text(auth.errorMessage ?? 'Registration failed'),
+                                      content: Text(auth.errorMessage ?? response?['message'] ?? 'Registration failed'),
                                       backgroundColor: Colors.red,
                                     ),
                                   );

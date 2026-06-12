@@ -13,7 +13,6 @@ class ApiClient {
     receiveTimeout: const Duration(seconds: 30),
     headers: {
       'Accept': 'application/json',
-      'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
       'Api-Request-Signature': 'mobile-app-request',
     },
@@ -23,7 +22,7 @@ class ApiClient {
     _dio.interceptors.add(LogInterceptor(
       requestBody: true,
       requestHeader: true,
-      responseBody: false, // 🛡️ Disabled to prevent crashes from malformed UTF-16 in dirty data
+      responseBody: true, // 🛡️ Enabled for debugging
       responseHeader: true,
       error: true,
     ));
@@ -45,6 +44,8 @@ class ApiClient {
     print('PATH: $path');
     print('DATA TYPE: ${data.runtimeType}');
     print('DATA: $data');
+    if (options?.headers != null) print('EXTRA HEADERS: ${options!.headers}');
+    if (options?.contentType != null) print('CONTENT TYPE: ${options!.contentType}');
     print('======================');
     return await _dio.post(
       path,

@@ -331,81 +331,118 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final email = Helpers.sanitizeString((contact['email'] ?? '').toString());
     final country = Helpers.sanitizeString((contact['country'] ?? '').toString());
     final optOut = contact['whatsapp_opt_out'] == true || contact['opt_out'] == 1 || contact['opt_out'] == true;
+    
+    // Extract unread count and latest message
+    final unreadCount = Helpers.toInt(contact['unread_messages_count'] ?? contact['unread_count']);
+    final latestMessage = contact['latest_message_text'] ?? contact['message'] ?? contact['last_message'];
+    final latestTime = contact['formatted_message_time'] ?? contact['messaged_at'];
 
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-      padding: EdgeInsets.all(16.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20.r),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 24.r,
-                backgroundColor: AppColors.primary.withOpacity(0.1),
-                child: Text(
-                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18.sp),
+    return InkWell(
+      onTap: () => _handleContactAction('view', contact),
+      child: Container(
+        margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+        padding: EdgeInsets.all(16.w),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20.r),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 24.r,
+                  backgroundColor: AppColors.primary.withOpacity(0.1),
+                  child: Text(
+                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18.sp),
+                  ),
                 ),
-              ),
-              SizedBox(width: 12.w),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name.isNotEmpty ? name : 'No Name',
-                      style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                    ),
-                    if (phone.isNotEmpty) ...[
-                      SizedBox(height: 4.h),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Row(
                         children: [
-                          Icon(Icons.phone_outlined, size: 14.sp, color: AppColors.textSecondary),
-                          SizedBox(width: 8.w),
-                          Text(phone, style: TextStyle(fontSize: 12.sp, color: AppColors.textSecondary)),
+                          Expanded(
+                            child: Text(
+                              name.isNotEmpty ? name : 'No Name',
+                              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (latestTime != null)
+                            Text(
+                              latestTime.toString().split(' ').last,
+                              style: TextStyle(fontSize: 10.sp, color: AppColors.textSecondary),
+                            ),
                         ],
                       ),
+                      if (phone.isNotEmpty) ...[
+                        SizedBox(height: 4.h),
+                        Row(
+                          children: [
+                            Icon(Icons.phone_outlined, size: 14.sp, color: AppColors.textSecondary),
+                            SizedBox(width: 8.w),
+                            Text(phone, style: TextStyle(fontSize: 12.sp, color: AppColors.textSecondary)),
+                          ],
+                        ),
+                      ],
                     ],
+                  ),
+                ),
+                if (unreadCount != null && unreadCount > 0)
+                  Container(
+                    margin: EdgeInsets.only(left: 8.w),
+                    padding: EdgeInsets.all(6.w),
+                    decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
+                    child: Text(unreadCount.toString(), style: TextStyle(color: Colors.white, fontSize: 10.sp, fontWeight: FontWeight.bold)),
+                  ),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Color(0xFFD0D5DD)),
+                  onSelected: (val) => _handleContactAction(val, contact),
+                  itemBuilder: (ctx) => [
+                    const PopupMenuItem(value: 'view', child: Text('View')),
+                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                    const PopupMenuItem(value: 'delete', child: Text('Delete')),
                   ],
                 ),
-              ),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, color: Color(0xFFD0D5DD)),
-                onSelected: (val) => _handleContactAction(val, contact),
-                itemBuilder: (ctx) => [
-                  const PopupMenuItem(value: 'view', child: Text('View')),
-                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
-                ],
-              ),
-            ],
-          ),
-          Padding(
-            padding: EdgeInsets.only(left: 60.w),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (email.isNotEmpty) ...[
-                  _buildInfoRow(Icons.email_outlined, email),
-                  SizedBox(height: 4.h),
-                ],
-                if (country.isNotEmpty) ...[
-                  _buildInfoRow(Icons.public_outlined, country),
-                  SizedBox(height: 12.h),
-                ],
-                _buildStatusBadge(optOut),
               ],
             ),
-          ),
-        ],
+            if (latestMessage != null) ...[
+              SizedBox(height: 8.h),
+              Padding(
+                padding: EdgeInsets.only(left: 60.w),
+                child: Text(
+                  latestMessage.toString(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13.sp, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+                ),
+              ),
+            ],
+            Padding(
+              padding: EdgeInsets.only(left: 60.w, top: 8.h),
+              child: Row(
+                children: [
+                  _buildStatusBadge(optOut),
+                  if (country.isNotEmpty) ...[
+                    SizedBox(width: 8.w),
+                    Icon(Icons.public_outlined, size: 12.sp, color: AppColors.textSecondary),
+                    SizedBox(width: 4.w),
+                    Text(country, style: TextStyle(fontSize: 10.sp, color: AppColors.textSecondary)),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
