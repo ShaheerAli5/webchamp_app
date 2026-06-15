@@ -11,18 +11,13 @@ class DioInterceptor extends Interceptor {
     final token = await _storageService.getToken();
     final session = await _storageService.getSession();
 
-    print('--- API REQUEST ---');
-    print('URL: ${options.uri}');
-    print('Method: ${options.method}');
-
     // 1. Remove ANY existing token parameters to prevent URL truncation
     options.queryParameters.remove('token');
     options.queryParameters.remove('api_token');
 
     if (token != null && token.isNotEmpty) {
-      // 2. Standard Laravel Authorization header (The only one needed)
+      // 2. Standard Laravel Authorization header
       options.headers['Authorization'] = 'Bearer $token';
-      print('Token: Bearer [HIDDEN]');
     }
 
     // 3. Set-up Accept header to ensure server knows we expect JSON
@@ -30,8 +25,20 @@ class DioInterceptor extends Interceptor {
 
     if (session != null && session.isNotEmpty) {
       options.headers['Cookie'] = session;
-      print('Session: $session');
     }
+
+    // ✅ LOG FULL REQUEST AS REQUESTED BY USER
+    print('🚀 --- OUTGOING REQUEST ---');
+    print('METHOD: ${options.method}');
+    print('URL: ${options.uri}');
+    
+    // Log headers safely
+    final safeHeaders = Map<String, dynamic>.from(options.headers);
+    if (safeHeaders.containsKey('Authorization')) {
+      safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
+    }
+    print('HEADERS: $safeHeaders');
+    print('--------------------------');
 
     handler.next(options);
   }

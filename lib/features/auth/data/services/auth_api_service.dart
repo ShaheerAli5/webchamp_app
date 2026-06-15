@@ -25,7 +25,7 @@ class AuthApiService {
   Future<Response> login(String email, String password) async {
     return await _apiClient.post(
       ApiConstants.login,
-      queryParameters: {
+      data: {
         'email': email,
         'password': password,
       },

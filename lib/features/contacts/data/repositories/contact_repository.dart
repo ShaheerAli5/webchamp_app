@@ -441,7 +441,12 @@ class ContactRepository {
   }
 
   String _extractError(DioException e) {
-    if (e.response?.data != null) {
+    if (e.response != null) {
+      final status = e.response!.statusCode;
+      if (status == 403) return "Too many requests. Please wait a moment.";
+      if (status == 404) return "API endpoint not found.";
+      if (status != null && status >= 500) return "Server error. Please try again later.";
+
       final data = e.response!.data;
       if (data is Map) {
         return data['message'] ??
@@ -451,7 +456,7 @@ class ContactRepository {
       }
       if (data is String && data.isNotEmpty) {
         if (data.contains('<!DOCTYPE html>')) {
-          return 'Server error (404/500). Please check API URL.';
+          return 'Server error ($status). Please check API URL.';
         }
         return data;
       }

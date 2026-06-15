@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../../data/repositories/contact_repository.dart';
 import '../../../../core/utils/helpers.dart';
 
@@ -12,6 +13,11 @@ class ContactProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
 
   bool _isFetchingContacts = false;
+  bool _isFetchingChat = false;
+
+  // Bug 6: Flag for contacts loading completion
+  bool _contactsFullyLoaded = false;
+  bool get contactsFullyLoaded => _contactsFullyLoaded;
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
@@ -45,6 +51,24 @@ class ContactProvider extends ChangeNotifier {
   List<dynamic> _messages = [];
   List<dynamic> get messages => _messages;
 
+  // Bug 3: Retry count for chat box data
+  int _chatBoxRetryCount = 0;
+
+  void clearChat() {
+    _messages = [];
+    _errorMessage = null;
+    _chatBoxRetryCount = 0;
+    notifyListeners();
+  }
+
+  // Bug 4: Sanitize text for UTF-16
+  String _sanitizeText(String? text) {
+    if (text == null) return '';
+    return String.fromCharCodes(
+      text.runes.where((r) => r <= 0x10FFFF)
+    );
+  }
+
   /// Fetches contacts with support for infinite pagination.
   /// If [autoLoadAll] is true, it will keep fetching pages until all are loaded.
   Future<bool> getContacts({
@@ -60,6 +84,7 @@ class ContactProvider extends ChangeNotifier {
       _currentPage = 1;
       _hasMore = true;
       _contacts.clear();
+      _contactsFullyLoaded = false;
     } else {
       _currentPage++;
     }
@@ -73,66 +98,75 @@ class ContactProvider extends ChangeNotifier {
     try {
       debugPrint('🚀 [CONTACTS] FETCH START - Page: $_currentPage, Search: $search');
       
-      // We pass perPage=1000 but the backend seems to force 12.
+      // ✅ Exact params matching Postman
       var rawResult = await _repository.getContacts(
         search: search,
         page: _currentPage,
-        perPage: 1000, 
+        perPage: 100, 
       );
       
       final result = Helpers.sanitizeData(rawResult);
       
-      // ✅ REQUIREMENT 8: Log Full API Response Structure
       debugPrint('📦 [CONTACTS] RESPONSE RECEIVED for Page $_currentPage');
-      debugPrint('🔑 Keys found in root: ${result.keys.toList()}');
-      if (result['client_models'] != null) {
-        debugPrint('🔑 Keys found in client_models: ${result['client_models'].keys.toList()}');
-      }
 
-      // ✅ REQUIREMENT 9: Precise parsing of Map-keyed contacts
       List<dynamic> newContacts = _parseContactsResponse(result);
       debugPrint('✅ [CONTACTS] Parsed ${newContacts.length} contacts from Page $_currentPage');
       
-      // Deduplicate and add
       final existingUids = _contacts.map(_extractUid).toSet();
-      int addedThisPage = 0;
       for (var contact in newContacts) {
+        // Bug 4: Sanitize contact names
+        if (contact is Map) {
+          contact['first_name'] = _sanitizeText(contact['first_name']?.toString());
+          contact['last_name'] = _sanitizeText(contact['last_name']?.toString());
+          contact['full_name'] = _sanitizeText(contact['full_name']?.toString());
+          contact['name'] = _sanitizeText(contact['name']?.toString());
+        }
+
         final uid = _extractUid(contact);
         if (uid == null || !existingUids.contains(uid)) {
           _contacts.add(contact);
           if (uid != null) existingUids.add(uid);
-          addedThisPage++;
         }
       }
       
-      // ✅ REQUIREMENT 8: Specific metadata prints
       _updatePaginationState(result, newContacts.length);
       
-      debugPrint('📊 [CONTACTS] PAGE SUMMARY:');
-      debugPrint('   - Current Page: $_currentPage');
-      debugPrint('   - Contacts on this page: ${newContacts.length}');
-      debugPrint('   - Total loaded so far: ${_contacts.length}');
-      debugPrint('   - Total on server (extracted): $_total');
-      debugPrint('   - Has more pages: $_hasMore');
+      debugPrint('📊 [CONTACTS] PAGE SUMMARY: Page $_currentPage, Total loaded: ${_contacts.length}, Has more: $_hasMore');
 
-      // Extract metadata (countries/groups)
       _availableGroups = _extractGroupsFromResponse(result);
       _availableCountries = _extractCountriesFromResponse(result);
       
       _isFetchingContacts = false;
       _isLoading = false;
+      
+      if (!_hasMore) {
+        _contactsFullyLoaded = true;
+      }
+      
       notifyListeners();
 
-      // ✅ REQUIREMENT 4: Automatically load all pages
+      // Bug 1: Add delay between pages and auto-load
       if (autoLoadAll && _hasMore) {
-        debugPrint('🔄 [CONTACTS] Auto-loading next page...');
+        debugPrint('⏳ [CONTACTS] Waiting 1200ms before next page...');
+        await Future.delayed(const Duration(milliseconds: 1200));
         return await getContacts(search: search, loadMore: true, autoLoadAll: true);
       }
 
       return true;
     } catch (e, stack) {
       debugPrint('❌ [CONTACTS] ERROR: $e');
-      debugPrint('StackTrace: $stack');
+      
+      // Bug 1: Handle rate limit 403
+      if (e.toString().contains("Too many requests")) {
+        debugPrint('🛑 [CONTACTS] Rate limit hit. Waiting 30s before retry...');
+        _isLoading = true;
+        notifyListeners();
+        await Future.delayed(const Duration(seconds: 30));
+        _isFetchingContacts = false;
+        _currentPage--; // Reset page to retry the same one
+        return await getContacts(search: search, loadMore: loadMore, autoLoadAll: autoLoadAll);
+      }
+
       _errorMessage = e.toString();
       _isFetchingContacts = false;
       _isLoading = false;
@@ -145,7 +179,6 @@ class ContactProvider extends ChangeNotifier {
   void _updatePaginationState(dynamic result, int newCount) {
     if (result is! Map) return;
 
-    // Check client_models.contactsPaginatePage (User log showed 3 here)
     final clientModels = result['client_models'];
     dynamic paginateInfo = clientModels?['contactsPaginatePage'] ?? 
                           result['pagination'] ?? 
@@ -168,21 +201,16 @@ class ContactProvider extends ChangeNotifier {
         _hasMore = _contacts.length < _total;
       }
     } else if (paginateInfo is int) {
-      // ✅ If it's just an integer (Total Pages)
-      debugPrint('ℹ️ [CONTACTS] Pagination info found as integer (Total Pages): $paginateInfo');
       _hasMore = _currentPage < paginateInfo;
-      // If we don't have a total, estimate it for the UI counter
       if (_total == 0 || _total < _contacts.length) {
-        _total = paginateInfo * 12; // 12 seems to be the server's hardcoded page size
+        _total = paginateInfo * 12; 
       }
     } else {
-      // Fallback: Use total keys from everywhere
       int? foundTotal = _extractTotal(result);
       if (foundTotal != null) {
         _total = foundTotal;
         _hasMore = _contacts.length < _total;
       } else {
-        // If we received a "full" page of 12, assume there's more
         _hasMore = newCount >= 12;
       }
     }
@@ -403,43 +431,111 @@ class ContactProvider extends ChangeNotifier {
   }
 
   Future<bool> getContactChatBoxData(String contactUid, {bool showLoading = true}) async {
+    // 🛡️ GUARD: Prevent overlapping requests
+    if (_isFetchingChat) {
+      debugPrint('⏳ [CHAT] Skipping overlapping request for $contactUid');
+      return false;
+    }
+    
+    _isFetchingChat = true;
     if (showLoading) {
       _isLoading = true;
       _errorMessage = null;
-      _messages = [];
       notifyListeners();
     }
+
     try {
+      // 1. Get Sidebar Data (Labels/Team)
       final result = await _repository.getContactChatBoxData(contactUid);
+      
+      // Bug 2: Type cast crash in client_models parser
       final clientModels = result['client_models'];
       final data = result['data'];
 
-      _labels = _extractLargestList([result['labels'], data?['labels'], clientModels?['labels']]);
+      // If clientModels is a List (e.g. []), skip it as per Bug 2
+      final dynamic safeClientModels = (clientModels is Map) ? clientModels : null;
+
+      _labels = _extractLargestList([result['labels'], data?['labels'], safeClientModels?['labels']]);
       _teamMembers = _extractLargestList([result['teamMembers'], result['vendorMessagingUsers'], data?['teamMembers']]);
 
+      // 2. Get Chat History
       dynamic chatResult;
       try {
         chatResult = await _repository.getChatHistory(contactUid);
       } catch (e) {
-        debugPrint('❌ Chat history failed: $e');
+        debugPrint('❌ [CHAT] History fetch failed: $e');
       }
 
-      _messages = _extractMessagesFromResponse([result, chatResult]);
+      // 3. Extract and Merge Messages
+      final List<dynamic> rawNewMessages = _extractMessagesFromResponse([result, chatResult]);
+      debugPrint('✅ [CHAT] Parsed messages: ${rawNewMessages.length}');
 
-      if (_messages.isNotEmpty) {
-        _messages.sort((a, b) {
-          final aTime = (a['created_at'] ?? a['messaged_at'] ?? a['timestamp'] ?? '').toString();
-          final bTime = (b['created_at'] ?? b['messaged_at'] ?? b['timestamp'] ?? '').toString();
-          return bTime.compareTo(aTime);
-        });
+      List<dynamic> dedupedList = [];
+      bool hasNewData = false;
+
+      // 🛡️ DEDUPLICATE
+      if (rawNewMessages.isNotEmpty) {
+        final Map<String, dynamic> uniqueMap = {};
+        for (var msg in rawNewMessages) {
+          final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['timestamp'] ?? msg['created_at'];
+          if (id != null) {
+            uniqueMap[id.toString()] = msg;
+          } else {
+            uniqueMap[msg.hashCode.toString()] = msg;
+          }
+        }
+        dedupedList = uniqueMap.values.toList();
+        dedupedList.sort((a, b) => _getDateTime(a).compareTo(_getDateTime(b)));
+      } else if (_messages.isEmpty) {
+        dedupedList = _messagesFromLoadedContact(contactUid);
+      }
+
+      if (!_isSameMessageList(_messages, dedupedList)) {
+        _messages = dedupedList;
+        hasNewData = true;
+      }
+      
+      // Re-extracting with safety for comparison
+      final extractedLabels = _extractLargestList([result['labels'], data?['labels'], safeClientModels?['labels']]);
+      if (!listEquals(_labels, extractedLabels)) {
+        _labels = extractedLabels;
+        hasNewData = true;
+      }
+
+      final extractedTeam = _extractLargestList([result['teamMembers'], result['vendorMessagingUsers'], data?['teamMembers']]);
+      if (!listEquals(_teamMembers, extractedTeam)) {
+        _teamMembers = extractedTeam;
+        hasNewData = true;
+      }
+
+      _isFetchingChat = false;
+      _isLoading = false;
+      _chatBoxRetryCount = 0; // Reset retry count on success
+
+      if (hasNewData || showLoading) {
+        notifyListeners();
+        debugPrint('✅ [CHAT] UI notified of changes');
       } else {
-        _messages = _messagesFromLoadedContact(contactUid);
+        debugPrint('ℹ️ [CHAT] No changes detected, skipping notifyListeners');
       }
 
-      if (showLoading) _isLoading = false;
-      notifyListeners();
       return true;
     } catch (e) {
+      debugPrint('❌ [CHAT] getContactChatBoxData Error: $e');
+      _isFetchingChat = false;
+      
+      // Bug 3: Retry logic with backoff
+      if (e.toString().contains("Too many requests") && _chatBoxRetryCount < 3) {
+        _chatBoxRetryCount++;
+        int backoff = 5; 
+        if (_chatBoxRetryCount == 2) backoff = 10;
+        if (_chatBoxRetryCount == 3) backoff = 20;
+        
+        debugPrint('🔄 [CHAT] Retry $_chatBoxRetryCount/3 in ${backoff}s...');
+        await Future.delayed(Duration(seconds: backoff));
+        return await getContactChatBoxData(contactUid, showLoading: showLoading);
+      }
+
       if (showLoading) {
         _errorMessage = e.toString().replaceAll('Exception: ', '');
         _isLoading = false;
@@ -447,6 +543,31 @@ class ContactProvider extends ChangeNotifier {
       }
       return false;
     }
+  }
+
+  DateTime _getDateTime(dynamic msg) {
+    if (msg is! Map) return DateTime(1970);
+    final timeStr = (msg['messaged_at'] ?? msg['created_at'] ?? msg['timestamp'] ?? msg['updated_at'])?.toString();
+    if (timeStr == null) return DateTime(1970);
+    return DateTime.tryParse(timeStr) ?? DateTime(1970);
+  }
+
+  bool _isSameMessageList(List<dynamic> list1, List<dynamic> list2) {
+    if (list1.length != list2.length) return false;
+    for (int i = 0; i < list1.length; i++) {
+      final m1 = list1[i];
+      final m2 = list2[i];
+      if (m1 is Map && m2 is Map) {
+        final id1 = m1['whatsapp_message_id'] ?? m1['wamid'] ?? m1['_uid'] ?? m1['uid'];
+        final id2 = m2['whatsapp_message_id'] ?? m2['wamid'] ?? m2['_uid'] ?? m2['uid'];
+        if (id1 != id2) return false;
+        if (m1['message'] != m2['message']) return false;
+        if (m1['status'] != m2['status']) return false;
+      } else if (m1 != m2) {
+        return false;
+      }
+    }
+    return true;
   }
 
   List<dynamic> _extractLargestList(List<dynamic> candidates) {
@@ -461,11 +582,18 @@ class ContactProvider extends ChangeNotifier {
       if (result == null) continue;
       if (result is List && result.isNotEmpty) return result;
       if (result is Map) {
-        final keys = ['whatsappMessageLogs', 'messages', 'chat_messages', 'data', 'records'];
+        // Priority order
+        final keys = ['whatsappMessageLogs', 'messages', 'chat_messages', 'contactMessages', 'data', 'records'];
         for (final key in keys) {
           final val = result[key];
-          if (val is List && val.isNotEmpty) return val;
-          if (val is Map && val.isNotEmpty) return val.values.toList();
+          if (val is List && val.isNotEmpty) {
+            debugPrint('🎯 [CHAT] Used key "$key" (List) with ${val.length} messages');
+            return val;
+          }
+          if (val is Map && val.isNotEmpty) {
+            debugPrint('🎯 [CHAT] Used key "$key" (Map) with ${val.length} messages');
+            return val.values.toList();
+          }
         }
       }
     }
