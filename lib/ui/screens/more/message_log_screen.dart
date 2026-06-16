@@ -47,8 +47,62 @@ class _MessageLogScreenState extends State<MessageLogScreen> {
     }
   }
 
+  final List<Map<String, dynamic>> _allLogs = [
+    {
+      'recipient': '+1(555) 012-3456',
+      'status': 'Sent',
+      'statusColor': const Color(0xFF039855),
+      'from': 'Admin Portal',
+      'via': 'WhatsApp API',
+      'viaIcon': Icons.message,
+      'messagedAt': '2023-11-20 14:30',
+      'type': 'Template',
+      'showDetails': true,
+      'content': 'This is a sent template message.',
+      'msgType': 'Outgoing',
+    },
+    {
+      'recipient': '+1(555) 012-3456',
+      'status': 'Failed',
+      'statusColor': const Color(0xFFD92D20),
+      'from': 'System Bot',
+      'via': 'WhatsApp API',
+      'viaIcon': Icons.smartphone,
+      'messagedAt': '2023-11-20 14:30',
+      'type': 'Session',
+      'showRetry': true,
+      'content': 'Message failed to deliver due to connectivity issues.',
+      'msgType': 'Outgoing',
+    },
+    {
+      'recipient': '+1(555) 012-3456',
+      'status': 'Delivered',
+      'statusColor': const Color(0xFF667085),
+      'from': 'Marketing',
+      'via': 'WhatsApp Cloud',
+      'viaIcon': Icons.message,
+      'messagedAt': '2023-11-20 14:30',
+      'type': 'Bulk',
+      'showDetails': true,
+      'content': 'Hi Rehman, thank you for your inquiry. Our team will get back to you shortly.',
+      'msgType': 'Incoming',
+    },
+  ];
+
   @override
   Widget build(BuildContext context) {
+    final filteredLogs = _allLogs.where((log) {
+      final query = _searchController.text.toLowerCase();
+      final matchesQuery = query.isEmpty ||
+          log['recipient'].toString().toLowerCase().contains(query) ||
+          log['status'].toString().toLowerCase().contains(query) ||
+          log['content'].toString().toLowerCase().contains(query);
+      
+      final matchesType = _selectedType == 'All Messages' || log['msgType'] == _selectedType;
+      
+      return matchesQuery && matchesType;
+    }).toList();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       appBar: PreferredSize(
@@ -94,7 +148,7 @@ class _MessageLogScreenState extends State<MessageLogScreen> {
             children: [
               _buildFilterSection(),
               _buildSearchSection(),
-              _buildLogList(),
+              _buildLogList(filteredLogs),
               SizedBox(height: 40.h),
             ],
           ),
@@ -283,6 +337,7 @@ class _MessageLogScreenState extends State<MessageLogScreen> {
       padding: EdgeInsets.symmetric(horizontal: 16.w),
       child: TextField(
         controller: _searchController,
+        onChanged: (value) => setState(() {}),
         decoration: InputDecoration(
           hintText: 'Search by recipient or status...',
           hintStyle: TextStyle(
@@ -291,6 +346,15 @@ class _MessageLogScreenState extends State<MessageLogScreen> {
             fontFamily: 'Plus Jakarta Sans',
           ),
           prefixIcon: Icon(Icons.search, color: const Color(0xFF98A2B3), size: 20.sp),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.close, color: Color(0xFF98A2B3)),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {});
+                  },
+                )
+              : null,
           filled: true,
           fillColor: Colors.white,
           contentPadding: EdgeInsets.symmetric(vertical: 15.h, horizontal: 20.w),
@@ -311,51 +375,47 @@ class _MessageLogScreenState extends State<MessageLogScreen> {
     );
   }
 
-  Widget _buildLogList() {
-    return ListView(
+  Widget _buildLogList(List<Map<String, dynamic>> logs) {
+    if (logs.isEmpty) {
+      return Padding(
+        padding: EdgeInsets.all(32.w),
+        child: Column(
+          children: [
+            Icon(Icons.history_toggle_off, size: 64.sp, color: Colors.grey[300]),
+            SizedBox(height: 16.h),
+            Text(
+              'No logs found for "${_searchController.text}"',
+              style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       padding: EdgeInsets.all(16.w),
-      children: [
-        _buildLogCard(
-          recipient: '+1(555) 012-3456',
-          status: 'Sent',
-          statusColor: const Color(0xFF039855),
-          from: 'Admin Portal',
-          via: 'WhatsApp API',
-          viaIcon: Icons.message,
-          messagedAt: '2023-11-20 14:30',
-          type: 'Template',
-          showDetails: true,
-          content: 'This is a sent template message.',
-        ),
-        SizedBox(height: 12.h),
-        _buildLogCard(
-          recipient: '+1(555) 012-3456',
-          status: 'Failed',
-          statusColor: const Color(0xFFD92D20),
-          from: 'System Bot',
-          via: 'WhatsApp API',
-          viaIcon: Icons.smartphone,
-          messagedAt: '2023-11-20 14:30',
-          type: 'Session',
-          showRetry: true,
-          content: 'Message failed to deliver due to connectivity issues.',
-        ),
-        SizedBox(height: 12.h),
-        _buildLogCard(
-          recipient: '+1(555) 012-3456',
-          status: 'Delivered',
-          statusColor: const Color(0xFF667085),
-          from: 'Marketing',
-          via: 'WhatsApp Cloud',
-          viaIcon: Icons.message,
-          messagedAt: '2023-11-20 14:30',
-          type: 'Bulk',
-          showDetails: true,
-          content: 'Hi Rehman, thank you for your inquiry. Our team will get back to you shortly.',
-        ),
-      ],
+      itemCount: logs.length,
+      itemBuilder: (context, index) {
+        final log = logs[index];
+        return Padding(
+          padding: EdgeInsets.only(bottom: 12.h),
+          child: _buildLogCard(
+            recipient: log['recipient'],
+            status: log['status'],
+            statusColor: log['statusColor'],
+            from: log['from'],
+            via: log['via'],
+            viaIcon: log['viaIcon'],
+            messagedAt: log['messagedAt'],
+            type: log['type'],
+            showDetails: log['showDetails'] ?? false,
+            showRetry: log['showRetry'] ?? false,
+            content: log['content'] ?? '',
+          ),
+        );
+      },
     );
   }
 

@@ -13,6 +13,8 @@ class BotListScreen extends StatefulWidget {
 }
 
 class _BotListScreenState extends State<BotListScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  
   // Sample data to manage state
   List<Map<String, dynamic>> bots = [
     {
@@ -42,7 +44,21 @@ class _BotListScreenState extends State<BotListScreen> {
   ];
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final filteredBots = bots.where((bot) {
+      final query = _searchController.text.toLowerCase();
+      if (query.isEmpty) return true;
+      return (bot['title'] ?? '').toString().toLowerCase().contains(query) ||
+             (bot['type'] ?? '').toString().toLowerCase().contains(query) ||
+             (bot['trigger'] ?? '').toString().toLowerCase().contains(query);
+    }).toList();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       appBar: PreferredSize(
@@ -98,25 +114,44 @@ class _BotListScreenState extends State<BotListScreen> {
           Expanded(
             child: ListView.separated(
               padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 20.h),
-              itemCount: bots.length + 2, // Search bar + List + Load more
+              itemCount: filteredBots.length + 2, // Search bar + List + Load more
               separatorBuilder: (context, index) => SizedBox(height: 16.h),
               itemBuilder: (context, index) {
                 if (index == 0) {
                   return _buildSearchBar();
                 }
-                if (index == bots.length + 1) {
+                if (index == filteredBots.length + 1) {
                   return Column(
                     children: [
                       SizedBox(height: 8.h),
-                      _buildLoadMoreButton(),
+                      if (filteredBots.isNotEmpty) _buildLoadMoreButton(),
                       SizedBox(height: 80.h),
                     ],
                   );
                 }
-                final bot = bots[index - 1];
+                
+                if (filteredBots.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40.h),
+                      child: Column(
+                        children: [
+                          Icon(Icons.smart_toy_outlined, size: 48.sp, color: Colors.grey[300]),
+                          SizedBox(height: 16.h),
+                          Text(
+                            'No bots found matching "${_searchController.text}"',
+                            style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                final bot = filteredBots[index - 1];
                 return _buildBotCard(
                   context,
-                  index: index - 1,
+                  index: bots.indexOf(bot), // Use original index for actions if needed, but better pass bot
                   title: bot['title'],
                   status: bot['status'],
                   statusColor: bot['status'] == 'Active' ? const Color(0xFFE7F6EC) : const Color(0xFFE0E6F3),
@@ -564,6 +599,8 @@ class _BotListScreenState extends State<BotListScreen> {
           SizedBox(width: 12.w),
           Expanded(
             child: TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() {}),
               style: TextStyle(fontSize: 16.sp, color: Colors.black),
               decoration: InputDecoration(
                 hintText: 'Search bots',
@@ -581,6 +618,15 @@ class _BotListScreenState extends State<BotListScreen> {
                 contentPadding: EdgeInsets.zero,
                 filled: false,
                 isDense: true,
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, color: Color(0xFF9A9AA5)),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
               ),
             ),
           ),

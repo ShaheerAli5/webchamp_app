@@ -3,11 +3,55 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
 
-class CampaignsScreen extends StatelessWidget {
+class CampaignsScreen extends StatefulWidget {
   const CampaignsScreen({super.key});
 
   @override
+  State<CampaignsScreen> createState() => _CampaignsScreenState();
+}
+
+class _CampaignsScreenState extends State<CampaignsScreen> {
+  final TextEditingController _searchController = TextEditingController();
+
+  final List<Map<String, dynamic>> _allCampaigns = [
+    {
+      'title': 'Festive Greetings 2024',
+      'status': 'Active',
+      'statusColor': const Color(0xFFE7F6EC),
+      'statusTextColor': const Color(0xFF21C063),
+      'template': 'festive_wishes_v2',
+      'contacts': '4,820',
+      'createdAt': '2023-11-20 14:30',
+      'scheduledAt': '2023-12-01 09:00',
+    },
+    {
+      'title': 'Product Launch Beta',
+      'status': 'Draft',
+      'statusColor': const Color(0xFFF2F4F7),
+      'statusTextColor': const Color(0xFF667085),
+      'template': 'launch_announcement',
+      'contacts': '850',
+      'createdAt': '2023-11-22 10:15',
+      'scheduledAt': 'Not set',
+      'isScheduledNotSet': true,
+    },
+  ];
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final filteredCampaigns = _allCampaigns.where((campaign) {
+      final query = _searchController.text.toLowerCase();
+      if (query.isEmpty) return true;
+      return campaign['title'].toLowerCase().contains(query) ||
+             campaign['template'].toLowerCase().contains(query);
+    }).toList();
+
     return Scaffold(
       backgroundColor: Colors.white,
       floatingActionButton: Container(
@@ -42,28 +86,35 @@ class CampaignsScreen extends StatelessWidget {
                   SizedBox(height: 16.h),
                   _buildSearchBar(),
                   SizedBox(height: 16.h),
-                  _buildCampaignCard(
-                    title: 'Festive Greetings 2024',
-                    status: 'Active',
-                    statusColor: const Color(0xFFE7F6EC),
-                    statusTextColor: const Color(0xFF21C063),
-                    template: 'festive_wishes_v2',
-                    contacts: '4,820',
-                    createdAt: '2023-11-20 14:30',
-                    scheduledAt: '2023-12-01 09:00',
-                  ),
-                  SizedBox(height: 18.h),
-                  _buildCampaignCard(
-                    title: 'Product Launch Beta',
-                    status: 'Draft',
-                    statusColor: const Color(0xFFF2F4F7),
-                    statusTextColor: const Color(0xFF667085),
-                    template: 'launch_announcement',
-                    contacts: '850',
-                    createdAt: '2023-11-22 10:15',
-                    scheduledAt: 'Not set',
-                    isScheduledNotSet: true,
-                  ),
+                  if (filteredCampaigns.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(top: 40.h),
+                      child: Column(
+                        children: [
+                          Icon(Iconsax.volume_high, size: 48.sp, color: Colors.grey[300]),
+                          SizedBox(height: 16.h),
+                          Text(
+                            'No campaigns found matching "${_searchController.text}"',
+                            style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ...filteredCampaigns.map((campaign) => Padding(
+                          padding: EdgeInsets.only(bottom: 18.h),
+                          child: _buildCampaignCard(
+                            title: campaign['title'],
+                            status: campaign['status'],
+                            statusColor: campaign['statusColor'],
+                            statusTextColor: campaign['statusTextColor'],
+                            template: campaign['template'],
+                            contacts: campaign['contacts'],
+                            createdAt: campaign['createdAt'],
+                            scheduledAt: campaign['scheduledAt'],
+                            isScheduledNotSet: campaign['isScheduledNotSet'] ?? false,
+                          ),
+                        )),
                   SizedBox(height: 80.h),
                 ],
               ),
@@ -147,6 +198,8 @@ class CampaignsScreen extends StatelessWidget {
           SizedBox(width: 14.w),
           Expanded(
             child: TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() {}),
               style: TextStyle(fontSize: 16.sp, color: Colors.black),
               decoration: InputDecoration(
                 hintText: 'Search campaigns',
@@ -164,6 +217,15 @@ class CampaignsScreen extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
                 filled: false,
                 isDense: true,
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, color: Color(0xFF9A9AA5)),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
               ),
             ),
           ),

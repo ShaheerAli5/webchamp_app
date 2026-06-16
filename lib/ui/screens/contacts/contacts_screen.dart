@@ -193,10 +193,14 @@ class _ContactsScreenState extends State<ContactsScreen> {
             hintStyle: TextStyle(color: const Color(0xFF98A2B3), fontSize: 14.sp),
             prefixIcon: const Icon(Icons.search, color: Color(0xFF98A2B3)),
             suffixIcon: _searchController.text.isNotEmpty 
-              ? IconButton(icon: const Icon(Icons.close), onPressed: () {
-                  _searchController.clear();
-                  _fetchContacts();
-                }) 
+              ? IconButton(
+                  icon: const Icon(Icons.close), 
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {});
+                    _fetchContacts();
+                  },
+                ) 
               : null,
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
@@ -205,6 +209,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
             filled: false,
           ),
           onChanged: (val) {
+            setState(() {}); // Update clear button visibility
             _searchTimer?.cancel();
             _searchTimer = Timer(const Duration(milliseconds: 500), () {
               _fetchContacts();
@@ -484,8 +489,24 @@ class _ContactsScreenState extends State<ContactsScreen> {
   Widget _buildNoResultsState() {
     return Center(
       child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 40.h),
-        child: Text('No results for "${_searchController.text}"', style: TextStyle(color: AppColors.textSecondary, fontSize: 14.sp)),
+        padding: EdgeInsets.symmetric(vertical: 40.h, horizontal: 20.w),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.person_search, size: 64.sp, color: Colors.grey[300]),
+            SizedBox(height: 16.h),
+            Text(
+              'No results found for "${_searchController.text}"',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14.sp),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              'Try a different name or phone number.',
+              style: TextStyle(color: AppColors.textSecondary.withOpacity(0.7), fontSize: 12.sp),
+            ),
+          ],
+        ),
       ),
     );
   }

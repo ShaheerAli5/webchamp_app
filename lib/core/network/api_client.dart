@@ -49,9 +49,9 @@ class ApiClient {
   int get cacheCount => cacheInterceptor.cacheCount;
 
   Future<Response> get(String path,
-      {Map<String, dynamic>? queryParameters, Options? options}) async {
+      {Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken}) async {
     return await _dio.get(path,
-        queryParameters: queryParameters, options: options);
+        queryParameters: queryParameters, options: options, cancelToken: cancelToken);
   }
 
   Future<Response> post(
@@ -59,12 +59,14 @@ class ApiClient {
     dynamic data,
     Map<String, dynamic>? queryParameters,
     Options? options,
+    CancelToken? cancelToken,
   }) async {
     return await _dio.post(
       path,
       data: data,
       queryParameters: queryParameters,
       options: options,
+      cancelToken: cancelToken,
     );
   }
 
@@ -73,12 +75,14 @@ class ApiClient {
         dynamic data,
         Map<String, dynamic>? queryParameters,
         Options? options,
+        CancelToken? cancelToken,
       }) async {
     return await _dio.put(
       path,
       data: data,
       queryParameters: queryParameters,
       options: options,
+      cancelToken: cancelToken,
     );
   }
 
@@ -87,22 +91,25 @@ class ApiClient {
         dynamic data,
         Map<String, dynamic>? queryParameters,
         Options? options,
+        CancelToken? cancelToken,
       }) async {
     return await _dio.patch(
       path,
       data: data,
       queryParameters: queryParameters,
       options: options,
+      cancelToken: cancelToken,
     );
   }
 
   Future<Response> delete(String path,
-      {dynamic data, Map<String, dynamic>? queryParameters, Options? options}) async {
+      {dynamic data, Map<String, dynamic>? queryParameters, Options? options, CancelToken? cancelToken}) async {
     return await _dio.delete(
       path,
       data: data,
       queryParameters: queryParameters,
       options: options,
+      cancelToken: cancelToken,
     );
   }
 }

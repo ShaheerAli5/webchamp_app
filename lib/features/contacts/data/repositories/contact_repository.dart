@@ -22,6 +22,7 @@ class ContactRepository {
     int page = 1,
     int? perPage,
     bool refresh = false,
+    CancelToken? cancelToken,
   }) async {
     try {
       final response = await _apiService.getContacts(
@@ -29,6 +30,7 @@ class ContactRepository {
         page: page,
         perPage: perPage,
         refresh: refresh,
+        cancelToken: cancelToken,
       );
 
       debugPrint('--- CONTACTS API DEBUG ---');
@@ -200,9 +202,9 @@ class ContactRepository {
     }
   }
 
-  Future<dynamic> getChatHistory(String contactUid, {bool refresh = false}) async {
+  Future<dynamic> getChatHistory(String contactUid, {bool refresh = false, CancelToken? cancelToken}) async {
     try {
-      final response = await _apiService.getChatHistory(contactUid, refresh: refresh);
+      final response = await _apiService.getChatHistory(contactUid, refresh: refresh, cancelToken: cancelToken);
 
       // 1. If response is already a Map (Dio auto-parsed JSON)
       if (response.data is Map) {
@@ -308,9 +310,9 @@ class ContactRepository {
     return {'messages': []};
   }
 
-  Future<dynamic> getContactChatBoxData(String contactUid, {bool refresh = false}) async {
+  Future<dynamic> getContactChatBoxData(String contactUid, {bool refresh = false, CancelToken? cancelToken}) async {
     try {
-      final response = await _apiService.getContactChatBoxData(contactUid, refresh: refresh);
+      final response = await _apiService.getContactChatBoxData(contactUid, refresh: refresh, cancelToken: cancelToken);
       return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));

@@ -14,10 +14,45 @@ class TemplatesScreen extends StatefulWidget {
 }
 
 class _TemplatesScreenState extends State<TemplatesScreen> {
+  final TextEditingController _searchController = TextEditingController();
   Map<String, dynamic>? get contact => widget.extra?['contact'];
+
+  final List<Map<String, dynamic>> _allTemplates = [
+    {
+      'title': 'Welcome-message',
+      'status': 'Approved',
+      'statusColor': const Color(0xFFE7F6EC),
+      'statusTextColor': const Color(0xFF027A48),
+      'language': 'en_US',
+      'category': 'Marketing',
+      'updatedOn': '2023-11-20 14:30',
+    },
+    {
+      'title': 'Welcome-message-2',
+      'status': 'Pending',
+      'statusColor': const Color(0xFFFFF9E5),
+      'statusTextColor': const Color(0xFFB54708),
+      'language': 'en_US',
+      'category': 'Marketing',
+      'updatedOn': '2023-11-20 14:30',
+    },
+  ];
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final filteredTemplates = _allTemplates.where((template) {
+      final query = _searchController.text.toLowerCase();
+      if (query.isEmpty) return true;
+      return template['title'].toLowerCase().contains(query) ||
+             template['category'].toLowerCase().contains(query);
+    }).toList();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       appBar: PreferredSize(
@@ -71,25 +106,33 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                 children: [
                   _buildSearchBar(),
                   SizedBox(height: 16.h),
-                  _buildTemplateCard(
-                    title: 'Welcome-message',
-                    status: 'Approved',
-                    statusColor: const Color(0xFFE7F6EC),
-                    statusTextColor: const Color(0xFF027A48),
-                    language: 'en_US',
-                    category: 'Marketing',
-                    updatedOn: '2023-11-20 14:30',
-                  ),
-                  SizedBox(height: 16.h),
-                  _buildTemplateCard(
-                    title: 'Welcome-message-2',
-                    status: 'Pending',
-                    statusColor: const Color(0xFFFFF9E5),
-                    statusTextColor: const Color(0xFFB54708),
-                    language: 'en_US',
-                    category: 'Marketing',
-                    updatedOn: '2023-11-20 14:30',
-                  ),
+                  if (filteredTemplates.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(top: 40.h),
+                      child: Column(
+                        children: [
+                          Icon(Icons.description_outlined, size: 48.sp, color: Colors.grey[300]),
+                          SizedBox(height: 16.h),
+                          Text(
+                            'No templates found matching "${_searchController.text}"',
+                            style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ...filteredTemplates.map((template) => Padding(
+                          padding: EdgeInsets.only(bottom: 16.h),
+                          child: _buildTemplateCard(
+                            title: template['title'],
+                            status: template['status'],
+                            statusColor: template['statusColor'],
+                            statusTextColor: template['statusTextColor'],
+                            language: template['language'],
+                            category: template['category'],
+                            updatedOn: template['updatedOn'],
+                          ),
+                        )),
                   if (contact == null) ...[
                     SizedBox(height: 24.h),
                     Row(
@@ -130,6 +173,8 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
           SizedBox(width: 12.w),
           Expanded(
             child: TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() {}),
               style: TextStyle(fontSize: 16.sp, color: Colors.black),
               decoration: InputDecoration(
                 hintText: 'Search templates',
@@ -144,6 +189,16 @@ class _TemplatesScreenState extends State<TemplatesScreen> {
                 focusedBorder: InputBorder.none,
                 contentPadding: EdgeInsets.zero,
                 filled: false,
+                isDense: true,
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, color: Color(0xFF9A9AA5)),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
               ),
             ),
           ),

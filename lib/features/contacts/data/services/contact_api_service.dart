@@ -23,9 +23,11 @@ class ContactApiService {
     int page = 1,
     int? perPage,
     bool refresh = false,
+    CancelToken? cancelToken,
   }) async {
     return await _apiClient.get(
       ApiConstants.contactsData,
+      cancelToken: cancelToken,
       queryParameters: {
         if (search != null && search.isNotEmpty) 'search': search,
         'page': page,
@@ -162,9 +164,10 @@ class ContactApiService {
     );
   }
 
-  Future<Response> getChatHistory(String contactUid, {bool refresh = false}) async {
+  Future<Response> getChatHistory(String contactUid, {bool refresh = false, CancelToken? cancelToken}) async {
     return await _apiClient.get(
       ApiConstants.chatHistory(contactUid),
+      cancelToken: cancelToken,
       options: Options(
         extra: {
           'useCache': true,
@@ -175,9 +178,10 @@ class ContactApiService {
     );
   }
 
-  Future<Response> getContactChatBoxData(String contactUid, {bool refresh = false}) async {
+  Future<Response> getContactChatBoxData(String contactUid, {bool refresh = false, CancelToken? cancelToken}) async {
     return await _apiClient.get(
       ApiConstants.contactChatBoxData(contactUid),
+      cancelToken: cancelToken,
       options: Options(
         extra: {
           'useCache': true,

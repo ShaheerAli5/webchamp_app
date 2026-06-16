@@ -217,6 +217,7 @@ class _SelectContactsScreenState extends State<SelectContactsScreen> {
             child: TextField(
               controller: _searchController,
               onChanged: (val) {
+                setState(() {}); // For clear button visibility
                 _searchTimer?.cancel();
                 _searchTimer = Timer(const Duration(milliseconds: 500), () {
                   _fetchContacts(refresh: true);
@@ -238,6 +239,7 @@ class _SelectContactsScreenState extends State<SelectContactsScreen> {
               icon: Icon(Icons.close, size: 20.sp, color: const Color(0xFF667085)),
               onPressed: () {
                 _searchController.clear();
+                setState(() {});
                 _fetchContacts(refresh: true);
               },
             ),

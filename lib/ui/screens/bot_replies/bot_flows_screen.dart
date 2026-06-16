@@ -5,11 +5,55 @@ import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
 import '../../../routes/app_routes.dart';
 
-class BotFlowsScreen extends StatelessWidget {
+class BotFlowsScreen extends StatefulWidget {
   const BotFlowsScreen({super.key});
 
   @override
+  State<BotFlowsScreen> createState() => _BotFlowsScreenState();
+}
+
+class _BotFlowsScreenState extends State<BotFlowsScreen> {
+  final TextEditingController _searchController = TextEditingController();
+
+  final List<Map<String, dynamic>> _allFlows = [
+    {
+      'title': 'Onboarding Flow',
+      'status': 'Active',
+      'statusColor': const Color(0xFFE7F6EC),
+      'statusTextColor': const Color(0xFF027A48),
+      'trigger': 'New Subscriber',
+    },
+    {
+      'title': 'Support Flow',
+      'status': 'Inactive',
+      'statusColor': const Color(0xFFE0E6F3),
+      'statusTextColor': const Color(0xFF5369A1),
+      'trigger': 'New Message',
+    },
+    {
+      'title': 'Sales Flow',
+      'status': 'Active',
+      'statusColor': const Color(0xFFE7F6EC),
+      'statusTextColor': const Color(0xFF027A48),
+      'trigger': 'Purchase',
+    },
+  ];
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final filteredFlows = _allFlows.where((flow) {
+      final query = _searchController.text.toLowerCase();
+      if (query.isEmpty) return true;
+      return flow['title'].toLowerCase().contains(query) ||
+             flow['trigger'].toLowerCase().contains(query);
+    }).toList();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       appBar: PreferredSize(
@@ -72,35 +116,35 @@ class BotFlowsScreen extends StatelessWidget {
               child: Column(
                 children: [
                   _buildAnalyticsCard(),
-                  SizedBox(height: 16.h), // Gap 16px from Figma
+                  SizedBox(height: 16.h),
                   _buildSearchBar(),
-                  SizedBox(height: 16.h), // Gap 16px from Figma
-                  _buildFlowCard(
-                    context,
-                    title: 'Onboarding Flow',
-                    status: 'Active',
-                    statusColor: const Color(0xFFE7F6EC),
-                    statusTextColor: const Color(0xFF027A48),
-                    trigger: 'New Subscriber',
-                  ),
                   SizedBox(height: 16.h),
-                  _buildFlowCard(
-                    context,
-                    title: 'Onboarding Flow',
-                    status: 'Inactive',
-                    statusColor: const Color(0xFFE0E6F3),
-                    statusTextColor: const Color(0xFF5369A1),
-                    trigger: 'New Subscriber',
-                  ),
-                  SizedBox(height: 16.h),
-                  _buildFlowCard(
-                    context,
-                    title: 'Onboarding Flow',
-                    status: 'Active',
-                    statusColor: const Color(0xFFE7F6EC),
-                    statusTextColor: const Color(0xFF027A48),
-                    trigger: 'New Subscriber',
-                  ),
+                  if (filteredFlows.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(top: 40.h),
+                      child: Column(
+                        children: [
+                          Icon(Icons.account_tree_outlined, size: 48.sp, color: Colors.grey[300]),
+                          SizedBox(height: 16.h),
+                          Text(
+                            'No flows found matching "${_searchController.text}"',
+                            style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ...filteredFlows.map((flow) => Padding(
+                          padding: EdgeInsets.only(bottom: 16.h),
+                          child: _buildFlowCard(
+                            context,
+                            title: flow['title'],
+                            status: flow['status'],
+                            statusColor: flow['statusColor'],
+                            statusTextColor: flow['statusTextColor'],
+                            trigger: flow['trigger'],
+                          ),
+                        )),
                   SizedBox(height: 80.h),
                 ],
               ),
@@ -328,6 +372,8 @@ class BotFlowsScreen extends StatelessWidget {
           SizedBox(width: 12.w),
           Expanded(
             child: TextField(
+              controller: _searchController,
+              onChanged: (value) => setState(() {}),
               style: TextStyle(fontSize: 16.sp, color: Colors.black),
               decoration: InputDecoration(
                 hintText: 'Search flows',
@@ -342,6 +388,16 @@ class BotFlowsScreen extends StatelessWidget {
                 focusedBorder: InputBorder.none,
                 contentPadding: EdgeInsets.zero,
                 filled: false,
+                isDense: true,
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, color: Color(0xFF9A9AA5)),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
               ),
             ),
           ),

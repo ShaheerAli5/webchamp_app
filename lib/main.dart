@@ -36,14 +36,19 @@ void main() async {
   authProvider.onLogin = (user, token) {
     debugPrint('🔑 [MAIN] User Login - Initializing for User ID: ${user.id}');
     apiClient.setCurrentUser(token, userId: user.id.toString());
-    // Immediately clear and fetch fresh contacts for the new user
-    contactProvider.clearAllData();
     contactProvider.setActiveUser(user.id.toString());
-    contactProvider.getContacts(refresh: true);
+    
+    // Load cache first for speed, then fetch fresh in background
+    contactProvider.loadCachedData().then((_) {
+      contactProvider.getContacts(refresh: true);
+    });
   };
 
   // Initialize auth status before running app
   await authProvider.checkAuthStatus();
+  
+  // Note: authProvider.onLogin is automatically triggered by checkAuthStatus() 
+  // if already logged in, so we don't need manual initialization here anymore.
 
   runApp(
     MultiProvider(

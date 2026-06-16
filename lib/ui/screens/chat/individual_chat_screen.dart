@@ -11,10 +11,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:io';
 import '../../../core/utils/helpers.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
-import '../../../providers/auth_provider.dart';
 import 'widgets/voice_message_bubble.dart';
 
 class IndividualChatScreen extends StatefulWidget {
@@ -125,7 +125,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       _recordTimer?.cancel();
       await _audioRecorder.stop();
       setState(() { _isRecording = false; _recordDuration = 0; });
-    } catch (e) {}
+    } catch (e) {
+      debugPrint("Cancel recording error: $e");
+    }
   }
 
   void _sendVoiceMessage(String path) {
@@ -159,15 +161,21 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
               children: [
                 _buildAttachmentOption(Icons.image, "Gallery", Colors.purple, () async {
                   final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-                  if (image != null) Navigator.pop(context, 'image:${image.path}');
+                  if (image != null && mounted) {
+                    Navigator.pop(context, 'image:${image.path}');
+                  }
                 }),
                 _buildAttachmentOption(Icons.videocam, "Video", Colors.orange, () async {
                   final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
-                  if (video != null) Navigator.pop(context, 'video:${video.path}');
+                  if (video != null && mounted) {
+                    Navigator.pop(context, 'video:${video.path}');
+                  }
                 }),
                 _buildAttachmentOption(Icons.insert_drive_file, "Document", Colors.blue, () async {
                   FilePickerResult? res = await FilePicker.platform.pickFiles();
-                  if (res != null) Navigator.pop(context, 'file:${res.files.single.path}');
+                  if (res != null && mounted) {
+                    Navigator.pop(context, 'file:${res.files.single.path}');
+                  }
                 }),
               ],
             ),
@@ -177,9 +185,13 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     );
 
     if (result != null) {
-      if (result.startsWith('image:')) _sendImage(result.substring(6));
-      else if (result.startsWith('video:')) _sendVideo(result.substring(6));
-      else if (result.startsWith('file:')) _sendDocument(result.substring(5));
+      if (result.startsWith('image:')) {
+        _sendImage(result.substring(6));
+      } else if (result.startsWith('video:')) {
+        _sendVideo(result.substring(6));
+      } else if (result.startsWith('file:')) {
+        _sendDocument(result.substring(5));
+      }
     }
   }
 
@@ -244,7 +256,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                 CircleAvatar(
                   radius: 50.r,
                   backgroundColor: const Color(0xFFF0F2F5),
-                  backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
+                  backgroundImage: imageUrl != null ? CachedNetworkImageProvider(imageUrl) : null,
                   child: imageUrl == null ? Text(Helpers.getInitial(name), style: TextStyle(fontSize: 32.sp, fontWeight: FontWeight.bold, color: Colors.grey)) : null,
                 ),
                 SizedBox(height: 12.h),
@@ -268,58 +280,69 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ContactProvider>(
-      builder: (context, provider, child) {
-        final contact = provider.contacts.firstWhere((c) => (c['_uid'] ?? c['uid']) == widget.uid, orElse: () => <String, dynamic>{});
-        final name = contact['full_name'] ?? contact['first_name'] ?? widget.name;
-        final imageUrl = contact['profile_image'] ?? contact['image_url'];
-
-        return Scaffold(
-          backgroundColor: const Color(0xFFE5DDD5),
-          appBar: PreferredSize(
-            preferredSize: Size.fromHeight(60.h),
-            child: ChatAppBar(name: _sanitizeText(name), uid: widget.uid, imageUrl: imageUrl, onInfoTap: _showContactInfo),
-          ),
-          body: GestureDetector(
-            onTap: () { if (_selectedMessageId != null) setState(() => _selectedMessageId = null); },
-            child: Stack(
-              children: [
-                Opacity(
-                  opacity: 0.08,
-                  child: Image.network('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png', fit: BoxFit.cover, width: double.infinity, height: double.infinity),
-                ),
-                SafeArea(
-                  bottom: true,
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: provider.isLoading && provider.messages.isEmpty
-                            ? const Center(child: CircularProgressIndicator())
-                            : _buildMessagesList(provider.messages, imageUrl),
-                      ),
-                      ChatInputBar(
-                        controller: _messageController,
-                        focusNode: _focusNode,
-                        isTyping: _isTyping,
-                        onAttachment: _handleAttachment,
-                        onCamera: _handleCamera,
-                        onSend: _handleSend,
-                        replyingTo: _replyingTo,
-                        onCancelReply: () => setState(() => _replyingTo = null),
-                        isRecording: _isRecording,
-                        recordDuration: _recordDuration,
-                        onStartRecording: _startRecording,
-                        onStopRecording: _stopRecording,
-                        onCancelRecording: _cancelRecording,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+    return Scaffold(
+      backgroundColor: const Color(0xFFE5DDD5),
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(60.h),
+        child: Selector<ContactProvider, Map<String, dynamic>>(
+          selector: (_, p) => p.contacts.firstWhere((c) => (c['_uid'] ?? c['uid']) == widget.uid, orElse: () => <String, dynamic>{}),
+          builder: (context, contact, child) {
+            final name = contact['full_name'] ?? contact['first_name'] ?? widget.name;
+            final imageUrl = contact['profile_image'] ?? contact['image_url'];
+            return ChatAppBar(name: _sanitizeText(name), uid: widget.uid, imageUrl: imageUrl, onInfoTap: _showContactInfo);
+          },
+        ),
+      ),
+      body: GestureDetector(
+        onTap: () { if (_selectedMessageId != null) setState(() => _selectedMessageId = null); },
+        child: Stack(
+          children: [
+            Opacity(
+              opacity: 0.08,
+              child: CachedNetworkImage(
+                imageUrl: 'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png',
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                useOldImageOnUrlChange: true,
+              ),
             ),
-          ),
-        );
-      },
+            SafeArea(
+              bottom: true,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Consumer<ContactProvider>(
+                      builder: (context, provider, child) {
+                        if (provider.isLoading && provider.messages.isEmpty) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        // Optimized: Pass message list to builder
+                        return _buildMessagesList(provider.messages, null);
+                      },
+                    ),
+                  ),
+                  ChatInputBar(
+                    controller: _messageController,
+                    focusNode: _focusNode,
+                    isTyping: _isTyping,
+                    onAttachment: _handleAttachment,
+                    onCamera: _handleCamera,
+                    onSend: _handleSend,
+                    replyingTo: _replyingTo,
+                    onCancelReply: () => setState(() => _replyingTo = null),
+                    isRecording: _isRecording,
+                    recordDuration: _recordDuration,
+                    onStartRecording: _startRecording,
+                    onStopRecording: _stopRecording,
+                    onCancelRecording: _cancelRecording,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -409,7 +432,6 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     final rawTime = messageData['created_at'] ?? messageData['updated_at'] ?? messageData['messaged_at'] ?? messageData['timestamp'];
     if (rawTime == null) return '';
     final dateTime = Helpers.toPKT(rawTime);
-    if (dateTime == null) return '';
     final now = DateTime.now();
     if (dateTime.day == now.day && dateTime.month == now.month && dateTime.year == now.year) return 'today';
     final yesterday = now.subtract(const Duration(days: 1));
@@ -525,7 +547,7 @@ class ChatAppBar extends StatelessWidget {
         child: Row(
           children: [
             IconButton(onPressed: () => context.pop(), icon: const Icon(Icons.arrow_back, color: Color(0xFF008069))),
-            CircleAvatar(radius: 20.r, backgroundColor: const Color(0xFFF0F2F5), backgroundImage: imageUrl != null ? NetworkImage(imageUrl!) : null, child: imageUrl == null ? Icon(Icons.person, color: Colors.grey, size: 28.sp) : null),
+            CircleAvatar(radius: 20.r, backgroundColor: const Color(0xFFF0F2F5), backgroundImage: imageUrl != null ? CachedNetworkImageProvider(imageUrl!) : null, child: imageUrl == null ? Icon(Icons.person, color: Colors.grey, size: 28.sp) : null),
             SizedBox(width: 10.w),
             Expanded(
               child: Column(
@@ -768,7 +790,23 @@ class ChatBubble extends StatelessWidget {
     final bool isLocal = url.startsWith('/') || url.contains('cache/');
     return GestureDetector(
       onTap: () => _openFullscreenMedia(context, url, 'image'),
-      child: ClipRRect(borderRadius: BorderRadius.circular(8.r), child: isLocal ? Image.file(File(url), height: 150.h, width: 200.w, fit: BoxFit.cover) : Image.network(url, fit: BoxFit.cover, height: 150.h, width: 200.w)),
+      child: ClipRRect(
+          borderRadius: BorderRadius.circular(8.r),
+          child: isLocal
+              ? Image.file(File(url), height: 150.h, width: 200.w, fit: BoxFit.cover)
+              : CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.cover,
+                  height: 150.h,
+                  width: 200.w,
+                  placeholder: (context, url) => Container(
+                    height: 150.h,
+                    width: 200.w,
+                    color: Colors.grey[200],
+                    child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                  ),
+                  errorWidget: (context, url, error) => const Icon(Icons.error),
+                )),
     );
   }
 
@@ -778,7 +816,15 @@ class ChatBubble extends StatelessWidget {
 
   void _openFullscreenMedia(BuildContext context, String url, String type) {
     final bool isLocal = url.startsWith('/') || url.contains('cache/');
-    showDialog(context: context, builder: (context) => Dialog(backgroundColor: Colors.black, insetPadding: EdgeInsets.zero, child: Stack(children: [Center(child: InteractiveViewer(child: isLocal ? Image.file(File(url)) : Image.network(url))), Positioned(top: 40.h, right: 20.w, child: IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 30), onPressed: () => Navigator.pop(context)))])));
+    showDialog(
+        context: context,
+        builder: (context) => Dialog(
+            backgroundColor: Colors.black,
+            insetPadding: EdgeInsets.zero,
+            child: Stack(children: [
+              Center(child: InteractiveViewer(child: isLocal ? Image.file(File(url)) : CachedNetworkImage(imageUrl: url, placeholder: (context, url) => const CircularProgressIndicator(), errorWidget: (context, url, error) => const Icon(Icons.error)))),
+              Positioned(top: 40.h, right: 20.w, child: IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 30), onPressed: () => Navigator.pop(context)))
+            ])));
   }
 }
 

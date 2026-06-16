@@ -55,6 +55,14 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final filteredMembers = teamMembers.where((member) {
+      final query = _searchController.text.toLowerCase();
+      if (query.isEmpty) return true;
+      return member['name'].toLowerCase().contains(query) ||
+             member['email'].toLowerCase().contains(query) ||
+             member['username'].toLowerCase().contains(query);
+    }).toList();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       appBar: PreferredSize(
@@ -107,14 +115,28 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
             children: [
               _buildSearchBar(),
               Expanded(
-                child: ListView.builder(
-                  padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 100.h),
-                  itemCount: teamMembers.length,
-                  itemBuilder: (context, index) {
-                    final member = teamMembers[index];
-                    return _buildTeamMemberCard(member, index);
-                  },
-                ),
+                child: filteredMembers.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.people_outline, size: 64.sp, color: Colors.grey[300]),
+                            SizedBox(height: 16.h),
+                            Text(
+                              'No members found matching "${_searchController.text}"',
+                              style: TextStyle(color: Colors.grey, fontSize: 14.sp),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: EdgeInsets.fromLTRB(16.w, 0, 16.w, 100.h),
+                        itemCount: filteredMembers.length,
+                        itemBuilder: (context, index) {
+                          final member = filteredMembers[index];
+                          return _buildTeamMemberCard(member, teamMembers.indexOf(member));
+                        },
+                      ),
               ),
             ],
           ),
@@ -169,6 +191,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                 child: TextField(
                   controller: _searchController,
                   focusNode: _searchFocusNode,
+                  onChanged: (value) => setState(() {}),
                   decoration: InputDecoration(
                     hintText: 'Search members',
                     hintStyle: TextStyle(
@@ -184,6 +207,15 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                     disabledBorder: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
                     isDense: true,
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close, color: Color(0xFF98A2B3)),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {});
+                            },
+                          )
+                        : null,
                   ),
                   style: TextStyle(
                     color: const Color(0xFF151C27),

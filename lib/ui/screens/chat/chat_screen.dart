@@ -18,6 +18,8 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchTimer;
   bool _isSetupCompleted = true;
   Timer? _pollingTimer;
   bool _isPolling = false;
@@ -26,35 +28,38 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(() {
+      setState(() {}); // For clear button visibility
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchContacts();
-      // Polling is disabled to prevent repeated Page 1 reloads
-      // and to respect pagination state.
-      // _startPolling();
     });
   }
 
-  Future<void> _fetchContacts() async {
+  Future<void> _fetchContacts({String? search}) async {
     final provider = context.read<ContactProvider>();
-    // First load from cache (default behavior with useCache: true)
-    await provider.getContacts();
+    await provider.getContacts(search: search);
     
-    // Then refresh in background if it was from cache
-    if (provider.contacts.isNotEmpty) {
+    if (search == null && provider.contacts.isNotEmpty) {
       provider.getContacts(refresh: true);
     }
+  }
+
+  void _onSearchChanged(String query) {
+    _searchTimer?.cancel();
+    _searchTimer = Timer(const Duration(milliseconds: 500), () {
+      _fetchContacts(search: query.isEmpty ? null : query);
+    });
   }
 
   String _sanitizeText(String? text) {
     return Helpers.sanitizeString(text).trim();
   }
 
-  void _startPolling() {
-    // Logic removed to prevent Issue #1 (Repeated Page 1 reloads)
-  }
-
   @override
   void dispose() {
+    _searchController.dispose();
+    _searchTimer?.cancel();
     _pollingTimer?.cancel();
     super.dispose();
   }
@@ -94,12 +99,32 @@ class _ChatScreenState extends State<ChatScreen> {
                         : contactsWithChats;
                     
                     if (filtered.isEmpty) {
-                      return const Center(child: Text("No chats yet"));
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.search_off, size: 64.sp, color: Colors.grey[300]),
+                            SizedBox(height: 16.h),
+                            Text(
+                              _searchController.text.isEmpty
+                                  ? "No chats yet"
+                                  : "No results found for \"${_searchController.text}\"",
+                              style: TextStyle(color: Colors.grey, fontSize: 16.sp),
+                            ),
+                          ],
+                        ),
+                      );
                     }
 
                     return ListView.builder(
-                      itemCount: filtered.length,
+                      itemCount: filtered.length + (provider.isLoading ? 1 : 0),
                       itemBuilder: (context, index) {
+                        if (index == filtered.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
                         final contact = filtered[index];
                         final name = _contactName(contact);
                         final uid = _contactUid(contact);
@@ -273,8 +298,10 @@ class _ChatScreenState extends State<ChatScreen> {
           SizedBox(width: 12.w),
           Expanded(
             child: TextField(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
               decoration: InputDecoration(
-                hintText: 'Ask Meta AI or Search',
+                hintText: 'Search chats...',
                 hintStyle: TextStyle(
                   color: Colors.grey,
                   fontSize: 16.sp,
@@ -287,6 +314,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 disabledBorder: InputBorder.none,
                 contentPadding: EdgeInsets.zero,
                 isDense: true,
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: Icon(Icons.close, size: 20.sp, color: Colors.grey),
+                        onPressed: () {
+                          _searchController.clear();
+                          _onSearchChanged('');
+                        },
+                      )
+                    : null,
               ),
             ),
           ),

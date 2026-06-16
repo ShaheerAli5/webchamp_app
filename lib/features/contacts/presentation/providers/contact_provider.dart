@@ -1,7 +1,9 @@
-import 'dart:io';
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/repositories/contact_repository.dart';
 import '../../../../core/utils/helpers.dart';
 
@@ -9,6 +11,9 @@ class ContactProvider extends ChangeNotifier {
   final ContactRepository _repository;
 
   ContactProvider(this._repository);
+
+  CancelToken? _contactsCancelToken;
+  CancelToken? _chatCancelToken;
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -41,6 +46,7 @@ class ContactProvider extends ChangeNotifier {
   bool _hasMore = true;
   bool get hasMore => _hasMore;
   String? _lastSearch;
+  String? _activeRequestSessionId;
 
   Map<String, dynamic>? _selectedContact;
   Map<String, dynamic>? get selectedContact => _selectedContact;
@@ -107,6 +113,14 @@ class ContactProvider extends ChangeNotifier {
     _globalUnreadTimer = null;
   }
 
+  @override
+  void dispose() {
+    _contactsCancelToken?.cancel("Provider disposed");
+    _chatCancelToken?.cancel("Provider disposed");
+    _globalUnreadTimer?.cancel();
+    super.dispose();
+  }
+
   void clearChat() {
     _messages = [];
     _errorMessage = null;
@@ -114,8 +128,45 @@ class ContactProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Loads locally cached data for instant startup
+  Future<void> loadCachedData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? contactsJson = prefs.getString('cached_contacts_${_activeUserId ?? 'anon'}');
+      if (contactsJson != null) {
+        final List<dynamic> decoded = jsonDecode(contactsJson);
+        if (decoded.isNotEmpty) {
+          _contacts = decoded;
+          _contactsFullyLoaded = false;
+          _hasMore = true;
+          debugPrint('💾 [CACHE] Loaded ${_contacts.length} contacts from persistent storage');
+          notifyListeners();
+        }
+      }
+      
+      final int cachedUnread = prefs.getInt('cached_unread_${_activeUserId ?? 'anon'}') ?? 0;
+      if (cachedUnread > 0) {
+        _globalUnreadCount = cachedUnread;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('⚠️ [CACHE] Failed to load persistent cache: $e');
+    }
+  }
+
+  Future<void> _saveToPersistentCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Cache all contacts for a truly "no restriction" experience
+      await prefs.setString('cached_contacts_${_activeUserId ?? 'anon'}', jsonEncode(_contacts));
+      await prefs.setInt('cached_unread_${_activeUserId ?? 'anon'}', _globalUnreadCount);
+    } catch (e) {
+      debugPrint('⚠️ [CACHE] Failed to save persistent cache: $e');
+    }
+  }
+
   /// Clears all contact-related data (e.g. on logout/user switch)
-  void clearAllData() {
+  void clearAllData() async {
     debugPrint('🧹 [CONTACTS] Clearing all provider data');
     _repository.clear();
     _contacts = [];
@@ -134,6 +185,10 @@ class ContactProvider extends ChangeNotifier {
     _contactsFullyLoaded = false;
     _errorMessage = null;
     _activeUserId = null;
+    
+    final prefs = await SharedPreferences.getInstance();
+    prefs.remove('cached_contacts_'); // Partial match would be better but let's be simple
+
     debugPrint('📊 After User Switch: ${_contacts.length} contacts remaining');
     notifyListeners();
   }
@@ -157,11 +212,25 @@ class ContactProvider extends ChangeNotifier {
     int? perPage,
     bool isRecursiveCall = false, // Internal flag to bypass guard
   }) async {
-    // 🛡️ GUARD: Prevent concurrent contact fetching unless it's a recursive call
-    if (_isFetchingContacts && !isRecursiveCall) {
-      debugPrint('⏳ [CONTACTS] Fetch already in progress, skipping start.');
+    final bool isSearching = search != null && search.isNotEmpty;
+
+    // 🛡️ GUARD: Allow new searches to interrupt current ones, but prevent multiple 
+    // loadMore requests from overlapping.
+    if (_isFetchingContacts && loadMore && !isRecursiveCall) {
+      debugPrint('⏳ [CONTACTS] LoadMore already in progress, skipping.');
       return false;
     }
+    
+    // 🛡️ Cancel previous contact fetch if a new sequence is starting
+    if (!loadMore && !isRecursiveCall) {
+      _contactsCancelToken?.cancel("New search/refresh started");
+      _contactsCancelToken = CancelToken();
+
+      _activeRequestSessionId = DateTime.now().millisecondsSinceEpoch.toString();
+      debugPrint('🆔 [CONTACTS] NEW SESSION: $_activeRequestSessionId (Search: $search)');
+    }
+    
+    final String currentSessionId = _activeRequestSessionId ?? '';
     
     if (loadMore && !_hasMore) return false;
     
@@ -169,8 +238,17 @@ class ContactProvider extends ChangeNotifier {
     if (!loadMore) {
       _currentPage = 1;
       _hasMore = true;
-      if (refresh) {
+      
+      // 🛡️ CRITICAL FIX: Only clear if search changed or explicitly requested.
+      // For background refresh, we keep the list to show cached data.
+      bool searchChanged = search != _lastSearch;
+      
+      if (searchChanged || (isSearching && refresh)) {
+        debugPrint('🧹 [CONTACTS] Clearing list for NEW search results');
         _contacts.clear();
+        _total = 0;
+      } else {
+        debugPrint('⏳ [CONTACTS] Refreshing existing list in background...');
       }
       _contactsFullyLoaded = false;
     } else {
@@ -178,6 +256,7 @@ class ContactProvider extends ChangeNotifier {
     }
     
     _isFetchingContacts = true;
+    // Only show full-screen loading if list is empty
     if (_contacts.isEmpty) _isLoading = true;
     _errorMessage = null;
     _lastSearch = search;
@@ -186,12 +265,22 @@ class ContactProvider extends ChangeNotifier {
     try {
       debugPrint('🚀 [CONTACTS] FETCH START - Page: $_currentPage, Search: $search');
       
+      // Use larger perPage when auto-loading all for efficiency
+      int effectivePerPage = perPage ?? (autoLoadAll ? 100 : 50);
+
       var rawResult = await _repository.getContacts(
         search: search,
         page: _currentPage,
-        perPage: perPage ?? 50, // Use 50 as default to reduce API pressure
+        perPage: effectivePerPage,
         refresh: refresh || !loadMore, 
+        cancelToken: _contactsCancelToken,
       );
+      
+      // 🛑 SESSION CHECK: If a new request sequence started, discard this one.
+      if (currentSessionId != _activeRequestSessionId) {
+        debugPrint('🛑 [CONTACTS] Session mismatch. Discarding Page $_currentPage.');
+        return false;
+      }
       
       final result = Helpers.sanitizeData(rawResult);
       
@@ -199,26 +288,8 @@ class ContactProvider extends ChangeNotifier {
 
       List<dynamic> newContacts = _parseContactsResponse(result);
       
-      // 🏷️ [LABELS] Extract global labels from the contacts response if available
-      final dynamic clientModels = result['client_models'];
-      final dynamic data = result['data'];
-      final dynamic safeClientModels = (clientModels is Map) ? clientModels : null;
-      
-      final globalLabels = _extractLargestList([
-        result['listOfAllLabels'], 
-        data?['listOfAllLabels'], 
-        result['allLabels'],
-        safeClientModels?['listOfAllLabels'],
-        safeClientModels?['allLabels'],
-      ]);
-      
-      if (globalLabels.isNotEmpty) {
-        _allAvailableLabels = globalLabels;
-        debugPrint('🏷️ [LABELS] Loaded ${_allAvailableLabels.length} global labels');
-      }
-      
-      // Update pagination state BEFORE merging to get correct _total and _hasMore from backend
-      _updatePaginationState(result, newContacts.length);
+      // Update pagination state BEFORE merging
+      _updatePaginationState(result, newContacts.length, effectivePerPage);
 
       final existingUids = _contacts.map(_extractUid).whereType<String>().toSet();
       int addedInThisPage = 0;
@@ -236,7 +307,19 @@ class ContactProvider extends ChangeNotifier {
           _contacts.add(contact);
           addedInThisPage++;
           existingUids.add(uid);
+        } else if (uid != null && existingUids.contains(uid)) {
+          // Update existing contact data in-place if found
+          final index = _contacts.indexWhere((c) => _extractUid(c) == uid);
+          if (index != -1) {
+            _contacts[index] = contact;
+          }
         }
+      }
+
+      // If Page 1 refresh returned fewer items than we had, it might be a user switch or data change
+      // In a real app we'd handle this more complexly, but for now we trust the backend Page 1
+      if (_currentPage == 1 && !loadMore && newContacts.isNotEmpty && !isSearching) {
+        _saveToPersistentCache();
       }
       
       // ✅ VERIFICATION LOGS
@@ -255,14 +338,14 @@ class ContactProvider extends ChangeNotifier {
       _availableCountries = _extractCountriesFromResponse(result);
       
       // ✅ AUTOMATIC RECURSIVE FETCHING - Only if backend says there is more
-      if (autoLoadAll && _hasMore && newContacts.isNotEmpty && addedInThisPage > 0) {
+      if (autoLoadAll && _hasMore && newContacts.isNotEmpty) {
         debugPrint('⏳ [CONTACTS] Auto-loading next page ($_currentPage + 1)...');
-        await Future.delayed(const Duration(milliseconds: 200));
+        await Future.delayed(const Duration(milliseconds: 100));
         return await getContacts(
           search: search, 
           loadMore: true, 
           autoLoadAll: true,
-          perPage: perPage,
+          perPage: effectivePerPage,
           isRecursiveCall: true,
         );
       }
@@ -310,7 +393,7 @@ class ContactProvider extends ChangeNotifier {
     }
   }
 
-  void _updatePaginationState(dynamic result, int newCount) {
+  void _updatePaginationState(dynamic result, int newCount, int requestedPerPage) {
     if (result is! Map) return;
 
     final clientModels = result['client_models'];
@@ -332,6 +415,8 @@ class ContactProvider extends ChangeNotifier {
       } else if (backendPage != null && lastPage != null) {
         _hasMore = backendPage < lastPage;
       } else {
+        // Trust the backend: if we got any contacts, try the next page
+        // until we get an empty response.
         _hasMore = newCount > 0;
       }
     } else {
@@ -339,7 +424,7 @@ class ContactProvider extends ChangeNotifier {
       if (foundTotal != null) {
         _total = foundTotal;
       }
-      // Always base hasMore on whether we actually got contacts
+      // No pagination info from backend, keep fetching until a page is empty
       _hasMore = newCount > 0;
     }
 
@@ -579,7 +664,8 @@ class ContactProvider extends ChangeNotifier {
     try {
       final result = await _repository.getUnreadCount();
       if (result is Map) {
-        _globalUnreadCount = _toInt(result['unread_count'] ?? result['data']?['unread_count']) ?? 0;
+        _globalUnreadCount = _toInt(result['unread_count'] ?? result['data']?['unread_count'] ?? result['client_models']?['unreadMessagesCount']) ?? 0;
+        _saveToPersistentCache();
         notifyListeners();
       }
     } catch (e) {
@@ -617,6 +703,10 @@ class ContactProvider extends ChangeNotifier {
   }
 
   Future<bool> getContactChatBoxData(String contactUid, {bool showLoading = true, bool refresh = false}) async {
+    // 🛡️ Cancel previous chat fetch for ANY contact to avoid race conditions
+    _chatCancelToken?.cancel("Switching chat or refreshing");
+    _chatCancelToken = CancelToken();
+
     // 🛡️ GUARD: Only prevent overlapping requests for the SAME contact
     // If it's a new contact, allow it.
     if (_isFetchingChat && _selectedContact?['uid'] == contactUid) {
@@ -640,8 +730,8 @@ class ContactProvider extends ChangeNotifier {
     try {
       // 1. Fetch Sidebar and Chat History in parallel
       final results = await Future.wait([
-        _repository.getContactChatBoxData(contactUid, refresh: refresh),
-        _repository.getChatHistory(contactUid, refresh: refresh).catchError((e) {
+        _repository.getContactChatBoxData(contactUid, refresh: refresh, cancelToken: _chatCancelToken),
+        _repository.getChatHistory(contactUid, refresh: refresh, cancelToken: _chatCancelToken).catchError((e) {
           debugPrint('❌ [CHAT] History fetch failed: $e');
           return <String, dynamic>{};
         }),

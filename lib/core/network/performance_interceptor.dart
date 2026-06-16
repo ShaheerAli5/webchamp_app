@@ -25,10 +25,25 @@ class PerformanceInterceptor extends Interceptor {
     if (startTime != null) {
       final endTime = DateTime.now().millisecondsSinceEpoch;
       final duration = endTime - startTime;
-      debugPrint('⏱️ [PERFORMANCE] ${options.method} ${options.path} - Status: $statusCode - Time: ${duration}ms');
+      
+      final String method = options.method.padRight(6);
+      final String path = options.path;
+      final String status = statusCode?.toString() ?? 'ERR';
+      
+      debugPrint('⏱️ [PERFORMANCE] $method $path - Status: $status - Time: ${duration}ms');
       
       if (duration > 1000) {
-        debugPrint('⚠️ [SLOW API] This request took more than 1 second!');
+        debugPrint('⚠️ [SLOW API ALERT] ----------------------------------------');
+        debugPrint('⚠️ [SLOW API] Request: $method $path');
+        debugPrint('⚠️ [SLOW API] Time: ${duration}ms');
+        debugPrint('⚠️ [SLOW API] Query Params: ${options.queryParameters}');
+        debugPrint('⚠️ [SLOW API ALERT] ----------------------------------------');
+      }
+
+      if (duration > 2000) {
+        // Here we could integrate with a crash reporting tool like Sentry or Firebase Crashlytics
+        // For now, we'll just log it more prominently
+        debugPrint('🛑 [CRITICAL SLOW API] $method $path took ${duration}ms');
       }
     }
   }
