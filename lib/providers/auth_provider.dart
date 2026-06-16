@@ -4,8 +4,10 @@ import '../features/auth/data/repositories/auth_repository.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthRepository _authRepository;
+  VoidCallback? onLogout;
+  Function(UserModel, String)? onLogin;
 
-  AuthProvider(this._authRepository);
+  AuthProvider(this._authRepository, {this.onLogout, this.onLogin});
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -25,33 +27,44 @@ class AuthProvider extends ChangeNotifier {
 
     _user = await _authRepository.getSavedUser();
     _isLoggedIn = _user != null;
+
+    if (_isLoggedIn && _user != null) {
+      final token = await _authRepository.getToken();
+      if (token != null) {
+        onLogin?.call(_user!, token);
+      }
+    }
     
     _isLoading = false;
     notifyListeners();
   }
 
   Future<bool> login(String email, String password) async {
-    print('=== PROVIDER LOGIN START ===');
+    debugPrint('=== PROVIDER LOGIN START ===');
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      print('Calling repository login for $email...');
+      debugPrint('Calling repository login for $email...');
       _user = await _authRepository.login(email, password);
       _isLoggedIn = _user != null;
-      print('Provider Login Success: $_isLoggedIn');
+      debugPrint('Provider Login Success: $_isLoggedIn');
       if (_user != null) {
-        print('User Email: ${_user!.email}');
-        print('User ID: ${_user!.id}');
+        debugPrint('User Email: ${_user!.email}');
+        debugPrint('User ID: ${_user!.id}');
+        final token = await _authRepository.getToken();
+        if (token != null) {
+          onLogin?.call(_user!, token);
+        }
       }
       
       _isLoading = false;
       notifyListeners();
       return _isLoggedIn;
     } catch (e, stack) {
-      print('Provider Login Error: $e');
-      print('Stacktrace: $stack');
+      debugPrint('Provider Login Error: $e');
+      debugPrint('Stacktrace: $stack');
       _errorMessage = e.toString().replaceAll('Exception: ', '');
       _isLoggedIn = false;
       _isLoading = false;
@@ -76,7 +89,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print('Registering with params: $firstName, $lastName, $email, $username, $mobileNumber, $vendorTitle, $passwordConfirmation, $termsAndConditions');
+      debugPrint('Registering with params: $firstName, $lastName, $email, $username, $mobileNumber, $vendorTitle, $passwordConfirmation, $termsAndConditions');
 
       final response = await _authRepository.registerVendor(
         firstName: firstName,
@@ -89,7 +102,7 @@ class AuthProvider extends ChangeNotifier {
         passwordConfirmation: passwordConfirmation,
         termsAndConditions: termsAndConditions,
       );
-      print('Registration Response: $response');
+      debugPrint('Registration Response: $response');
       _isLoading = false;
       notifyListeners();
       return response;
@@ -105,6 +118,7 @@ class AuthProvider extends ChangeNotifier {
     await _authRepository.logout();
     _isLoggedIn = false;
     _user = null;
+    onLogout?.call();
     notifyListeners();
   }
 

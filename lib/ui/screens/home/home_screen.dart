@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/utils/helpers.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
@@ -68,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, auth, child) {
           final user = auth.user;
           final displayName = user?.displayName ?? 'Admin Panel';
-          final initials = displayName.trim().split(' ').where((e) => e.isNotEmpty).take(2).map((e) => e[0].toUpperCase()).join();
+          final initials = displayName.trim().split(' ').where((e) => e.isNotEmpty).take(2).map((e) => Helpers.getInitial(e)).join();
           final firstName = user?.firstName ?? (displayName.split(' ').first);
 
           return Row(

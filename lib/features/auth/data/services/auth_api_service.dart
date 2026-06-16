@@ -1,5 +1,3 @@
-// auth_api_service.dart
-
 import 'package:dio/dio.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_constants.dart';
@@ -25,10 +23,14 @@ class AuthApiService {
   Future<Response> login(String email, String password) async {
     return await _apiClient.post(
       ApiConstants.login,
-      data: {
+      queryParameters: {
         'email': email,
         'password': password,
       },
+      options: Options(
+        contentType: null,
+        headers: {'content-type': null},
+      ),
     );
   }
 
@@ -43,31 +45,30 @@ class AuthApiService {
     required String passwordConfirmation,
     required bool termsAndConditions,
   }) async {
-    final params = {
-      'first_name': firstName,
-      'last_name': lastName,
-      'email': email,
-      'username': username,
-      'mobile_number': mobileNumber,
-      'vendor_title': vendorTitle,
-      'password': password,
-      'password_confirmation': passwordConfirmation,
-      'terms_and_conditions': termsAndConditions ? '1' : '0',
-    };
-
     final response = await _apiClient.post(
       ApiConstants.vendorRegister,
-      data: params,
+      queryParameters: {
+        'first_name': firstName,
+        'last_name': lastName,
+        'email': email,
+        'username': username,
+        'mobile_number': mobileNumber,
+        'vendor_title': vendorTitle,
+        'password': password,
+        'password_confirmation': passwordConfirmation,
+        'terms_and_conditions': termsAndConditions ? '1' : '0',
+      },
+      options: Options(
+        contentType: null,
+        headers: {'content-type': null},
+      ),
     );
-
     _extractSessionCookie(response);
     return response;
   }
 
   Future<Response> logout() async {
-    return await _apiClient.post(
-      ApiConstants.logout,
-    );
+    return await _apiClient.post(ApiConstants.logout);
   }
 
   Future<Response> updatePassword({
@@ -77,23 +78,26 @@ class AuthApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.updatePassword,
-      data: {
+      queryParameters: {
         'old_password': oldPassword,
         'password': password,
         'password_confirmation': passwordConfirmation,
       },
+      options: Options(
+        contentType: null,
+        headers: {'content-type': null},
+      ),
     );
   }
 
-  Future<Response> verifyTwoFactor({
-    required String code,
-  }) async {
+  Future<Response> verifyTwoFactor({required String code}) async {
     return await _apiClient.post(
       ApiConstants.twoFactorChallenge,
-      data: {
-        'verify_via': 'code',
-        'code': code,
-      },
+      queryParameters: {'code': code},
+      options: Options(
+        contentType: null,
+        headers: {'content-type': null},
+      ),
     );
   }
 }

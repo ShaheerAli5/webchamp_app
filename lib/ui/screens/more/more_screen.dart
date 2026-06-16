@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../routes/app_routes.dart';
+import '../../../core/utils/helpers.dart';
 import 'qr_code_screen.dart';
 
 class MoreScreen extends StatefulWidget {
@@ -189,7 +190,7 @@ class _MoreScreenState extends State<MoreScreen> {
         String displayName = user?.displayName ?? 'Admin Panel';
         if (displayName.trim().isEmpty) displayName = 'Admin Panel';
         
-        final initials = displayName.trim().split(' ').where((e) => e.isNotEmpty).take(2).map((e) => e[0].toUpperCase()).join();
+        final initials = displayName.trim().split(' ').where((e) => e.isNotEmpty).take(2).map((e) => Helpers.getInitial(e)).join();
 
         return InkWell(
           onTap: () => context.push(AppRoutes.profile),

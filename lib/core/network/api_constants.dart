@@ -49,6 +49,10 @@ class ApiConstants {
   static const String sendTemplate = '/vendor/whatsapp/contact/chat/send-template';
 
   // ✅ FIXED — was full URL, now relative path so Bearer token is included
-  static const String uploadAudio =
-      '/media/upload-temp-media/whatsapp_audio';
+  static const String uploadAudio = '/media/upload-temp-media/whatsapp_audio';
+  static const String uploadImage = '/media/upload-temp-media/whatsapp_image';
+  static const String uploadVideo = '/media/upload-temp-media/whatsapp_video';
+  static const String uploadDocument = '/media/upload-temp-media/whatsapp_document';
+  
+  static String uploadTempMedia(String type) => '/media/upload-temp-media/$type';
 }

@@ -23,7 +23,10 @@ class DioInterceptor extends Interceptor {
     // 3. Set-up Accept header to ensure server knows we expect JSON
     options.headers['Accept'] = 'application/json';
 
-    if (session != null && session.isNotEmpty) {
+    // 🛡️ Option to force stateless (no cookies) for specific API requests
+    final bool forceStateless = options.extra['stateless'] == true;
+
+    if (session != null && session.isNotEmpty && !forceStateless) {
       options.headers['Cookie'] = session;
     }
 
@@ -38,6 +41,9 @@ class DioInterceptor extends Interceptor {
       safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
     }
     print('HEADERS: $safeHeaders');
+    if (options.data != null) {
+      print('BODY: ${options.data}');
+    }
     print('--------------------------');
 
     handler.next(options);
@@ -48,6 +54,18 @@ class DioInterceptor extends Interceptor {
     print('--- API RESPONSE ---');
     print('URL: ${response.realUri}');
     print('Status: ${response.statusCode}');
+    print('RESPONSE HEADERS: ${response.headers.map}');
+    
+    // Log response body safely
+    final data = response.data;
+    if (data is String && data.contains('<!DOCTYPE html>')) {
+      print('RESPONSE BODY: [HTML CONTENT DETECTED - Possible redirect or error page]');
+      // Print first 200 chars of HTML to see titles/errors
+      print('BODY PREVIEW: ${data.substring(0, data.length > 500 ? 500 : data.length)}');
+    } else {
+      print('RESPONSE BODY: $data');
+    }
+    print('---------------------');
 
     // Capture session if server provides a new one
     final cookies = response.headers['set-cookie'];

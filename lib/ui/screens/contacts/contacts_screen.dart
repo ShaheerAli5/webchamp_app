@@ -137,6 +137,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
             ),
           ),
           floatingActionButton: FloatingActionButton(
+            heroTag: 'contacts_fab',
             onPressed: () => context.push('/add-contact').then((_) => _fetchContacts()),
             backgroundColor: AppColors.primary,
             child: const Icon(Icons.add, color: Colors.white),
@@ -358,7 +359,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   radius: 24.r,
                   backgroundColor: AppColors.primary.withOpacity(0.1),
                   child: Text(
-                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    Helpers.getInitial(name),
                     style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18.sp),
                   ),
                 ),
@@ -379,7 +380,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                           ),
                           if (latestTime != null)
                             Text(
-                              latestTime.toString().split(' ').last,
+                              Helpers.formatShortTimestamp(latestTime),
                               style: TextStyle(fontSize: 10.sp, color: AppColors.textSecondary),
                             ),
                         ],

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../../../../core/network/api_constants.dart';
+import '../../../../core/utils/helpers.dart';
 import '../services/contact_api_service.dart';
 
 class ContactRepository {
@@ -10,16 +11,24 @@ class ContactRepository {
 
   ContactRepository(this._apiService);
 
+  int get cacheCount => _apiService.cacheCount;
+
+  void clear() {
+    _apiService.clear();
+  }
+
   Future<dynamic> getContacts({
     String? search,
     int page = 1,
     int? perPage,
+    bool refresh = false,
   }) async {
     try {
       final response = await _apiService.getContacts(
         search: search,
         page: page,
         perPage: perPage,
+        refresh: refresh,
       );
 
       debugPrint('--- CONTACTS API DEBUG ---');
@@ -36,7 +45,7 @@ class ContactRepository {
       }
       debugPrint('--------------------------');
 
-      return response.data;
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       debugPrint('❌ CONTACTS API ERROR: ${e.message}');
       debugPrint('Error Type: ${e.type}');
@@ -51,13 +60,13 @@ class ContactRepository {
     }
   }
 
-  Future<dynamic> getContactMetadata() async {
+  Future<dynamic> getContactMetadata({bool refresh = false}) async {
     try {
-      final response = await _apiService.getContactMetadata();
+      final response = await _apiService.getContactMetadata(refresh: refresh);
       debugPrint('--- METADATA API DEBUG ---');
       debugPrint('URL: ${response.realUri}');
       debugPrint('Status: ${response.statusCode}');
-      return response.data;
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       debugPrint('❌ METADATA API ERROR: ${e.message}');
       throw Exception(_extractError(e));
@@ -67,13 +76,15 @@ class ContactRepository {
   Future<dynamic> getContact({
     String? phoneNumber,
     String? email,
+    bool refresh = false,
   }) async {
     try {
       final response = await _apiService.getContact(
         phoneNumber: phoneNumber,
         email: email,
+        refresh: refresh,
       );
-      return response.data;
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
@@ -109,7 +120,7 @@ class ContactRepository {
         customInputFields: customInputFields,
       );
       
-      final data = response.data;
+      final data = Helpers.sanitizeData(response.data);
       if (data is Map && data['result'] == 'failed') {
         throw Exception(data['message'] ?? 'Failed to create contact');
       }
@@ -150,7 +161,7 @@ class ContactRepository {
         customInputFields: customInputFields,
       );
       
-      final data = response.data;
+      final data = Helpers.sanitizeData(response.data);
       if (data is Map && data['result'] == 'failed') {
         throw Exception(data['message'] ?? 'Failed to update contact');
       }
@@ -164,7 +175,7 @@ class ContactRepository {
   Future<dynamic> deleteContact(String phoneNumber) async {
     try {
       final response = await _apiService.deleteContact(phoneNumber);
-      final data = response.data;
+      final data = Helpers.sanitizeData(response.data);
       if (data is Map && data['result'] == 'failed') {
         throw Exception(data['message'] ?? 'Failed to delete contact');
       }
@@ -183,15 +194,15 @@ class ContactRepository {
         phoneNumber: phoneNumber,
         usernameOrEmail: usernameOrEmail,
       );
-      return response.data;
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
   }
 
-  Future<dynamic> getChatHistory(String contactUid) async {
+  Future<dynamic> getChatHistory(String contactUid, {bool refresh = false}) async {
     try {
-      final response = await _apiService.getChatHistory(contactUid);
+      final response = await _apiService.getChatHistory(contactUid, refresh: refresh);
 
       // 1. If response is already a Map (Dio auto-parsed JSON)
       if (response.data is Map) {
@@ -201,12 +212,12 @@ class ContactRepository {
         if (token != null) {
           _apiService.setCsrfToken(token.toString());
         }
-        return data;
+        return Helpers.sanitizeData(data);
       }
 
       // 2. If response is a List (Dio auto-parsed JSON)
       if (response.data is List) {
-        return response.data;
+        return Helpers.sanitizeData(response.data);
       }
 
       // 3. Fallback: If response is a String (could be JSON string or legacy HTML)
@@ -221,9 +232,9 @@ class ContactRepository {
             if (token != null) {
               _apiService.setCsrfToken(token.toString());
             }
-            return decoded;
+            return Helpers.sanitizeData(decoded);
           }
-          if (decoded is List) return decoded;
+          if (decoded is List) return Helpers.sanitizeData(decoded);
         } catch (_) {
           // Not valid JSON, proceed to HTML extraction (legacy)
         }
@@ -233,7 +244,7 @@ class ContactRepository {
         if (result['csrf_token'] != null) {
           _apiService.setCsrfToken(result['csrf_token']);
         }
-        return result;
+        return Helpers.sanitizeData(result);
       }
 
       return {};
@@ -297,10 +308,19 @@ class ContactRepository {
     return {'messages': []};
   }
 
-  Future<dynamic> getContactChatBoxData(String contactUid) async {
+  Future<dynamic> getContactChatBoxData(String contactUid, {bool refresh = false}) async {
     try {
-      final response = await _apiService.getContactChatBoxData(contactUid);
-      return response.data;
+      final response = await _apiService.getContactChatBoxData(contactUid, refresh: refresh);
+      return Helpers.sanitizeData(response.data);
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  Future<dynamic> getUnreadCount() async {
+    try {
+      final response = await _apiService.getUnreadCount();
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
@@ -308,31 +328,100 @@ class ContactRepository {
 
   Future<dynamic> sendMedia({
     required String contactUid,
-    required String fileName,
-    String mediaType = 'audio',
-    bool isRecordedAudio = false,
+    required String filePath,
+    required String mediaType,
+    String? waId,
+    String? caption,
   }) async {
     try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        throw Exception('File not found: $filePath');
+      }
+
+      final fileSize = await file.length();
+      debugPrint('🚀 [MEDIA SEND] Starting two-step process for $mediaType...');
+      debugPrint('   - Path: $filePath');
+      debugPrint('   - Size: ${(fileSize / 1024).toStringAsFixed(2)} KB');
+
+      // Step 1: Upload to temporary storage
+      String uploadItem;
+      switch (mediaType.toLowerCase()) {
+        case 'image':
+          uploadItem = 'whatsapp_image';
+          break;
+        case 'audio':
+        case 'voice':
+          uploadItem = 'whatsapp_audio';
+          break;
+        case 'video':
+          uploadItem = 'whatsapp_video';
+          break;
+        case 'document':
+        default:
+          uploadItem = 'whatsapp_document';
+      }
+
+      debugPrint('📤 [STEP 1] Uploading to temp storage ($uploadItem)...');
+      final uploadResponse = await _apiService.uploadTempMedia(filePath, uploadItem);
+      
+      // Extract uploaded file name from response
+      // Based on common FilePond behavior, it might return the filename directly as a string or in a JSON
+      String? uploadedFileName;
+      if (uploadResponse.data is String) {
+        uploadedFileName = uploadResponse.data;
+      } else if (uploadResponse.data is Map) {
+        uploadedFileName = uploadResponse.data['file_name'] ?? 
+                           uploadResponse.data['fileName'] ??
+                           uploadResponse.data['data']?['file_name'] ??
+                           uploadResponse.data['data']?['fileName'] ??
+                           uploadResponse.data['id']?.toString();
+      }
+
+      if (uploadedFileName == null || uploadedFileName.isEmpty) {
+        throw Exception('Failed to get temporary filename from upload response');
+      }
+
+      debugPrint('✅ [STEP 1] Uploaded. Temp filename: $uploadedFileName');
+
+      // Step 2: Send message referencing the uploaded file name
+      debugPrint('📤 [STEP 2] Sending message referencing temp file...');
       final response = await _apiService.sendMedia(
         contactUid: contactUid,
-        fileName: fileName,
         mediaType: mediaType,
-        isRecordedAudio: isRecordedAudio,
+        uploadedFileName: uploadedFileName,
+        waId: waId,
+        caption: caption,
       );
+
       final data = response.data;
-      if (data is Map && (data['result'] == 'failed' || data['reaction'] == 0)) {
-        throw Exception(data['message'] ?? 'Failed to send media');
+
+      // 🛡️ Detect HTML redirects
+      if (data is String && (data.contains('<!DOCTYPE html>') || data.contains('<html'))) {
+        throw Exception('Server returned HTML instead of JSON in step 2.');
       }
-      return data;
+
+      if (data is Map && (data['result'] == 'failed' || data['reaction'] == 0 || data['status'] == 'error')) {
+        throw Exception(data['message'] ?? 'Failed to send media in step 2');
+      }
+
+      final sanitizedData = Helpers.sanitizeData(data);
+      debugPrint('✅ [MEDIA SEND] Success: ${sanitizedData.toString()}');
+      return sanitizedData;
     } on DioException catch (e) {
+      debugPrint('❌ [MEDIA SEND] Dio Error: ${e.message}');
+      debugPrint('   Response data: ${e.response?.data}');
       throw Exception(_extractError(e));
+    } catch (e) {
+      debugPrint('❌ [MEDIA SEND] Unexpected error: $e');
+      rethrow;
     }
   }
 
   Future<dynamic> uploadMedia(String filePath, {required String contactUid, String type = 'audio'}) async {
     try {
       final response = await _apiService.uploadMedia(filePath, contactUid: contactUid, type: type);
-      return response.data;
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
@@ -349,7 +438,7 @@ class ContactRepository {
         textColor: textColor,
         bgColor: bgColor,
       );
-      return response.data;
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
@@ -368,7 +457,7 @@ class ContactRepository {
         textColor: textColor,
         bgColor: bgColor,
       );
-      return response.data;
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
@@ -377,7 +466,7 @@ class ContactRepository {
   Future<dynamic> deleteLabel(String labelUid) async {
     try {
       final response = await _apiService.deleteLabel(labelUid);
-      return response.data;
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
@@ -385,14 +474,14 @@ class ContactRepository {
 
   Future<dynamic> assignLabels({
     required String contactUid,
-    required List<String> contactLabels,
+    required List<String> labels,
   }) async {
     try {
       final response = await _apiService.assignLabels(
         contactUid: contactUid,
-        contactLabels: contactLabels,
+        labels: labels,
       );
-      return response.data;
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
@@ -401,19 +490,33 @@ class ContactRepository {
   Future<dynamic> sendMessage({
     required String contactUid,
     required String message,
+    String? waId,
+    String? replyToMessageId,
   }) async {
     try {
       final response = await _apiService.sendMessage(
         contactUid: contactUid,
         message: message,
+        waId: waId,
+        replyToMessageId: replyToMessageId,
       );
       
       final data = response.data;
-      if (data is Map && (data['result'] == 'failed' || data['reaction'] == 0)) {
-        throw Exception(data['message'] ?? 'Failed to send message');
+
+      // 🛡️ Guard against HTML responses (redirects to home/login)
+      if (data is String && data.contains('<!DOCTYPE html>')) {
+        debugPrint('⚠️ sendMessage returned HTML instead of JSON. Possible session/auth issue.');
+        throw Exception('Server returned an unexpected page. Please try logging out and in again.');
+      }
+
+      if (data is Map) {
+        if (data['result'] == 'failed' || data['reaction'] == 0 || data['status'] == 'error') {
+          throw Exception(data['message'] ?? 'Failed to send message');
+        }
+        return Helpers.sanitizeData(data);
       }
       
-      return data;
+      return Helpers.sanitizeData(data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
@@ -430,7 +533,7 @@ class ContactRepository {
         templateName: templateName,
         languageCode: languageCode,
       );
-      final data = response.data;
+      final data = Helpers.sanitizeData(response.data);
       if (data is Map && data['result'] == 'failed') {
         throw Exception(data['message'] ?? 'Failed to send template');
       }

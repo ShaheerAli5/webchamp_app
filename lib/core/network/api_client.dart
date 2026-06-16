@@ -1,16 +1,20 @@
 import 'package:dio/dio.dart';
 import 'api_constants.dart';
 import 'dio_interceptor.dart';
+import 'cache_interceptor.dart';
+import 'performance_interceptor.dart';
 import '../storage/secure_storage_service.dart';
 
 class ApiClient {
   final Dio _dio;
+  final CacheInterceptor cacheInterceptor = CacheInterceptor();
 
   ApiClient(SecureStorageService storageService)
       : _dio = Dio(BaseOptions(
     baseUrl: ApiConstants.baseUrl,
     connectTimeout: const Duration(seconds: 30),
     receiveTimeout: const Duration(seconds: 30),
+    contentType: null,
     headers: {
       'Accept': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
@@ -18,15 +22,31 @@ class ApiClient {
     },
   )) {
     print('ApiClient Initialized with Base URL: ${ApiConstants.baseUrl}');
+    _dio.interceptors.add(PerformanceInterceptor());
+    _dio.interceptors.add(cacheInterceptor);
     _dio.interceptors.add(DioInterceptor(storageService));
     _dio.interceptors.add(LogInterceptor(
-      requestBody: true,
+      requestBody: false, // Reduced log noise for performance
       requestHeader: true,
-      responseBody: true, // 🛡️ Enabled for debugging
-      responseHeader: true,
+      responseBody: false, // Reduced log noise
+      responseHeader: false,
       error: true,
     ));
   }
+
+  void printLog(String message) {
+    print(message);
+  }
+
+  /// Sets the current user to isolate cache and provide user-specific logging.
+  void setCurrentUser(String? token, {String? userId}) {
+    cacheInterceptor.setCurrentUser(token);
+    if (userId != null) {
+      printLog('👤 [USER] Active User ID: $userId');
+    }
+  }
+
+  int get cacheCount => cacheInterceptor.cacheCount;
 
   Future<Response> get(String path,
       {Map<String, dynamic>? queryParameters, Options? options}) async {
@@ -35,18 +55,11 @@ class ApiClient {
   }
 
   Future<Response> post(
-      String path, {
-        dynamic data,
-        Map<String, dynamic>? queryParameters,
-        Options? options,
-      }) async {
-    print('=== API CLIENT POST ===');
-    print('PATH: $path');
-    print('DATA TYPE: ${data.runtimeType}');
-    print('DATA: $data');
-    if (options?.headers != null) print('EXTRA HEADERS: ${options!.headers}');
-    if (options?.contentType != null) print('CONTENT TYPE: ${options!.contentType}');
-    print('======================');
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
     return await _dio.post(
       path,
       data: data,

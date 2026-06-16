@@ -26,6 +26,22 @@ void main() async {
   final contactRepository = ContactRepository(contactService);
   final contactProvider = ContactProvider(contactRepository);
 
+  // Link AuthProvider with other services
+  authProvider.onLogout = () {
+    debugPrint('🚪 [MAIN] User Logout - Cleaning up');
+    apiClient.setCurrentUser(null);
+    contactProvider.clearAllData();
+  };
+
+  authProvider.onLogin = (user, token) {
+    debugPrint('🔑 [MAIN] User Login - Initializing for User ID: ${user.id}');
+    apiClient.setCurrentUser(token, userId: user.id.toString());
+    // Immediately clear and fetch fresh contacts for the new user
+    contactProvider.clearAllData();
+    contactProvider.setActiveUser(user.id.toString());
+    contactProvider.getContacts(refresh: true);
+  };
+
   // Initialize auth status before running app
   await authProvider.checkAuthStatus();
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 class Helpers {
   static void showSnackBar(BuildContext context, String message) {
@@ -8,6 +9,57 @@ class Helpers {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  /// Converts any given timestamp to Pakistan Standard Time (PKT, UTC+5).
+  static DateTime toPKT(dynamic timestamp) {
+    if (timestamp == null) return DateTime.now().toUtc().add(const Duration(hours: 5));
+    
+    DateTime dt;
+    if (timestamp is DateTime) {
+      dt = timestamp;
+    } else {
+      dt = DateTime.tryParse(timestamp.toString()) ?? DateTime.now();
+    }
+
+    // Force to UTC then add 5 hours for PKT
+    return dt.toUtc().add(const Duration(hours: 5));
+  }
+
+  /// Formats date for Chat List and Chat Messages in PKT.
+  static String formatTimestamp(dynamic timestamp) {
+    final DateTime pktTime = toPKT(timestamp);
+    final DateTime now = toPKT(DateTime.now());
+    
+    final bool isToday = pktTime.year == now.year && 
+                       pktTime.month == now.month && 
+                       pktTime.day == now.day;
+    
+    final bool isYesterday = pktTime.year == now.year && 
+                           pktTime.month == now.month && 
+                           pktTime.day == now.day - 1;
+
+    if (isToday) {
+      return DateFormat('hh:mm a').format(pktTime);
+    } else if (isYesterday) {
+      return 'Yesterday, ${DateFormat('hh:mm a').format(pktTime)}';
+    } else {
+      return DateFormat('dd MMM yyyy, hh:mm a').format(pktTime);
+    }
+  }
+
+  /// Short format for chat list
+  static String formatShortTimestamp(dynamic timestamp) {
+    final DateTime pktTime = toPKT(timestamp);
+    final DateTime now = toPKT(DateTime.now());
+    
+    if (pktTime.year == now.year && pktTime.month == now.month && pktTime.day == now.day) {
+      return DateFormat('hh:mm a').format(pktTime);
+    } else if (pktTime.year == now.year && pktTime.month == now.month && pktTime.day == now.day - 1) {
+      return 'Yesterday';
+    } else {
+      return DateFormat('dd/MM/yy').format(pktTime);
+    }
   }
 
   /// Sanitizes a string to ensure it is well-formed UTF-16 for Flutter.
@@ -53,17 +105,33 @@ class Helpers {
 
   /// Deeply sanitizes a map or list to ensure all strings are well-formed.
   static dynamic sanitizeData(dynamic data) {
+    if (data == null) return null;
+
     if (data is String) {
       return sanitizeString(data);
     } else if (data is Map) {
-      return data.map((key, value) {
-        final safeKey = key is String ? sanitizeString(key) : key;
-        return MapEntry(safeKey, sanitizeData(value));
+      final Map<String, dynamic> sanitizedMap = {};
+      data.forEach((key, value) {
+        final String safeKey = key is String ? sanitizeString(key) : key.toString();
+        sanitizedMap[safeKey] = sanitizeData(value);
       });
+      return sanitizedMap;
     } else if (data is List) {
       return data.map((item) => sanitizeData(item)).toList();
     }
     return data;
+  }
+
+  /// Safely gets the first character of a string, handling surrogate pairs.
+  static String getInitial(String? text) {
+    if (text == null || text.trim().isEmpty) return '?';
+    try {
+      final sanitized = sanitizeString(text).trim();
+      if (sanitized.isEmpty) return '?';
+      return String.fromCharCode(sanitized.runes.first).toUpperCase();
+    } catch (_) {
+      return '?';
+    }
   }
 
   static int? toInt(dynamic val) {
@@ -71,5 +139,11 @@ class Helpers {
     if (val is int) return val;
     if (val is double) return val.toInt();
     return int.tryParse(val.toString());
+  }
+
+  static String formatDuration(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remainingSeconds = seconds % 60;
+    return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 }

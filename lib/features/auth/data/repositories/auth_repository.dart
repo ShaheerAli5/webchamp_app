@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../services/auth_api_service.dart';
 import '../../../../core/storage/secure_storage_service.dart';
@@ -12,20 +13,20 @@ class AuthRepository {
 
   Future<UserModel> login(String email, String password) async {
     try {
-      print('=== ATTEMPTING LOGIN ===');
-      print('Email: $email');
+      debugPrint('=== ATTEMPTING LOGIN ===');
+      debugPrint('Email: $email');
 
       final response = await _apiService.login(email, password);
 
-      print('Login Status Code: ${response.statusCode}');
+      debugPrint('Login Status Code: ${response.statusCode}');
       final data = response.data;
-      print('Login Response Data: $data');
+      debugPrint('Login Response Data: $data');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         // Check if the response body indicates a failure despite 200 OK
         if (data is Map && (data['reaction'] == 0 || data['status'] == 'failed' || data['result'] == 'failed')) {
           final errorMsg = data['message'] ?? 'Login failed';
-          print('Login failed in body: $errorMsg');
+          debugPrint('Login failed in body: $errorMsg');
           throw Exception(errorMsg);
         }
 
@@ -34,7 +35,7 @@ class AuthRepository {
           final errors = data['errors'] as Map;
           final firstError = errors.values.first;
           final errorMsg = firstError is List ? firstError.first.toString() : firstError.toString();
-          print('Validation error in body: $errorMsg');
+          debugPrint('Validation error in body: $errorMsg');
           throw Exception(errorMsg);
         }
 
@@ -45,7 +46,7 @@ class AuthRepository {
             data['data']?['token'] ??
             data['data']?['auth_token'];
 
-        print('Extracted Token: ${token != null ? "FOUND" : "NOT FOUND"}');
+        debugPrint('Extracted Token: ${token != null ? "FOUND" : "NOT FOUND"}');
 
         // 2. Try to find user data
         final authInfo = data['data']?['auth_info'] ?? data['auth_info'];
@@ -75,12 +76,12 @@ class AuthRepository {
           userData = Map<String, dynamic>.from(data['data']);
         }
 
-        print('Extracted User Data: ${userData != null ? "FOUND" : "NOT FOUND"}');
+        debugPrint('Extracted User Data: ${userData != null ? "FOUND" : "NOT FOUND"}');
 
         if (token != null && userData != null) {
           await _storageService.saveToken(token.toString());
           await _storageService.saveUserData(jsonEncode(userData));
-          print('=== TOKEN AND USER DATA SAVED ===');
+          debugPrint('=== TOKEN AND USER DATA SAVED ===');
           return UserModel.fromJson(userData);
         }
 
@@ -102,8 +103,8 @@ class AuthRepository {
         throw Exception(response.data['message'] ?? 'Login failed');
       }
     } on DioException catch (e) {
-      print('DioError during login: ${e.message}');
-      print('DioError response: ${e.response?.data}');
+      debugPrint('DioError during login: ${e.message}');
+      debugPrint('DioError response: ${e.response?.data}');
       String errorMessage = 'An error occurred during login';
       if (e.response?.data != null) {
         final data = e.response!.data;
@@ -118,7 +119,7 @@ class AuthRepository {
       }
       throw Exception(errorMessage);
     } catch (e) {
-      print('Unexpected error during login: $e');
+      debugPrint('Unexpected error during login: $e');
       rethrow;
     }
   }
@@ -189,18 +190,22 @@ class AuthRepository {
       try {
         return UserModel.fromJson(jsonDecode(userDataJson));
       } catch (e) {
-        print('Error decoding saved user data: $e');
+        debugPrint('Error decoding saved user data: $e');
         return null;
       }
     }
     return null;
   }
 
+  Future<String?> getToken() async {
+    return await _storageService.getToken();
+  }
+
   Future<void> logout() async {
     try {
       await _apiService.logout();
     } catch (e) {
-      print('Logout API error: $e');
+      debugPrint('Logout API error: $e');
     } finally {
       // Always clear local storage even if API fails
       await _storageService.clearAll();

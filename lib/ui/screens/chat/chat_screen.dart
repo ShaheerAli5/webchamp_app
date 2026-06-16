@@ -36,9 +36,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _fetchContacts() async {
     final provider = context.read<ContactProvider>();
-    // Only fetch if we don't have contacts yet or if it's a fresh start
-    if (provider.contacts.isEmpty) {
-      await provider.getContacts();
+    // First load from cache (default behavior with useCache: true)
+    await provider.getContacts();
+    
+    // Then refresh in background if it was from cache
+    if (provider.contacts.isNotEmpty) {
+      provider.getContacts(refresh: true);
     }
   }
 
@@ -235,23 +238,24 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String _contactLatestMessageTime(dynamic contact) {
-    final time = _contactLatestDateTime(contact);
-    if (time == null) return '';
-
-    return DateFormat('hh:mm a').format(time);
+    final rawTime = contact['latest_message'] ??
+        (contact['last_message'] is Map ? contact['last_message']['created_at'] : null) ??
+        contact['updated_at'];
+    
+    if (rawTime == null) return '';
+    return Helpers.formatShortTimestamp(rawTime);
   }
 
   DateTime? _contactLatestDateTime(dynamic contact) {
     if (contact is! Map) return null;
 
-    final lastMessage = contact['last_message'];
     final rawTime = contact['latest_message'] ??
-        (lastMessage is Map ? lastMessage['created_at'] : null) ??
+        (contact['last_message'] is Map ? contact['last_message']['created_at'] : null) ??
         contact['updated_at'];
 
     if (rawTime == null) return null;
 
-    return DateTime.tryParse(rawTime.toString());
+    return Helpers.toPKT(rawTime);
   }
 
   Widget _buildSearchBar() {
@@ -365,17 +369,14 @@ class _ChatScreenState extends State<ChatScreen> {
       leading: CircleAvatar(
         radius: 26.r,
         backgroundColor: const Color(0xFFF0F2F5),
-        child: _sanitizeText(name).isNotEmpty
-            ? Text(
-                _sanitizeText(name)[0].toUpperCase(),
-                style: TextStyle(
-                  fontSize: 18.sp,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black54,
-                ),
-              )
-            : Icon(isGroup ? Icons.group : Icons.person,
-                color: Colors.black54, size: 28.sp),
+        child: Text(
+          Helpers.getInitial(name),
+          style: TextStyle(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.bold,
+            color: Colors.black54,
+          ),
+        ),
       ),
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -455,7 +456,11 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      child: Center(
+      child: FloatingActionButton(
+        heroTag: 'chat_fab',
+        onPressed: () {}, // TODO: Implement New Chat
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         child: Icon(Icons.add_comment_rounded, color: Colors.white, size: 28.sp),
       ),
     );
