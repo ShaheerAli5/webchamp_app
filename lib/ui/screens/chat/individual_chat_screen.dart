@@ -103,6 +103,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
+    
+    // Clear chat data from provider to avoid seeing old messages when opening a new chat
+    // Use context.read safely as it might be called during/after unmount
+    try {
+      if (mounted) {
+        context.read<ContactProvider>().clearChat();
+      }
+    } catch (e) {
+      debugPrint('ℹ️ [CHAT] Could not clear chat on dispose: $e');
+    }
+
     super.dispose();
   }
 

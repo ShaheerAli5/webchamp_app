@@ -63,6 +63,9 @@ class ContactProvider extends ChangeNotifier {
   List<dynamic> _messages = [];
   List<dynamic> get messages => _messages;
 
+  String? _activeChatUid;
+  String? get activeChatUid => _activeChatUid;
+
   String? _selectedLabel;
   String? get selectedLabel => _selectedLabel;
 
@@ -181,6 +184,7 @@ class ContactProvider extends ChangeNotifier {
     _teamMembers = [];
     _allAvailableLabels = [];
     _messages = [];
+    _activeChatUid = null;
     _globalUnreadCount = 0;
     _contactsFullyLoaded = false;
     _errorMessage = null;
@@ -711,14 +715,16 @@ class ContactProvider extends ChangeNotifier {
 
   Future<bool> getContactChatBoxData(String contactUid, {bool showLoading = true, bool refresh = false, bool force = false}) async {
     // 🛡️ GUARD: Only cancel if switching to a DIFFERENT contact
-    if (_selectedContact != null && (_selectedContact!['_uid'] ?? _selectedContact!['uid'])?.toString() != contactUid) {
+    if (_activeChatUid != contactUid) {
+      debugPrint('🔀 [CHAT] Switching from $_activeChatUid to $contactUid. Clearing old messages.');
       _chatCancelToken?.cancel("Switching contact");
       _chatCancelToken = CancelToken();
       _messages = []; // Clear for new contact
+      _activeChatUid = contactUid;
+      // Notify immediately to show empty/loading state for the new contact
+      notifyListeners();
     } else if (refresh || force) {
-      // For same contact refresh, don't necessarily cancel previous one 
-      // unless it's been too long, but here we'll just allow multiple for now 
-      // or use a separate token. Let's keep it simple: only cancel on switch.
+      debugPrint('🔄 [CHAT] Refreshing data for SAME contact: $contactUid');
     }
 
     // 🛡️ GUARD: Only prevent overlapping requests for the SAME contact if NOT forced
@@ -744,6 +750,14 @@ class ContactProvider extends ChangeNotifier {
           return <String, dynamic>{};
         }),
       ]);
+
+      // 🛑 UID CHECK: If the user switched chats while this request was in flight, discard it.
+      if (contactUid != _activeChatUid) {
+        debugPrint('🛑 [CHAT] UID mismatch after fetch. Discarding results for $contactUid (Active: $_activeChatUid)');
+        _isFetchingChat = false;
+        _isLoading = false;
+        return false;
+      }
 
       final result = results[0];
       final chatResult = results[1];
