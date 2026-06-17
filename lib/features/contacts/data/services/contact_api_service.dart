@@ -318,8 +318,20 @@ class ContactApiService {
   }
 
   Future<Response> uploadMedia(String filePath, {required String contactUid, String type = 'audio'}) async {
+    final fileName = filePath.split('/').last;
+    final ext = fileName.split('.').last.toLowerCase();
+    String contentType = 'audio/aac';
+    if (ext == 'm4a' || ext == 'mp4') contentType = 'audio/mp4';
+    if (ext == 'mp3') contentType = 'audio/mpeg';
+    if (ext == 'ogg') contentType = 'audio/ogg';
+    if (ext == 'amr') contentType = 'audio/amr';
+
     final formData = FormData.fromMap({
-      'file': await MultipartFile.fromFile(filePath),
+      'file': await MultipartFile.fromFile(
+        filePath,
+        filename: fileName,
+        contentType: MediaType.parse(contentType),
+      ),
       'contact_uid': contactUid,
       'type': type,
       if (_csrfToken != null) '_token': _csrfToken,

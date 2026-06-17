@@ -125,7 +125,9 @@ class ContactProvider extends ChangeNotifier {
   }
 
   void clearChat() {
+    debugPrint('🧹 [CHAT] Clearing messages and resetting active UID');
     _messages = [];
+    _activeChatUid = null;
     _errorMessage = null;
     _chatBoxRetryCount = 0;
     notifyListeners();
@@ -714,6 +716,12 @@ class ContactProvider extends ChangeNotifier {
   }
 
   Future<bool> getContactChatBoxData(String contactUid, {bool showLoading = true, bool refresh = false, bool force = false}) async {
+    // 🛡️ GUARD: If this is a background polling request for an INACTIVE chat, discard it early
+    if (!showLoading && !refresh && !force && _activeChatUid != null && _activeChatUid != contactUid) {
+      debugPrint('⏳ [CHAT] Ignoring background polling for inactive chat: $contactUid (Active: $_activeChatUid)');
+      return false;
+    }
+
     // 🛡️ GUARD: Only cancel if switching to a DIFFERENT contact
     if (_activeChatUid != contactUid) {
       debugPrint('🔀 [CHAT] Switching from $_activeChatUid to $contactUid. Clearing old messages.');

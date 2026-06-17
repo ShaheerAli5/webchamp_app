@@ -84,12 +84,12 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   void _startPolling() {
     _pollingTimer?.cancel();
     _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-      if (mounted && !_isPolling) {
+      final provider = context.read<ContactProvider>();
+      // 🛡️ Only poll if this screen's UID is the active one in the provider
+      if (mounted && !_isPolling && provider.activeChatUid == widget.uid) {
         _isPolling = true;
-        await context
-            .read<ContactProvider>()
-            .getContactChatBoxData(widget.uid, showLoading: false);
-        _isPolling = false;
+        await provider.getContactChatBoxData(widget.uid, showLoading: false);
+        if (mounted) _isPolling = false;
       }
     });
   }
@@ -127,10 +127,15 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       }
 
       final directory = await getTemporaryDirectory();
-      final path = '${directory.path}/voice_${DateTime.now().millisecondsSinceEpoch}.aac';
+      final path = '${directory.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
       _recordedFilePath = path;
       
-      const config = RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000, sampleRate: 44100);
+      const config = RecordConfig(
+        encoder: AudioEncoder.aacLc, 
+        bitRate: 128000, 
+        sampleRate: 44100,
+        numChannels: 1,
+      );
       await _audioRecorder.start(config, path: path);
       
       // 🛡️ Waveform recording can sometimes fail due to plugin linking issues
@@ -675,36 +680,63 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   String _getMessageType(dynamic messageData) {
     if (messageData is! Map) return 'text';
+    
+    // Check if it's a deleted message first
+    if (messageData['is_deleted'] == true) return 'text';
+
     final mediaValues = messageData['__data']?['media_values'];
     if (mediaValues is Map) {
       final type = mediaValues['type']?.toString().toLowerCase() ?? '';
+      final link = mediaValues['link']?.toString() ?? '';
+      
+      // 🛡️ Safety: If link doesn't look like a URL or path, treat as text
+      if (link.isEmpty || (!link.startsWith('http') && !link.startsWith('/') && !link.contains('cache/'))) {
+        return 'text';
+      }
+
       if (type.contains('audio') || type.contains('voice') || type.contains('ptt')) return 'voice';
       if (type.contains('image')) return 'image';
       if (type.contains('video')) return 'video';
       if (type.contains('document') || type.contains('file') || type.contains('pdf')) return 'document';
       if (type.isNotEmpty) return type;
     }
+    
     final type = (messageData['message_type'] ?? messageData['type'] ?? '').toString().toLowerCase();
+    final content = _getMessageContent(messageData).toString();
+    
+    // 🛡️ Safety: If content doesn't look like a URL for non-text types, it's probably text
+    if (type != 'text' && type.isNotEmpty) {
+       if (!content.startsWith('http') && !content.startsWith('/') && !content.contains('cache/')) {
+         return 'text';
+       }
+    }
+
     if (type.contains('audio') || type.contains('voice') || type.contains('ptt')) return 'voice';
     if (type.contains('image')) return 'image';
     if (type.contains('video')) return 'video';
     if (type.contains('document') || type.contains('file') || type.contains('pdf')) return 'document';
     
     // Check by extension if type is ambiguous
-    final content = _getMessageContent(messageData).toString().toLowerCase();
-    if (content.endsWith('.mp4') || content.endsWith('.mov') || content.endsWith('.mpeg') || content.endsWith('.webm') || content.endsWith('.mkv')) return 'video';
-    if (content.endsWith('.jpg') || content.endsWith('.jpeg') || content.endsWith('.png') || content.endsWith('.gif') || content.endsWith('.webp')) return 'image';
+    final contentLower = content.toLowerCase();
+    if (contentLower.endsWith('.mp4') || contentLower.endsWith('.mov') || contentLower.endsWith('.mpeg') || contentLower.endsWith('.webm') || contentLower.endsWith('.mkv')) return 'video';
+    if (contentLower.endsWith('.jpg') || contentLower.endsWith('.jpeg') || contentLower.endsWith('.png') || contentLower.endsWith('.gif') || contentLower.endsWith('.webp')) return 'image';
+    if (contentLower.endsWith('.aac') || contentLower.endsWith('.m4a') || contentLower.endsWith('.mp3') || contentLower.endsWith('.ogg') || contentLower.endsWith('.wav') || contentLower.endsWith('.amr')) return 'voice';
 
     return 'text';
   }
 
   dynamic _getMessageContent(dynamic messageData) {
     if (messageData is! Map) return '';
+    
     final mediaValues = messageData['__data']?['media_values'];
     if (mediaValues is Map && mediaValues['link'] != null) {
       final link = mediaValues['link'].toString();
-      if (link.isNotEmpty) return link;
+      // 🛡️ Safety: Only return as link if it looks like a path or URL
+      if (link.isNotEmpty && (link.startsWith('http') || link.startsWith('/') || link.contains('cache/'))) {
+        return link;
+      }
     }
+    
     final mediaLink = messageData['media_url'] ?? 
                       messageData['link'] ?? 
                       messageData['attachment_url'] ?? 
@@ -713,12 +745,23 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                       messageData['file_url'] ??
                       messageData['uploaded_media_file_name'] ?? 
                       messageData['audio_url'];
+
     if (mediaLink != null && mediaLink.toString().isNotEmpty) {
       String path = mediaLink.toString();
+      
+      // 🛡️ Safety: If it's a full URL already, return it
+      if (path.startsWith('http')) return path;
+      
+      // 🛡️ Safety: If it's a local file path, return it
       if (path.startsWith('/') || path.contains('cache/')) {
         if (File(path).existsSync()) return path;
       }
-      if (path.startsWith('http')) return path;
+      
+      // 🛡️ Safety check: if it looks like an error message (too many words), don't treat as URL
+      if (path.split(' ').length > 2) {
+        return (messageData['message'] ?? messageData['message_body'] ?? messageData['text'] ?? path).toString();
+      }
+
       if (path.startsWith('/')) path = path.substring(1);
       if (path.startsWith('storage/')) path = path.substring(8);
       return 'https://wabchamp.com/storage/$path';
