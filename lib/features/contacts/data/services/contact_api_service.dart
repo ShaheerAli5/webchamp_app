@@ -272,8 +272,17 @@ class ContactApiService {
   Future<Response> uploadTempMedia(String filePath, String uploadItem) async {
     final fileName = filePath.split('/').last;
     
-    // 🛡️ Determine MIME type based on extension
+    // 🛡️ Determine MIME type based on extension with smart defaults
     String contentType = 'application/octet-stream';
+    
+    if (uploadItem.contains('audio')) {
+      contentType = 'audio/aac';
+    } else if (uploadItem.contains('image')) {
+      contentType = 'image/jpeg';
+    } else if (uploadItem.contains('video')) {
+      contentType = 'video/mp4';
+    }
+
     final ext = fileName.split('.').last.toLowerCase();
     switch (ext) {
       case 'jpg': case 'jpeg': contentType = 'image/jpeg'; break;
@@ -282,6 +291,8 @@ class ContactApiService {
       case 'm4a': contentType = 'audio/mp4'; break;
       case 'mp3': contentType = 'audio/mpeg'; break;
       case 'ogg': contentType = 'audio/ogg'; break;
+      case 'aac': contentType = 'audio/aac'; break;
+      case 'amr': contentType = 'audio/amr'; break;
       case 'pdf': contentType = 'application/pdf'; break;
     }
 

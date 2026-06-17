@@ -53,7 +53,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String _sanitizeText(String? text) {
-    return Helpers.sanitizeString(text).trim();
+    if (text == null) return '';
+    return Helpers.htmlToPlainText(Helpers.sanitizeString(text)).trim();
   }
 
   @override

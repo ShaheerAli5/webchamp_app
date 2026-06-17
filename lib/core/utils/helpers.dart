@@ -146,4 +146,34 @@ class Helpers {
     final remainingSeconds = seconds % 60;
     return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
   }
+
+  /// Converts HTML string to WhatsApp-style plain text.
+  static String htmlToPlainText(String? html) {
+    if (html == null || html.isEmpty) return '';
+    
+    String text = html;
+    
+    // Replace <br> and <br/> with \n
+    text = text.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+    
+    // Replace <em> and </em> with _ (WhatsApp italic)
+    text = text.replaceAll(RegExp(r'</?em>', caseSensitive: false), '_');
+    
+    // Replace <strong> and <b> with * (WhatsApp bold)
+    text = text.replaceAll(RegExp(r'</?(strong|b)>', caseSensitive: false), '*');
+    
+    // For <a> tags, we want to extract the URL if the text doesn't contain it, 
+    // but usually in these cases the text is the URL.
+    // Let's just strip all remaining tags.
+    text = text.replaceAll(RegExp(r'<[^>]*>'), '');
+    
+    // Decode HTML entities (like &amp; &lt; &gt; &quot; &#39;)
+    text = text.replaceAll('&amp;', '&')
+               .replaceAll('&lt;', '<')
+               .replaceAll('&gt;', '>')
+               .replaceAll('&quot;', '"')
+               .replaceAll('&#39;', "'");
+               
+    return text.trim();
+  }
 }

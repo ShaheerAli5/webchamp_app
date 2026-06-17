@@ -338,17 +338,23 @@ class ContactProvider extends ChangeNotifier {
       _availableCountries = _extractCountriesFromResponse(result);
       
       // ✅ AUTOMATIC RECURSIVE FETCHING - Only if backend says there is more
-      if (autoLoadAll && _hasMore && newContacts.isNotEmpty) {
+      if (autoLoadAll && _hasMore && newContacts.isNotEmpty && _currentPage < 30) {
         debugPrint('⏳ [CONTACTS] Auto-loading next page ($_currentPage + 1)...');
-        // 🛡️ Increased delay to respect rate limits during massive background loads
-        await Future.delayed(const Duration(milliseconds: 1500));
-        return await getContacts(
-          search: search, 
-          loadMore: true, 
-          autoLoadAll: true,
-          perPage: effectivePerPage,
-          isRecursiveCall: true,
-        );
+        // 🛡️ Stop if we got a very small page, likely reached the end regardless of has_more
+        if (newContacts.length < 5) {
+          debugPrint('🛑 [CONTACTS] Small page received, stopping recursion.');
+          _hasMore = false;
+        } else {
+          // 🛡️ Increased delay to respect rate limits during massive background loads
+          await Future.delayed(const Duration(milliseconds: 2000));
+          return await getContacts(
+            search: search, 
+            loadMore: true, 
+            autoLoadAll: true,
+            perPage: effectivePerPage,
+            isRecursiveCall: true,
+          );
+        }
       }
 
       // Finalize loading
@@ -1108,6 +1114,45 @@ class ContactProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  Future<void> deleteMessage({
+    required String contactUid,
+    required String messageId,
+    required bool forEveryone,
+  }) async {
+    debugPrint('🗑️ [DELETE] Message ID: $messageId, ForEveryone: $forEveryone');
+    
+    // 🛡️ Find the message index
+    final index = _messages.indexWhere((m) {
+      final id = (m['whatsapp_message_id'] ?? m['wamid'] ?? m['_uid'] ?? m['uid']).toString();
+      return id == messageId;
+    });
+
+    if (index != -1) {
+      if (forEveryone) {
+        // WhatsApp style: replace content instead of removing
+        _messages[index] = {
+          ..._messages[index],
+          'message': '🚫 This message was deleted',
+          'message_body': '🚫 This message was deleted',
+          'message_type': 'text',
+          'is_deleted': true,
+          '__data': null,
+          'media_url': null,
+        };
+        debugPrint('✅ [DELETE] Message replaced with "deleted" status');
+      } else {
+        _messages.removeAt(index);
+        debugPrint('✅ [DELETE] Message removed from local list');
+      }
+      
+      _messages = List.from(_messages);
+      notifyListeners();
+    }
+    
+    // Note: single message deletion API not yet available in current repository.
+    // Local update provides instant UI feedback as requested.
   }
 
   void _updateContactLatestMessage(String contactUid, Map<String, dynamic> message) {
