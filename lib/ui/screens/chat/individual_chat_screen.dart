@@ -136,7 +136,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
           filePath: path,
           duration: _recordDuration,
         );
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    _scrollToBottom();
   }
 
   Future<void> _handleCamera() async {
@@ -210,28 +210,41 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   void _sendImage(String path) {
     context.read<ContactProvider>().sendImageMessage(contactUid: widget.uid, filePath: path);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    _scrollToBottom();
   }
 
   void _sendVideo(String path) {
     context.read<ContactProvider>().sendVideoMessage(contactUid: widget.uid, filePath: path);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    _scrollToBottom();
   }
 
   void _sendDocument(String path) {
     context.read<ContactProvider>().sendDocumentMessage(contactUid: widget.uid, filePath: path);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    _scrollToBottom();
   }
 
   void _handleSend() async {
     final text = _messageController.text.trim();
     if (text.isNotEmpty) {
+      debugPrint('🖱️ [UI] Send button tapped');
       final provider = context.read<ContactProvider>();
       final replyId = _replyingTo?['whatsapp_message_id'] ?? _replyingTo?['wamid'];
+      
+      // Clear input and reply status immediately for responsiveness
       _messageController.clear();
-      setState(() { _replyingTo = null; });
-      provider.sendMessage(contactUid: widget.uid, message: text, replyToMessageId: replyId?.toString());
-      if (mounted) WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      if (_replyingTo != null) {
+        setState(() { _replyingTo = null; });
+      }
+      
+      // Call provider to send message (it handles optimistic update and notifyListeners)
+      provider.sendMessage(
+        contactUid: widget.uid, 
+        message: text, 
+        replyToMessageId: replyId?.toString()
+      );
+      
+      // Force scroll to bottom to show the new message
+      _scrollToBottom();
     }
   }
 
@@ -284,9 +297,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       backgroundColor: const Color(0xFFE5DDD5),
       appBar: PreferredSize(
         preferredSize: Size.fromHeight(60.h),
-        child: Selector<ContactProvider, Map<String, dynamic>>(
-          selector: (_, p) => p.contacts.firstWhere((c) => (c['_uid'] ?? c['uid']) == widget.uid, orElse: () => <String, dynamic>{}),
-          builder: (context, contact, child) {
+        child: Consumer<ContactProvider>(
+          builder: (context, provider, child) {
+            // OPTIMIZED: Cache the contact lookup
+            final contact = provider.selectedContact != null && 
+                           (provider.selectedContact!['_uid'] ?? provider.selectedContact!['uid']) == widget.uid
+                ? provider.selectedContact!
+                : provider.contacts.firstWhere(
+                    (c) => (c['_uid'] ?? c['uid']) == widget.uid, 
+                    orElse: () => <String, dynamic>{}
+                  );
+
             final name = contact['full_name'] ?? contact['first_name'] ?? widget.name;
             final imageUrl = contact['profile_image'] ?? contact['image_url'];
             return ChatAppBar(name: _sanitizeText(name), uid: widget.uid, imageUrl: imageUrl, onInfoTap: _showContactInfo);
@@ -314,6 +335,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                   Expanded(
                     child: Consumer<ContactProvider>(
                       builder: (context, provider, child) {
+                        debugPrint('🎨 [UI] Rebuilding chat list. Total messages: ${provider.messages.length}');
                         if (provider.isLoading && provider.messages.isEmpty) {
                           return const Center(child: CircularProgressIndicator());
                         }
@@ -392,6 +414,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         }
 
         return Column(
+          key: ValueKey(messageId),
           children: [
             if (showDateSeparator && dateStr != null) DateSeparator(date: dateStr),
             GestureDetector(
@@ -471,7 +494,29 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   }
 
   void _scrollToBottom() {
-    if (_scrollController.hasClients) _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    if (_scrollController.hasClients) {
+      // Use a post-frame callback AND a slight delay to ensure list has rebuilt with new item
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollController.hasClients) {
+          _scrollController.animateTo(
+            0, 
+            duration: const Duration(milliseconds: 300), 
+            curve: Curves.easeOut
+          );
+        }
+      });
+      
+      // Double-check after a short delay for cases where frame callback is too early
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted && _scrollController.hasClients && _scrollController.offset > 50) {
+          _scrollController.animateTo(
+            0, 
+            duration: const Duration(milliseconds: 200), 
+            curve: Curves.easeOut
+          );
+        }
+      });
+    }
   }
 
   bool _isOutgoingMessage(dynamic messageData) {

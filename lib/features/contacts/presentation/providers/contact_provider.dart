@@ -340,7 +340,8 @@ class ContactProvider extends ChangeNotifier {
       // ✅ AUTOMATIC RECURSIVE FETCHING - Only if backend says there is more
       if (autoLoadAll && _hasMore && newContacts.isNotEmpty) {
         debugPrint('⏳ [CONTACTS] Auto-loading next page ($_currentPage + 1)...');
-        await Future.delayed(const Duration(milliseconds: 100));
+        // 🛡️ Increased delay to respect rate limits during massive background loads
+        await Future.delayed(const Duration(milliseconds: 1500));
         return await getContacts(
           search: search, 
           loadMore: true, 
@@ -702,24 +703,25 @@ class ContactProvider extends ChangeNotifier {
     // Backend likely handles this automatically or via a different endpoint.
   }
 
-  Future<bool> getContactChatBoxData(String contactUid, {bool showLoading = true, bool refresh = false}) async {
-    // 🛡️ Cancel previous chat fetch for ANY contact to avoid race conditions
-    _chatCancelToken?.cancel("Switching chat or refreshing");
-    _chatCancelToken = CancelToken();
+  Future<bool> getContactChatBoxData(String contactUid, {bool showLoading = true, bool refresh = false, bool force = false}) async {
+    // 🛡️ GUARD: Only cancel if switching to a DIFFERENT contact
+    if (_selectedContact != null && (_selectedContact!['_uid'] ?? _selectedContact!['uid'])?.toString() != contactUid) {
+      _chatCancelToken?.cancel("Switching contact");
+      _chatCancelToken = CancelToken();
+      _messages = []; // Clear for new contact
+    } else if (refresh || force) {
+      // For same contact refresh, don't necessarily cancel previous one 
+      // unless it's been too long, but here we'll just allow multiple for now 
+      // or use a separate token. Let's keep it simple: only cancel on switch.
+    }
 
-    // 🛡️ GUARD: Only prevent overlapping requests for the SAME contact
-    // If it's a new contact, allow it.
-    if (_isFetchingChat && _selectedContact?['uid'] == contactUid) {
+    // 🛡️ GUARD: Only prevent overlapping requests for the SAME contact if NOT forced
+    if (_isFetchingChat && _selectedContact?['uid'] == contactUid && !force && !refresh) {
       debugPrint('⏳ [CHAT] Skipping overlapping request for $contactUid');
       return false;
     }
     
     _isFetchingChat = true;
-    
-    // Clear messages if switching contacts to avoid flickering
-    if (_selectedContact != null && (_selectedContact!['_uid'] ?? _selectedContact!['uid'])?.toString() != contactUid) {
-      _messages = [];
-    }
 
     if (showLoading && _messages.isEmpty) {
       _isLoading = true;
@@ -773,53 +775,79 @@ class ContactProvider extends ChangeNotifier {
       List<dynamic> dedupedList = [];
       bool hasNewData = false;
 
-      // 🛡️ DEDUPLICATE & MERGE OPTIMISTIC MESSAGES
+      // 🛡️ DEDUPLICATE & MERGE MESSAGES
       final Map<String, dynamic> uniqueMap = {};
+      debugPrint('🔄 [MERGE] Starting merge. Local messages: ${_messages.length}');
       
-      // 1. Keep any local messages in 'sending' or 'uploading' status
+      // 1. Start with ALL current local messages to prevent disappearance
       for (var msg in _messages) {
-        if (msg is Map && (msg['status'] == 'sending' || msg['status'] == 'uploading')) {
-          final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'];
-          if (id != null) {
-            uniqueMap[id.toString()] = msg;
-          }
+        final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['timestamp'] ?? msg['created_at'];
+        if (id != null) {
+          uniqueMap[id.toString()] = msg;
         }
       }
 
-      // 2. Process backend messages
+      // 2. Process backend messages and merge/update
       if (rawNewMessages.isNotEmpty) {
+        debugPrint('📡 [SYNC] Backend messages received: ${rawNewMessages.length}');
         for (var msg in rawNewMessages) {
           final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['timestamp'] ?? msg['created_at'];
           if (id != null) {
             final idStr = id.toString();
-            // deduplication by content for recent outgoing messages
+            
+            // If it's an outgoing message, try to match and remove its temp/sent version
             if (msg['is_incoming_message'] == 0 || msg['is_incoming_message'] == '0' || msg['is_incoming_message'] == false) {
-              uniqueMap.removeWhere((key, m) => 
-                key.startsWith('temp_') && 
-                m['status'] == 'sending' && 
-                (m['message'] == msg['message'] || m['message_body'] == msg['message_body'])
-              );
+              final initialSize = uniqueMap.length;
+              uniqueMap.removeWhere((key, m) {
+                if (!key.startsWith('temp_') && m['status'] != 'sending' && m['status'] != 'sent') return false;
+                
+                // Match by text content
+                final bool textMatch = (m['message'] == msg['message'] || m['message_body'] == msg['message_body'] || m['text'] == msg['text']);
+                if (textMatch && (m['message']?.toString().isNotEmpty ?? false)) {
+                  // 🛡️ Added time-window check (2 minutes) to prevent matching wrong messages with same text
+                  final mTime = _getDateTime(m);
+                  final msgTime = _getDateTime(msg);
+                  if (mTime.difference(msgTime).abs().inMinutes < 2) return true;
+                }
+                
+                // Match by media type if both are media
+                final String? mType = m['message_type'] ?? m['type'];
+                final String? msgType = msg['message_type'] ?? msg['type'];
+                if (mType != null && mType == msgType) {
+                   // 🛡️ For media, check filename or use a strict time window
+                   final mLink = m['__data']?['media_values']?['link']?.toString() ?? '';
+                   final msgLink = msg['__data']?['media_values']?['link']?.toString() ?? '';
+                   if (mLink.isNotEmpty && msgLink.isNotEmpty && mLink.split('/').last == msgLink.split('/').last) return true;
+                   
+                   final mTime = _getDateTime(m);
+                   final msgTime = _getDateTime(msg);
+                   if (mTime.difference(msgTime).abs().inMinutes < 2) return true;
+                }
+                
+                return false;
+              });
+
+              if (uniqueMap.length < initialSize) {
+                debugPrint('✂️ [MERGE] Deduplicated optimistic message with backend ID: $idStr');
+              }
             }
+            
             uniqueMap[idStr] = msg;
           } else {
             uniqueMap[msg.hashCode.toString()] = msg;
           }
         }
-        dedupedList = uniqueMap.values.toList();
-        dedupedList.sort((a, b) => _getDateTime(b).compareTo(_getDateTime(a)));
-      } else if (_messages.isNotEmpty && uniqueMap.isNotEmpty) {
-        // If API returned nothing (maybe error), but we have local messages, keep what we have
-        dedupedList = List.from(_messages);
-      } else if (_messages.isEmpty) {
-        dedupedList = _messagesFromLoadedContact(contactUid);
-      } else {
-        // Fallback: keep current messages if API returned empty
-        dedupedList = List.from(_messages);
       }
+
+      // 3. Sort by time (newest first for reversed ListView)
+      dedupedList = uniqueMap.values.toList();
+      dedupedList.sort((a, b) => _getDateTime(b).compareTo(_getDateTime(a)));
+      debugPrint('📊 [MERGE] Final list size: ${dedupedList.length}');
 
       if (!_isSameMessageList(_messages, dedupedList)) {
         _messages = List.from(dedupedList); // Use a fresh list instance
         hasNewData = true;
+        debugPrint('🔔 [UI] Messages updated, triggering rebuild');
         
         // 🛡️ Update contact's latest message in the list for sorting
         if (_messages.isNotEmpty) {
@@ -844,12 +872,11 @@ class ContactProvider extends ChangeNotifier {
       _isLoading = false;
       _chatBoxRetryCount = 0; // Reset retry count on success
 
-      if (hasNewData || showLoading) {
+      if (hasNewData || showLoading || force) {
         notifyListeners();
-        debugPrint('✅ [CHAT] UI notified of changes');
+        debugPrint('✅ [CHAT] UI notified of changes (Forced: $force, NewData: $hasNewData)');
         
         // 🛡️ Automatically mark as read if we have messages and it's a selected contact
-        // We do this after notification to ensure UI shows the latest state.
         if (_messages.isNotEmpty) {
           markContactAsRead(contactUid);
         }
@@ -863,15 +890,16 @@ class ContactProvider extends ChangeNotifier {
       _isFetchingChat = false;
       
       // Bug 3: Retry logic with backoff
-      if (e.toString().contains("Too many requests") && _chatBoxRetryCount < 3) {
+      final errStr = e.toString();
+      if ((errStr.contains("Too many requests") || errStr.contains("Too Many Attempts")) && _chatBoxRetryCount < 3) {
         _chatBoxRetryCount++;
         int backoff = 5; 
         if (_chatBoxRetryCount == 2) backoff = 10;
         if (_chatBoxRetryCount == 3) backoff = 20;
         
-        debugPrint('🔄 [CHAT] Retry $_chatBoxRetryCount/3 in ${backoff}s...');
+        debugPrint('🔄 [CHAT] Rate limited. Retry $_chatBoxRetryCount/3 in ${backoff}s...');
         await Future.delayed(Duration(seconds: backoff));
-        return await getContactChatBoxData(contactUid, showLoading: showLoading);
+        return await getContactChatBoxData(contactUid, showLoading: showLoading, force: force, refresh: refresh);
       }
 
       if (showLoading) {
@@ -916,33 +944,56 @@ class ContactProvider extends ChangeNotifier {
   }
 
   List<dynamic> _extractMessagesFromResponse(List<dynamic> results) {
+    final Map<String, dynamic> allMessagesMap = {};
+    
     for (final result in results) {
       if (result == null) continue;
-      if (result is List && result.isNotEmpty) return result;
-      if (result is Map) {
-        // Priority 1: client_models > whatsappMessageLogs (WabChamp chat-data endpoint)
+      
+      List<dynamic> currentResultMessages = [];
+      
+      if (result is List) {
+        currentResultMessages = result;
+      } else if (result is Map) {
         final clientModels = result['client_models'];
         if (clientModels is Map) {
           final logs = clientModels['whatsappMessageLogs'];
           if (logs is Map && logs.isNotEmpty) {
-            debugPrint('🎯 [CHAT] Used whatsappMessageLogs with ${logs.length} messages');
-            return logs.values.toList();
+            currentResultMessages = logs.values.toList();
+          } else if (clientModels['messages'] != null) {
+            final msgs = clientModels['messages'];
+            currentResultMessages = msgs is Map ? msgs.values.toList() : (msgs is List ? msgs : []);
           }
-          final msgs = clientModels['messages'];
-          if (msgs is List && msgs.isNotEmpty) return msgs;
-          if (msgs is Map && msgs.isNotEmpty) return msgs.values.toList();
         }
 
-        // Priority 2: Standard keys
-        final keys = ['messages', 'chat_messages', 'contactMessages', 'records'];
-        for (final key in keys) {
-          final val = result[key];
-          if (val is List && val.isNotEmpty) return val;
-          if (val is Map && val.isNotEmpty) return val.values.toList();
+        if (currentResultMessages.isEmpty) {
+          final keys = ['messages', 'chat_messages', 'contactMessages', 'records'];
+          for (final key in keys) {
+            final val = result[key];
+            if (val is List && val.isNotEmpty) {
+              currentResultMessages = val;
+              break;
+            } else if (val is Map && val.isNotEmpty) {
+              currentResultMessages = val.values.toList();
+              break;
+            }
+          }
+        }
+      }
+      
+      // Add messages from this result to the global map for deduplication
+      for (var msg in currentResultMessages) {
+        if (msg is Map) {
+          final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['id'];
+          if (id != null) {
+            allMessagesMap[id.toString()] = msg;
+          } else {
+            allMessagesMap[msg.hashCode.toString()] = msg;
+          }
         }
       }
     }
-    return [];
+    
+    return allMessagesMap.values.toList();
   }
 
   List<dynamic> _messagesFromLoadedContact(String contactUid) {
@@ -996,7 +1047,7 @@ class ContactProvider extends ChangeNotifier {
     
     // Create a fresh list for the UI to detect change
     _messages = [optimisticMessage, ..._messages];
-    debugPrint('📊 [SEND] Messages after optimistic insert: ${_messages.length}');
+    debugPrint('✅ [SEND] Message inserted locally. Temp ID: $tempId');
     
     // Update contact's latest message locally for sorting
     _updateContactLatestMessage(contactUid, optimisticMessage);
@@ -1046,7 +1097,7 @@ class ContactProvider extends ChangeNotifier {
       
       // Full background refresh to stay in sync with server state
       debugPrint('🔄 [SEND] Triggering background sync (getContactChatBoxData)');
-      getContactChatBoxData(contactUid, showLoading: false);
+      getContactChatBoxData(contactUid, showLoading: false, force: true, refresh: true);
       
       return true;
     } catch (e) {
@@ -1203,7 +1254,7 @@ class ContactProvider extends ChangeNotifier {
       // Wait a moment for server to process media before refresh
       await Future.delayed(const Duration(seconds: 2));
       debugPrint('🔄 [SEND MEDIA] Triggering background sync (getContactChatBoxData)');
-      getContactChatBoxData(contactUid, showLoading: false);
+      getContactChatBoxData(contactUid, showLoading: false, force: true, refresh: true);
       return true;
     } catch (e) {
       debugPrint('❌ [SEND MEDIA] Error: $e');

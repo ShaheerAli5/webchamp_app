@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:http_parser/http_parser.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_constants.dart';
 
@@ -270,10 +271,25 @@ class ContactApiService {
 
   Future<Response> uploadTempMedia(String filePath, String uploadItem) async {
     final fileName = filePath.split('/').last;
+    
+    // 🛡️ Determine MIME type based on extension
+    String contentType = 'application/octet-stream';
+    final ext = fileName.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'jpg': case 'jpeg': contentType = 'image/jpeg'; break;
+      case 'png': contentType = 'image/png'; break;
+      case 'mp4': contentType = 'video/mp4'; break;
+      case 'm4a': contentType = 'audio/mp4'; break;
+      case 'mp3': contentType = 'audio/mpeg'; break;
+      case 'ogg': contentType = 'audio/ogg'; break;
+      case 'pdf': contentType = 'application/pdf'; break;
+    }
+
     final formData = FormData.fromMap({
       'filepond': await MultipartFile.fromFile(
         filePath,
         filename: fileName,
+        contentType: MediaType.parse(contentType),
       ),
       if (_csrfToken != null) '_token': _csrfToken,
     });

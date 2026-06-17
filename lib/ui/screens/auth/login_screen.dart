@@ -99,7 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       SizedBox(height: 24.h),
                       
-                      _buildInputField('EMAIL ADDRESS', 'admin@company.com', _emailController),
+                      _buildInputField('EMAIL / USERNAME / PHONE NUMBER', 'admin@company.com', _emailController),
                       _buildInputField(
                         'PASSWORD', 
                         '••••••••', 

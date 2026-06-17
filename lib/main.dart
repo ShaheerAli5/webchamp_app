@@ -40,7 +40,9 @@ void main() async {
     
     // Load cache first for speed, then fetch fresh in background
     contactProvider.loadCachedData().then((_) {
-      contactProvider.getContacts(refresh: true);
+      // 🛡️ Disable auto-loading all contacts at startup to prevent 429 rate limits
+      // This is especially important when the user has 2700+ contacts.
+      contactProvider.getContacts(refresh: true, autoLoadAll: false);
     });
   };
 
