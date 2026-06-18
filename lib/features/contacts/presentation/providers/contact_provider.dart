@@ -294,9 +294,6 @@ class ContactProvider extends ChangeNotifier {
 
       List<dynamic> newContacts = _parseContactsResponse(result);
       
-      // Update pagination state BEFORE merging
-      _updatePaginationState(result, newContacts.length, effectivePerPage);
-
       final existingUids = _contacts.map(_extractUid).whereType<String>().toSet();
       int addedInThisPage = 0;
 
@@ -321,6 +318,9 @@ class ContactProvider extends ChangeNotifier {
           }
         }
       }
+
+      // Update pagination state AFTER merging so we know how many were NEW
+      _updatePaginationState(result, newContacts.length, addedInThisPage, effectivePerPage);
 
       // If Page 1 refresh returned fewer items than we had, it might be a user switch or data change
       // In a real app we'd handle this more complexly, but for now we trust the backend Page 1
@@ -406,7 +406,7 @@ class ContactProvider extends ChangeNotifier {
     }
   }
 
-  void _updatePaginationState(dynamic result, int newCount, int requestedPerPage) {
+  void _updatePaginationState(dynamic result, int newCount, int addedCount, int requestedPerPage) {
     if (result is! Map) return;
 
     final clientModels = result['client_models'];
@@ -437,8 +437,15 @@ class ContactProvider extends ChangeNotifier {
       if (foundTotal != null) {
         _total = foundTotal;
       }
-      // No pagination info from backend, keep fetching until a page is empty
-      _hasMore = newCount > 0;
+      
+      // 🛡️ GUARD: If we got contacts but none were new, stop to avoid infinite loops
+      // especially when cache is returning the same results.
+      if (newCount > 0 && addedCount == 0) {
+        debugPrint('⚠️ [PAGINATION] No new contacts found in page result. Stopping fetch.');
+        _hasMore = false;
+      } else {
+        _hasMore = newCount > 0;
+      }
     }
 
     // 🛡️ Debug Verification
@@ -1222,7 +1229,7 @@ class ContactProvider extends ChangeNotifier {
     return _sendMediaOptimistic(
       contactUid: contactUid,
       filePath: filePath,
-      mediaType: 'audio',
+      mediaType: 'voice',
       duration: duration,
     );
   }
@@ -1305,9 +1312,26 @@ class ContactProvider extends ChangeNotifier {
       final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId);
       if (index != -1 && result is Map) {
         debugPrint('🔄 [SEND MEDIA] Updating temp message at index $index');
+        
+        // 🛡️ Deep merge __data to preserve optimistic duration/local links
+        Map<String, dynamic> mergedData = Map.from(_messages[index]['__data'] ?? {});
+        if (result['__data'] is Map) {
+          mergedData.addAll(result['__data']);
+          
+          // Specifically ensure duration is preserved if missing in result
+          final oldDuration = _messages[index]['__data']?['media_values']?['duration'];
+          if (oldDuration != null && (mergedData['media_values']?['duration'] == null)) {
+             mergedData['media_values'] = {
+               ...(mergedData['media_values'] ?? {}),
+               'duration': oldDuration,
+             };
+          }
+        }
+
         final Map<String, dynamic> updatedMsg = {
           ..._messages[index],
           ...result,
+          if (mergedData.isNotEmpty) '__data': mergedData,
           'status': 'sent',
         };
         _messages[index] = updatedMsg;
@@ -1319,15 +1343,25 @@ class ContactProvider extends ChangeNotifier {
       }
       
       // Wait a moment for server to process media before refresh
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 1));
       debugPrint('🔄 [SEND MEDIA] Triggering background sync (getContactChatBoxData)');
+      
+      // 🛡️ Manually invalidate cache in the repository if possible
+      // (Bypassing via refresh: true for now)
       getContactChatBoxData(contactUid, showLoading: false, force: true, refresh: true);
       return true;
     } catch (e) {
       debugPrint('❌ [SEND MEDIA] Error: $e');
+      
+      // If we have a specific error message from the backend, show it
+      String errorMsg = e.toString().replaceAll('Exception: ', '');
+      if (errorMsg.contains('24 hours')) {
+        errorMsg = "Cannot send message: 24h window closed. Use a template.";
+      }
+      
       _messages.removeWhere((m) => m['whatsapp_message_id'] == tempId);
       _messages = List.from(_messages);
-      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _errorMessage = errorMsg;
       notifyListeners();
       return false;
     }

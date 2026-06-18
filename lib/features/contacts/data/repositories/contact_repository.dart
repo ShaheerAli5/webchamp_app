@@ -338,13 +338,21 @@ class ContactRepository {
     try {
       final file = File(filePath);
       if (!await file.exists()) {
+        debugPrint('❌ [MEDIA SEND] File NOT found at path: $filePath');
         throw Exception('File not found: $filePath');
       }
 
       final fileSize = await file.length();
+      final extension = filePath.split('.').last.toLowerCase();
+      
       debugPrint('🚀 [MEDIA SEND] Starting two-step process for $mediaType...');
       debugPrint('   - Path: $filePath');
       debugPrint('   - Size: ${(fileSize / 1024).toStringAsFixed(2)} KB');
+      debugPrint('   - Extension: $extension');
+
+      if (fileSize == 0) {
+        debugPrint('⚠️ [MEDIA SEND] WARNING: File is empty (0 bytes)!');
+      }
 
       // Step 1: Upload to temporary storage
       String uploadItem;
@@ -367,11 +375,19 @@ class ContactRepository {
       debugPrint('📤 [STEP 1] Uploading to temp storage ($uploadItem)...');
       final uploadResponse = await _apiService.uploadTempMedia(filePath, uploadItem);
       
+      debugPrint('📥 [STEP 1] Response Status: ${uploadResponse.statusCode}');
+      debugPrint('📥 [STEP 1] Response Data: ${uploadResponse.data}');
+
       // Extract uploaded file name from response
-      // Based on common FilePond behavior, it might return the filename directly as a string or in a JSON
       String? uploadedFileName;
       if (uploadResponse.data is String) {
         uploadedFileName = uploadResponse.data;
+        // 🛡️ Detect if the response string is actually an error message
+        if (uploadedFileName!.contains('error') || 
+            uploadedFileName.contains('failed') || 
+            uploadedFileName.contains('type')) {
+          throw Exception('Upload failed: $uploadedFileName');
+        }
       } else if (uploadResponse.data is Map) {
         uploadedFileName = uploadResponse.data['file_name'] ?? 
                            uploadResponse.data['fileName'] ??
@@ -390,10 +406,11 @@ class ContactRepository {
       debugPrint('📤 [STEP 2] Sending message referencing temp file...');
       final response = await _apiService.sendMedia(
         contactUid: contactUid,
-        mediaType: mediaType,
+        mediaType: mediaType.toLowerCase() == 'voice' ? 'audio' : mediaType,
         uploadedFileName: uploadedFileName,
         waId: waId,
         caption: caption,
+        isRecordedAudio: mediaType.toLowerCase() == 'voice',
       );
 
       final data = response.data;
@@ -540,6 +557,100 @@ class ContactRepository {
         throw Exception(data['message'] ?? 'Failed to send template');
       }
       return data;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  // --- Contact Group Management ---
+
+  Future<dynamic> getContactGroups({bool refresh = false}) async {
+    try {
+      final response = await _apiService.getContactGroups(refresh: refresh);
+      return Helpers.sanitizeData(response.data);
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  Future<dynamic> createContactGroup({
+    required String title,
+    String? description,
+  }) async {
+    try {
+      final response = await _apiService.createContactGroup(
+        title: title,
+        description: description,
+      );
+      final data = Helpers.sanitizeData(response.data);
+      if (data is Map && data['result'] == 'failed') {
+        throw Exception(data['message'] ?? 'Failed to create group');
+      }
+      return data;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  Future<dynamic> updateContactGroup(
+    String groupUid, {
+    required String title,
+    String? description,
+  }) async {
+    try {
+      final response = await _apiService.updateContactGroup(
+        groupUid,
+        title: title,
+        description: description,
+      );
+      final data = Helpers.sanitizeData(response.data);
+      if (data is Map && data['result'] == 'failed') {
+        throw Exception(data['message'] ?? 'Failed to update group');
+      }
+      return data;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  Future<dynamic> deleteContactGroup(String groupUid) async {
+    try {
+      final response = await _apiService.deleteContactGroup(groupUid);
+      final data = Helpers.sanitizeData(response.data);
+      if (data is Map && data['result'] == 'failed') {
+        throw Exception(data['message'] ?? 'Failed to delete group');
+      }
+      return data;
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  Future<dynamic> assignContactsToGroup({
+    required List<String> contactUids,
+    required List<String> groupUids,
+  }) async {
+    try {
+      final response = await _apiService.assignContactsToGroup(
+        contactUids: contactUids,
+        groupUids: groupUids,
+      );
+      return Helpers.sanitizeData(response.data);
+    } on DioException catch (e) {
+      throw Exception(_extractError(e));
+    }
+  }
+
+  Future<dynamic> removeContactFromGroup({
+    required String contactUid,
+    required String groupUid,
+  }) async {
+    try {
+      final response = await _apiService.removeContactFromGroup(
+        contactUid: contactUid,
+        groupUid: groupUid,
+      );
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }

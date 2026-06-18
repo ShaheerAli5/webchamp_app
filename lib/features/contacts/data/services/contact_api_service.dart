@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:http_parser/http_parser.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_constants.dart';
@@ -218,6 +219,7 @@ class ContactApiService {
         headers: {
           'Accept': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
+          'Api-Request-Signature': 'mobile-app-request',
         },
       ),
     );
@@ -230,37 +232,65 @@ class ContactApiService {
     String? uploadedFileName,
     String? waId,
     String? caption,
+    bool isRecordedAudio = false,
   }) async {
-    // 🛡️ Create FormData
+    // 🛡️ Prepare data map
     final Map<String, dynamic> dataMap = {
       'contact_uid': contactUid,
       if (waId != null && waId.isNotEmpty) 'wa_id': waId,
       'media_type': mediaType,
       if (caption != null && caption.isNotEmpty) 'caption': caption,
+      if (isRecordedAudio) 'is_recorded_audio': true,
       if (_csrfToken != null && _csrfToken!.isNotEmpty) '_token': _csrfToken,
     };
 
+    // Case 1: Finalize upload using a previously uploaded temporary file name
     if (uploadedFileName != null) {
       dataMap['uploaded_media_file_name'] = uploadedFileName;
-    } else if (filePath != null) {
-      final fileName = filePath.split('/').last;
+      
+      debugPrint('📤 [API] Finalizing media send with temp file: $uploadedFileName');
+      
+      return await _apiClient.post(
+        ApiConstants.sendMedia,
+        data: dataMap,
+        options: Options(
+          contentType: Headers.jsonContentType, // Switch to JSON for finalizing
+          extra: {'stateless': true},
+          headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Api-Request-Signature': 'mobile-app-request',
+          },
+        ),
+      );
+    } 
+
+    // Case 2: Direct upload (Fallback/Legacy)
+    if (filePath != null) {
+      final fileName = filePath.split(RegExp(r'[/\\]')).last;
       dataMap['uploaded_media_file_name'] = fileName;
+      
+      String contentType = 'application/octet-stream';
+      if (mediaType == 'audio') contentType = 'audio/mp4';
+      if (mediaType == 'image') contentType = 'image/jpeg';
+      
       dataMap['file'] = await MultipartFile.fromFile(
         filePath,
         filename: fileName,
+        contentType: MediaType.parse(contentType),
       );
     }
 
     final formData = FormData.fromMap(dataMap);
 
+    debugPrint('📤 [API] Sending media via FormData (direct upload)');
+
     return await _apiClient.post(
       ApiConstants.sendMedia,
       data: formData,
       options: Options(
-        // 🛡️ Setting contentType to null allows Dio to automatically 
-        // include the boundary from the FormData object.
-        contentType: null,
-        extra: {'stateless': true}, // 🛡️ Force stateless (no cookies)
+        contentType: null, // Let Dio handle boundary
+        extra: {'stateless': true},
         headers: {
           'Accept': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
@@ -270,13 +300,14 @@ class ContactApiService {
   }
 
   Future<Response> uploadTempMedia(String filePath, String uploadItem) async {
-    final fileName = filePath.split('/').last;
+    final fileName = filePath.split(RegExp(r'[/\\]')).last;
     
     // 🛡️ Determine MIME type based on extension with smart defaults
     String contentType = 'application/octet-stream';
+    bool isAudio = uploadItem.contains('audio');
     
-    if (uploadItem.contains('audio')) {
-      contentType = 'audio/aac';
+    if (isAudio) {
+      contentType = 'audio/mp4'; // Default to mp4 for WhatsApp compatibility
     } else if (uploadItem.contains('image')) {
       contentType = 'image/jpeg';
     } else if (uploadItem.contains('video')) {
@@ -287,8 +318,8 @@ class ContactApiService {
     switch (ext) {
       case 'jpg': case 'jpeg': contentType = 'image/jpeg'; break;
       case 'png': contentType = 'image/png'; break;
-      case 'mp4': contentType = 'video/mp4'; break;
-      case 'm4a': contentType = 'audio/mp4'; break;
+      case 'mp4': contentType = isAudio ? 'audio/mp4' : 'video/mp4'; break;
+      case 'm4a': contentType = 'audio/mp4'; break; // Reverted to audio/mp4 for better container recognition
       case 'mp3': contentType = 'audio/mpeg'; break;
       case 'ogg': contentType = 'audio/ogg'; break;
       case 'aac': contentType = 'audio/aac'; break;
@@ -302,8 +333,11 @@ class ContactApiService {
         filename: fileName,
         contentType: MediaType.parse(contentType),
       ),
-      if (_csrfToken != null) '_token': _csrfToken,
+      if (_csrfToken != null && _csrfToken!.isNotEmpty) '_token': _csrfToken,
     });
+
+    debugPrint('📤 [API] uploadTempMedia: $fileName ($contentType) -> $uploadItem');
+
     return await _apiClient.post(
       ApiConstants.uploadTempMedia(uploadItem),
       data: formData,
@@ -312,19 +346,21 @@ class ContactApiService {
         headers: {
           'Accept': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
+          'Api-Request-Signature': 'mobile-app-request',
         },
       ),
     );
   }
 
+
   Future<Response> uploadMedia(String filePath, {required String contactUid, String type = 'audio'}) async {
-    final fileName = filePath.split('/').last;
+    final fileName = filePath.split(RegExp(r'[/\\]')).last;
     final ext = fileName.split('.').last.toLowerCase();
-    String contentType = 'audio/aac';
-    if (ext == 'm4a' || ext == 'mp4') contentType = 'audio/mp4';
+    String contentType = 'audio/mp4'; // Default to mp4
     if (ext == 'mp3') contentType = 'audio/mpeg';
     if (ext == 'ogg') contentType = 'audio/ogg';
     if (ext == 'amr') contentType = 'audio/amr';
+    if (ext == 'aac') contentType = 'audio/aac';
 
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(
@@ -334,7 +370,6 @@ class ContactApiService {
       ),
       'contact_uid': contactUid,
       'type': type,
-      if (_csrfToken != null) '_token': _csrfToken,
     });
     return await _apiClient.post(
       ApiConstants.uploadAudio,
@@ -353,7 +388,6 @@ class ContactApiService {
         'contact_uid': contactUid,
         'template_name': templateName,
         'language_code': languageCode,
-        if (_csrfToken != null) '_token': _csrfToken,
       },
     );
   }
@@ -413,6 +447,79 @@ class ContactApiService {
           'Content-Type': 'application/json',
         },
       ),
+    );
+  }
+
+  // --- Contact Group Management ---
+
+  Future<Response> getContactGroups({bool refresh = false}) async {
+    return await _apiClient.get(
+      ApiConstants.contactGroupsList,
+      options: Options(
+        extra: {
+          'useCache': true,
+          'refresh': refresh,
+        },
+      ),
+    );
+  }
+
+  Future<Response> createContactGroup({
+    required String title,
+    String? description,
+  }) async {
+    return await _apiClient.post(
+      ApiConstants.createContactGroup,
+      data: {
+        'title': title,
+        if (description != null) 'description': description,
+      },
+    );
+  }
+
+  Future<Response> updateContactGroup(
+    String groupUid, {
+    required String title,
+    String? description,
+  }) async {
+    return await _apiClient.post(
+      ApiConstants.updateContactGroup(groupUid),
+      data: {
+        'title': title,
+        if (description != null) 'description': description,
+      },
+    );
+  }
+
+  Future<Response> deleteContactGroup(String groupUid) async {
+    return await _apiClient.post(
+      ApiConstants.deleteContactGroup(groupUid),
+    );
+  }
+
+  Future<Response> assignContactsToGroup({
+    required List<String> contactUids,
+    required List<String> groupUids,
+  }) async {
+    return await _apiClient.post(
+      ApiConstants.assignContactsToGroup,
+      data: {
+        'contact_uids': contactUids,
+        'group_uids': groupUids,
+      },
+    );
+  }
+
+  Future<Response> removeContactFromGroup({
+    required String contactUid,
+    required String groupUid,
+  }) async {
+    return await _apiClient.post(
+      ApiConstants.removeContactFromGroup,
+      data: {
+        'contact_uid': contactUid,
+        'group_uid': groupUid,
+      },
     );
   }
 }

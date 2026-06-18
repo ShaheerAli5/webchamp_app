@@ -17,6 +17,8 @@ import '../ui/screens/home/home_screen.dart';
 import '../ui/screens/campaigns/campaigns_screen.dart';
 import '../ui/screens/chat/chat_screen.dart';
 import '../ui/screens/contacts/contacts_screen.dart';
+import '../ui/screens/contacts/contact_groups_screen.dart';
+import '../ui/screens/contacts/group_details_screen.dart';
 import '../ui/screens/more/more_screen.dart';
 import '../ui/screens/templates/templates_screen.dart';
 import '../ui/screens/templates/add_template_screen.dart';
@@ -56,6 +58,8 @@ class AppRoutes {
   static const String addContact = '/add-contact';
   static const String editContact = '/edit-contact';
   static const String uploadCsv = '/upload-csv';
+  static const String contactGroups = '/contact-groups';
+  static const String groupDetails = '/group-details/:uid';
   static const String individualChat = '/chat-detail/:uid/:name';
   static const String createNewList = '/create-new-list';
   static const String selectContacts = '/select-contacts';
@@ -189,6 +193,18 @@ class AppRoutes {
         GoRoute(
           path: uploadCsv,
           builder: (context, state) => const UploadCsvScreen(),
+        ),
+        GoRoute(
+          path: contactGroups,
+          builder: (context, state) => const ContactGroupsScreen(),
+        ),
+        GoRoute(
+          path: groupDetails,
+          builder: (context, state) {
+            final uid = state.pathParameters['uid'] ?? '';
+            final initialGroup = state.extra;
+            return GroupDetailsScreen(groupUid: uid, initialGroup: initialGroup);
+          },
         ),
         GoRoute(
           path: createNewList,

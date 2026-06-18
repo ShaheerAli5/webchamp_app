@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../../../routes/app_routes.dart';
+import '../../../features/contacts/presentation/providers/contact_group_provider.dart';
+import '../../../core/utils/helpers.dart';
 
 class CreateNewListScreen extends StatefulWidget {
   const CreateNewListScreen({super.key});
@@ -12,7 +15,7 @@ class CreateNewListScreen extends StatefulWidget {
 
 class _CreateNewListScreenState extends State<CreateNewListScreen> {
   final TextEditingController _listNameController = TextEditingController();
-  List<Map<String, String>> _selectedContacts = [];
+  List<dynamic> _selectedContacts = [];
 
   @override
   void dispose() {
@@ -119,7 +122,7 @@ class _CreateNewListScreenState extends State<CreateNewListScreen> {
                 InkWell(
                   onTap: () async {
                     final result = await context.push(AppRoutes.selectContacts);
-                    if (result != null && result is List<Map<String, String>>) {
+                    if (result != null && result is List) {
                       setState(() {
                         _selectedContacts = result;
                       });
@@ -131,7 +134,7 @@ class _CreateNewListScreenState extends State<CreateNewListScreen> {
                       SizedBox(width: 8.w),
                       Text(
                         _selectedContacts.isEmpty 
-                            ? 'Add people or groups' 
+                            ? 'Add people' 
                             : '${_selectedContacts.length} people selected',
                         style: TextStyle(
                           color: const Color(0xFF344054),
@@ -147,42 +150,79 @@ class _CreateNewListScreenState extends State<CreateNewListScreen> {
                   Wrap(
                     spacing: 8.w,
                     runSpacing: 8.h,
-                    children: _selectedContacts.map((contact) => Chip(
-                      label: Text(contact['name'] ?? '', style: TextStyle(fontSize: 12.sp)),
-                      backgroundColor: const Color(0xFFF2F4F7),
-                      onDeleted: () {
-                        setState(() {
-                          _selectedContacts.remove(contact);
-                        });
-                      },
-                    )).toList(),
+                    children: _selectedContacts.map((contact) {
+                      final name = Helpers.sanitizeString((contact['full_name'] ?? contact['first_name'] ?? 'No Name').toString());
+                      return Chip(
+                        label: Text(name, style: TextStyle(fontSize: 12.sp)),
+                        backgroundColor: const Color(0xFFF2F4F7),
+                        onDeleted: () {
+                          setState(() {
+                            _selectedContacts.remove(contact);
+                          });
+                        },
+                      );
+                    }).toList(),
                   ),
                 ],
                 SizedBox(height: 32.h),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48.h,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      context.pop();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF007176),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12.r),
+                Consumer<ContactGroupProvider>(
+                  builder: (context, provider, child) {
+                    return SizedBox(
+                      width: double.infinity,
+                      height: 48.h,
+                      child: ElevatedButton(
+                        onPressed: provider.isLoading ? null : () async {
+                          final name = _listNameController.text.trim();
+                          if (name.isEmpty) {
+                            Helpers.showSnackBar(context, 'Please enter a list name');
+                            return;
+                          }
+                          
+                          final success = await provider.createGroup(name);
+                          if (success && mounted) {
+                            // If we have selected contacts, assign them
+                            if (_selectedContacts.isNotEmpty) {
+                              // We need to find the UID of the newly created group.
+                              // Since createGroup refreshes the list, we can find it by name or just assume it's the last one.
+                              final newGroup = provider.groups.firstWhere(
+                                (g) => (g['title'] ?? g['name']) == name,
+                                orElse: () => null,
+                              );
+                              
+                              if (newGroup != null) {
+                                final groupUid = (newGroup['uid'] ?? newGroup['id']).toString();
+                                final contactUids = _selectedContacts.map((c) => (c['uid'] ?? c['id']).toString()).toList();
+                                await provider.assignContactsToGroup(contactUids, [groupUid]);
+                              }
+                            }
+                            
+                            Helpers.showSnackBar(context, 'List "$name" created successfully');
+                            context.pop();
+                          } else if (provider.errorMessage != null && mounted) {
+                            Helpers.showSnackBar(context, provider.errorMessage!);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF007176),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12.r),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: provider.isLoading 
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Text(
+                              'Create List',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16.sp,
+                                fontWeight: FontWeight.w600,
+                                fontFamily: 'Inter',
+                              ),
+                            ),
                       ),
-                      elevation: 0,
-                    ),
-                    child: Text(
-                      'Create List',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Inter',
-                      ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ],
             ),

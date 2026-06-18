@@ -242,6 +242,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
             ),
             SizedBox(width: 8.w),
             _buildActionButton(
+              onTap: () => context.push('/contact-groups'),
+              icon: Icons.group_outlined,
+              label: 'Groups',
+              isPrimary: false,
+            ),
+            SizedBox(width: 8.w),
+            _buildActionButton(
               onTap: () {},
               icon: Icons.download_outlined,
               label: 'Export Contacts',

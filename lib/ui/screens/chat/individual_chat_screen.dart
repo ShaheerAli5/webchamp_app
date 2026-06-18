@@ -18,7 +18,9 @@ import 'package:any_link_preview/any_link_preview.dart';
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'dart:io';
+import 'dart:math' as math;
 import '../../../core/utils/helpers.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
 import 'widgets/voice_message_bubble.dart';
@@ -41,6 +43,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   final ImagePicker _picker = ImagePicker();
   bool _isTyping = false;
   final FocusNode _focusNode = FocusNode();
+  bool _showEmoji = false;
   
   Timer? _pollingTimer;
   bool _isPolling = false;
@@ -67,6 +70,13 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       if (_messageController.text.isNotEmpty != _isTyping) {
         setState(() {
           _isTyping = _messageController.text.isNotEmpty;
+        });
+      }
+    });
+    _focusNode.addListener(() {
+      if (_focusNode.hasFocus) {
+        setState(() {
+          _showEmoji = false;
         });
       }
     });
@@ -222,6 +232,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   }
 
   void _sendVoiceMessage(String path) {
+    debugPrint('🎤 [VOICE] Sending voice message. Duration: $_recordDuration sec. Path: $path');
     context.read<ContactProvider>().sendVoiceMessage(
           contactUid: widget.uid,
           filePath: path,
@@ -324,6 +335,35 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     _scrollToBottom();
   }
 
+  void _onEmojiSelected(Emoji emoji) {
+    final text = _messageController.text;
+    final selection = _messageController.selection;
+    
+    // Default to end of text if no selection
+    final int start = selection.isValid ? selection.start : text.length;
+    final int end = selection.isValid ? selection.end : text.length;
+
+    final newText = text.replaceRange(start, end, emoji.emoji);
+    _messageController.text = newText;
+    
+    // Set cursor after the inserted emoji
+    _messageController.selection = TextSelection.fromPosition(
+      TextPosition(offset: start + emoji.emoji.length),
+    );
+  }
+
+  void _toggleEmoji() {
+    if (_showEmoji) {
+      _focusNode.requestFocus();
+    } else {
+      _focusNode.unfocus();
+      SystemChannels.textInput.invokeMethod('TextInput.hide');
+    }
+    setState(() {
+      _showEmoji = !_showEmoji;
+    });
+  }
+
   void _handleSend() async {
     final text = _messageController.text.trim();
     if (text.isNotEmpty) {
@@ -415,59 +455,103 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
           },
         ),
       ),
-      body: GestureDetector(
-        onTap: () { if (_selectedMessageId != null) setState(() => _selectedMessageId = null); },
-        child: Stack(
-          children: [
-            Opacity(
-              opacity: 0.08,
-              child: CachedNetworkImage(
-                imageUrl: 'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png',
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-                useOldImageOnUrlChange: true,
+      body: PopScope(
+        canPop: !_showEmoji,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop && _showEmoji) {
+            setState(() {
+              _showEmoji = false;
+            });
+          }
+        },
+        child: GestureDetector(
+          onTap: () { 
+            if (_selectedMessageId != null) setState(() => _selectedMessageId = null); 
+            if (_showEmoji) setState(() => _showEmoji = false);
+            if (_focusNode.hasFocus) _focusNode.unfocus();
+          },
+          child: Stack(
+            children: [
+              Opacity(
+                opacity: 0.08,
+                child: CachedNetworkImage(
+                  imageUrl: 'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png',
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  useOldImageOnUrlChange: true,
+                ),
               ),
-            ),
-            SafeArea(
-              bottom: true,
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Consumer<ContactProvider>(
-                      builder: (context, provider, child) {
-                        debugPrint('🎨 [UI] Rebuilding chat list. Total messages: ${provider.messages.length}');
-                        if (provider.isLoading && provider.messages.isEmpty) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
-                        // Optimized: Pass message list to builder
-                        return _buildMessagesList(provider.messages, null);
-                      },
+              SafeArea(
+                bottom: true,
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Consumer<ContactProvider>(
+                        builder: (context, provider, child) {
+                          debugPrint('🎨 [UI] Rebuilding chat list. Total messages: ${provider.messages.length}');
+                          if (provider.isLoading && provider.messages.isEmpty) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          // Optimized: Pass message list to builder
+                          return _buildMessagesList(provider.messages, null);
+                        },
+                      ),
                     ),
-                  ),
-                  ChatInputBar(
-                    controller: _messageController,
-                    focusNode: _focusNode,
-                    isTyping: _isTyping,
-                    onAttachment: _handleAttachment,
-                    onCamera: _handleCamera,
-                    onSend: _handleSend,
-                    replyingTo: _replyingTo,
-                    onCancelReply: () => setState(() => _replyingTo = null),
-                    recordingState: _recordingState,
-                    recordDuration: _recordDuration,
-                    onStartRecording: _startRecording,
-                    onStopRecording: _stopRecording,
-                    onCancelRecording: _cancelRecording,
-                    onLockRecording: _lockRecording,
-                    onSendVoice: _handleVoiceSend,
-                    recorderController: _recorderController,
-                    recordedFilePath: _recordedFilePath,
-                  ),
-                ],
+                    ChatInputBar(
+                      controller: _messageController,
+                      focusNode: _focusNode,
+                      isTyping: _isTyping,
+                      showEmoji: _showEmoji,
+                      onAttachment: _handleAttachment,
+                      onCamera: _handleCamera,
+                      onSend: _handleSend,
+                      replyingTo: _replyingTo,
+                      onCancelReply: () => setState(() => _replyingTo = null),
+                      recordingState: _recordingState,
+                      recordDuration: _recordDuration,
+                      onStartRecording: _startRecording,
+                      onStopRecording: _stopRecording,
+                      onCancelRecording: _cancelRecording,
+                      onLockRecording: _lockRecording,
+                      onSendVoice: _handleVoiceSend,
+                      onEmojiToggle: _toggleEmoji,
+                      recorderController: _recorderController,
+                      recordedFilePath: _recordedFilePath,
+                    ),
+                    if (_showEmoji) _buildEmojiPicker(),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmojiPicker() {
+    return SizedBox(
+      height: 250.h,
+      child: EmojiPicker(
+        onEmojiSelected: (category, emoji) => _onEmojiSelected(emoji),
+        config: Config(
+          height: 256,
+          checkPlatformCompatibility: true,
+          emojiViewConfig: EmojiViewConfig(
+            backgroundColor: const Color(0xFFF2F2F2),
+            columns: 7,
+            emojiSizeMax: 32 * (Platform.isIOS ? 1.30 : 1.0),
+          ),
+          categoryViewConfig: const CategoryViewConfig(
+            backgroundColor: Color(0xFFF2F2F2),
+            indicatorColor: Color(0xFF008069),
+            iconColorSelected: Color(0xFF008069),
+          ),
+          searchViewConfig: const SearchViewConfig(
+            backgroundColor: Color(0xFFF2F2F2),
+            buttonIconColor: Color(0xFF008069),
+          ),
         ),
       ),
     );
@@ -991,10 +1075,10 @@ class ChatBubble extends StatelessWidget {
       return VoiceMessageBubble(
         audioUrl: content.toString(),
         isMe: isMe,
-        duration: Helpers.toInt(messageData?['duration']) ?? Helpers.toInt(messageData?['__data']?['media_values']?['duration']),
+        duration: _extractDuration(messageData),
         senderImageUrl: imageUrl,
         time: time,
-        statusIcon: isMe ? _buildStatusIcon() : null,
+        statusIcon: isMe ? _buildStatusIcon(messageData) : null,
       );
     }
 
@@ -1014,12 +1098,52 @@ class ChatBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(time, style: TextStyle(color: const Color(0xFF667781), fontSize: 10.sp)),
-              if (isMe) ...[SizedBox(width: 4.w), _buildStatusIcon()],
+              if (isMe) ...[SizedBox(width: 4.w), _buildStatusIcon(messageData)],
             ],
           ),
         ],
       ),
     );
+  }
+
+  int? _extractDuration(dynamic messageData) {
+    if (messageData is! Map) return null;
+
+    // 1. Check direct fields
+    final direct = Helpers.toInt(messageData['duration']) ?? 
+                  Helpers.toInt(messageData['media_duration']) ?? 
+                  Helpers.toInt(messageData['seconds']) ?? 
+                  Helpers.toInt(messageData['length']) ??
+                  Helpers.toInt(messageData['audio_duration']);
+    if (direct != null && direct > 0) return direct;
+
+    // 2. Check media_values in __data (Common in this app's optimistic updates)
+    final mediaValues = messageData['__data']?['media_values'];
+    if (mediaValues is Map) {
+      final nested = Helpers.toInt(mediaValues['duration']) ?? 
+                    Helpers.toInt(mediaValues['media_duration']) ?? 
+                    Helpers.toInt(mediaValues['seconds']) ??
+                    Helpers.toInt(mediaValues['audio_duration']);
+      if (nested != null && nested > 0) return nested;
+    }
+
+    // 3. Try parsing string formats like "00:05"
+    final rawDuration = messageData['duration']?.toString() ?? 
+                       messageData['media_duration']?.toString() ??
+                       mediaValues?['duration']?.toString();
+    
+    if (rawDuration != null && rawDuration.contains(':')) {
+      try {
+        final parts = rawDuration.split(':');
+        if (parts.length == 2) {
+          return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+        } else if (parts.length == 3) {
+          return int.parse(parts[0]) * 3600 + int.parse(parts[1]) * 60 + int.parse(parts[2]);
+        }
+      } catch (_) {}
+    }
+
+    return null;
   }
 
   Widget _buildReplyPreview(dynamic replyMessage) {
@@ -1044,7 +1168,7 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusIcon() {
+  Widget _buildStatusIcon(dynamic messageData) {
     final status = (messageData?['status'] ?? '').toString().toLowerCase();
     if (status == 'sending') return Icon(Icons.access_time, size: 10.sp, color: Colors.grey);
     Color iconColor = Colors.grey; IconData iconData = Icons.done;
@@ -1262,9 +1386,10 @@ class ChatInputBar extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool isTyping;
+  final bool showEmoji;
   final RecordingState recordingState;
   final int recordDuration;
-  final VoidCallback onAttachment, onCamera, onSend, onCancelReply, onStartRecording, onCancelRecording, onLockRecording, onSendVoice;
+  final VoidCallback onAttachment, onCamera, onSend, onCancelReply, onStartRecording, onCancelRecording, onLockRecording, onSendVoice, onEmojiToggle;
   final Function({bool sendImmediately}) onStopRecording;
   final Map<String, dynamic>? replyingTo;
   final RecorderController recorderController;
@@ -1275,6 +1400,7 @@ class ChatInputBar extends StatefulWidget {
     required this.controller, 
     required this.focusNode, 
     required this.isTyping, 
+    required this.showEmoji,
     required this.onAttachment, 
     required this.onCamera, 
     required this.onSend, 
@@ -1287,6 +1413,7 @@ class ChatInputBar extends StatefulWidget {
     required this.onCancelRecording,
     required this.onLockRecording,
     required this.onSendVoice,
+    required this.onEmojiToggle,
     required this.recorderController,
     this.recordedFilePath,
   });
@@ -1407,7 +1534,13 @@ class _ChatInputBarState extends State<ChatInputBar> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        IconButton(onPressed: () {}, icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF8696A0))),
+        IconButton(
+          onPressed: widget.onEmojiToggle, 
+          icon: Icon(
+            widget.showEmoji ? Icons.keyboard : Icons.emoji_emotions_outlined, 
+            color: const Color(0xFF8696A0)
+          )
+        ),
         Expanded(
           child: Padding(
             padding: EdgeInsets.only(bottom: 2.h), 

@@ -41,6 +41,7 @@ dependencies:
   video_player: ^2.8.0
   chewie: ^1.7.0
   visibility_detector: ^0.4.0+2
+  emoji_picker_flutter: ^3.0.0
 
 dev_dependencies:
   flutter_test:

@@ -48,6 +48,27 @@ class ApiConstants {
   static const String sendMedia = '/vendor/whatsapp/contact/chat/send-media';
   static const String sendTemplate = '/vendor/whatsapp/contact/chat/send-template';
 
+  // Contact Groups
+  static const String contactGroupsList = '/vendor/contact/group/list';
+  static const String createContactGroup = '/vendor/contact/group/create';
+  static String updateContactGroup(String groupUid) => '/vendor/contact/group/update/$groupUid';
+  static String deleteContactGroup(String groupUid) => '/vendor/contact/group/delete/$groupUid';
+  static const String assignContactsToGroup = '/vendor/contacts/selected/assign-groups';
+  static const String removeContactFromGroup = '/vendor/contact/remove';
+
+  // Group APIs (WhatsApp)
+  static const String groups = '/vendor/groups';
+  static String groupDetails(String groupUid) => '/vendor/groups/$groupUid';
+  static String updateGroup(String groupUid) => '/vendor/groups/$groupUid/update';
+  static String deleteGroup(String groupUid) => '/vendor/groups/$groupUid/delete';
+  static String groupMembers(String groupUid) => '/vendor/groups/$groupUid/members';
+  static String addGroupMembers(String groupUid) => '/vendor/groups/$groupUid/members/add';
+  static String removeGroupMember(String groupUid, String memberUid) => '/vendor/groups/$groupUid/members/remove/$memberUid';
+  static String updateMemberRole(String groupUid, String memberUid) => '/vendor/groups/$groupUid/members/update-role/$memberUid';
+  static String groupChatHistory(String groupUid) => '/vendor/groups/$groupUid/chat-history';
+  static String sendGroupMessage(String groupUid) => '/vendor/groups/$groupUid/send-message';
+  static String sendGroupMedia(String groupUid) => '/vendor/groups/$groupUid/send-media';
+
   // ✅ FIXED — was full URL, now relative path so Bearer token is included
   static const String uploadAudio = '/media/upload-temp-media/whatsapp_audio';
   static const String uploadImage = '/media/upload-temp-media/whatsapp_image';

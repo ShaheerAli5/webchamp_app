@@ -28,12 +28,54 @@ class VoiceMessageBubble extends StatefulWidget {
 
 class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   late final VoicePlaybackManager _manager;
+  int? _autoDetectedDuration;
+  bool _isDetecting = false;
 
   @override
   void initState() {
     super.initState();
     _manager = VoicePlaybackManager();
     _manager.addListener(_onManagerUpdate);
+    
+    // 🛡️ If duration is missing or 0, try to auto-detect it from the source
+    if (widget.duration == null || widget.duration == 0) {
+      _detectDuration();
+    }
+  }
+
+  Future<void> _detectDuration() async {
+    if (_isDetecting || widget.audioUrl.isEmpty) return;
+    
+    setState(() => _isDetecting = true);
+    try {
+      final player = AudioPlayer();
+      Duration? d;
+      if (widget.audioUrl.startsWith('http')) {
+        d = await player.setUrl(widget.audioUrl);
+      } else {
+        d = await player.setFilePath(widget.audioUrl);
+      }
+      
+      if (mounted && d != null && d.inSeconds > 0) {
+        setState(() {
+          _autoDetectedDuration = d!.inSeconds;
+        });
+        debugPrint('📊 [VOICE] Auto-detected duration for ${widget.audioUrl.split('/').last}: $_autoDetectedDuration sec');
+      }
+      await player.dispose();
+    } catch (e) {
+      debugPrint('⚠️ [VOICE] Could not auto-detect duration: $e');
+    } finally {
+      if (mounted) setState(() => _isDetecting = false);
+    }
+  }
+
+  @override
+  void didUpdateWidget(VoiceMessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.audioUrl != widget.audioUrl && (widget.duration == null || widget.duration == 0)) {
+      _detectDuration();
+    }
   }
 
   @override
@@ -119,12 +161,16 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   Widget _buildSlider() {
     final bool active = _isThisPlaying;
     final Duration position = active ? _manager.player.position : Duration.zero;
-    final Duration duration = active 
-        ? (_manager.player.duration ?? Duration(seconds: widget.duration ?? 0))
-        : Duration(seconds: widget.duration ?? 0);
+    
+    // 🛡️ Priority: 1. Active Player 2. Auto-detected 3. Widget Prop
+    final int effectiveSeconds = (active && _manager.player.duration != null) 
+        ? _manager.player.duration!.inSeconds 
+        : (_autoDetectedDuration ?? widget.duration ?? 0);
+
+    final Duration duration = Duration(seconds: effectiveSeconds);
     
     final double max = duration.inMilliseconds.toDouble();
-    final double value = position.inMilliseconds.toDouble().clamp(0, max);
+    final double value = position.inMilliseconds.toDouble().clamp(0, max > 0 ? max : 1.0);
     
     return SliderTheme(
       data: SliderTheme.of(context).copyWith(
@@ -155,11 +201,15 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   Widget _buildInfoRow() {
     final bool active = _isThisPlaying;
     final Duration position = active ? _manager.player.position : Duration.zero;
-    final Duration duration = active 
-        ? (_manager.player.duration ?? Duration(seconds: widget.duration ?? 0))
-        : Duration(seconds: widget.duration ?? 0);
+    
+    final int effectiveSeconds = (active && _manager.player.duration != null) 
+        ? _manager.player.duration!.inSeconds 
+        : (_autoDetectedDuration ?? widget.duration ?? 0);
 
-    final displayDuration = active && _manager.isPlaying 
+    final Duration duration = Duration(seconds: effectiveSeconds);
+
+    // 🛡️ WhatsApp behavior: If playing, show current position. If stopped, show total duration.
+    final displayDuration = (active && _manager.isPlaying) 
         ? position 
         : duration;
         
@@ -170,11 +220,20 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
         children: [
           Text(
             Helpers.formatDuration(displayDuration.inSeconds),
-            style: TextStyle(fontSize: 11.sp, color: const Color(0xFF667781))
+            style: TextStyle(fontSize: 11.sp, color: const Color(0xFF667781), fontWeight: FontWeight.w500)
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (_isDetecting && (widget.duration == null || widget.duration == 0))
+                Padding(
+                  padding: EdgeInsets.only(right: 4.w),
+                  child: SizedBox(
+                    width: 8.w,
+                    height: 8.w,
+                    child: const CircularProgressIndicator(strokeWidth: 1, color: Color(0xFF34B7F1)),
+                  ),
+                ),
               Text(
                 widget.time, 
                 style: TextStyle(fontSize: 10.sp, color: const Color(0xFF667781))

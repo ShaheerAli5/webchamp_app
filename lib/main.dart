@@ -11,6 +11,7 @@ import 'providers/auth_provider.dart';
 import 'features/contacts/data/services/contact_api_service.dart';
 import 'features/contacts/data/repositories/contact_repository.dart';
 import 'features/contacts/presentation/providers/contact_provider.dart';
+import 'features/contacts/presentation/providers/contact_group_provider.dart';
 import 'routes/app_routes.dart';
 
 void main() async {
@@ -25,12 +26,14 @@ void main() async {
   final contactService = ContactApiService(apiClient);
   final contactRepository = ContactRepository(contactService);
   final contactProvider = ContactProvider(contactRepository);
+  final contactGroupProvider = ContactGroupProvider(contactRepository);
 
   // Link AuthProvider with other services
   authProvider.onLogout = () {
     debugPrint('🚪 [MAIN] User Logout - Cleaning up');
     apiClient.setCurrentUser(null);
     contactProvider.clearAllData();
+    contactGroupProvider.clear();
   };
 
   authProvider.onLogin = (user, token) {
@@ -43,6 +46,7 @@ void main() async {
       // 🛡️ Disable auto-loading all contacts at startup to prevent 429 rate limits
       // This is especially important when the user has 2700+ contacts.
       contactProvider.getContacts(refresh: true, autoLoadAll: false);
+      contactGroupProvider.fetchGroups(refresh: true);
     });
   };
 
@@ -57,6 +61,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider.value(value: authProvider),
         ChangeNotifierProvider.value(value: contactProvider),
+        ChangeNotifierProvider.value(value: contactGroupProvider),
       ],
       child: MyApp(authProvider: authProvider),
     ),

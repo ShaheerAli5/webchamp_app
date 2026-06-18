@@ -41,7 +41,18 @@ class DioInterceptor extends Interceptor {
       safeHeaders['Authorization'] = 'Bearer [HIDDEN]';
     }
     print('HEADERS: $safeHeaders');
-    if (options.data != null) {
+    
+    if (options.data is FormData) {
+      final formData = options.data as FormData;
+      print('BODY (FormData):');
+      for (final field in formData.fields) {
+        print('  Field: ${field.key} = ${field.value}');
+      }
+      for (final file in formData.files) {
+        final contentType = file.value.contentType?.toString() ?? 'unknown';
+        print('  File: ${file.key}, name: ${file.value.filename}, size: ${file.value.length}, type: $contentType');
+      }
+    } else if (options.data != null) {
       print('BODY: ${options.data}');
     }
     print('--------------------------');
