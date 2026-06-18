@@ -660,7 +660,7 @@ class ContactRepository {
     if (e.response != null) {
       final status = e.response!.statusCode;
       if (status == 403) return "Too many requests. Please wait a moment.";
-      if (status == 404) return "API endpoint not found.";
+      if (status == 404) return "currently not working.";
       if (status != null && status >= 500) return "Server error. Please try again later.";
 
       final data = e.response!.data;

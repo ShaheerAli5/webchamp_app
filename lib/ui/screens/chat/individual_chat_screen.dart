@@ -483,7 +483,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                 ),
               ),
               SafeArea(
-                bottom: true,
+                bottom: !_showEmoji,
                 child: Column(
                   children: [
                     Expanded(
@@ -531,28 +531,37 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   }
 
   Widget _buildEmojiPicker() {
-    return SizedBox(
-      height: 250.h,
-      child: EmojiPicker(
-        onEmojiSelected: (category, emoji) => _onEmojiSelected(emoji),
-        config: Config(
-          height: 256,
-          checkPlatformCompatibility: true,
-          emojiViewConfig: EmojiViewConfig(
-            backgroundColor: const Color(0xFFF2F2F2),
-            columns: 7,
-            emojiSizeMax: 32 * (Platform.isIOS ? 1.30 : 1.0),
+    return Container(
+      height: 300.h,
+      color: const Color(0xFFF2F2F2),
+      child: Column(
+        children: [
+          Expanded(
+            child: EmojiPicker(
+              onEmojiSelected: (category, emoji) => _onEmojiSelected(emoji),
+              config: Config(
+                checkPlatformCompatibility: false,
+                emojiViewConfig: EmojiViewConfig(
+                  backgroundColor: const Color(0xFFF2F2F2),
+                  columns: 7,
+                  emojiSizeMax: 32 * (Platform.isIOS ? 1.30 : 1.0),
+                ),
+                categoryViewConfig: const CategoryViewConfig(
+                  backgroundColor: Color(0xFFF2F2F2),
+                  indicatorColor: Color(0xFF008069),
+                  iconColorSelected: Color(0xFF008069),
+                  iconColor: Color(0xFF8696A0),
+                ),
+                searchViewConfig: const SearchViewConfig(
+                  backgroundColor: Color(0xFFF2F2F2),
+                  buttonIconColor: Color(0xFF008069),
+                ),
+              ),
+            ),
           ),
-          categoryViewConfig: const CategoryViewConfig(
-            backgroundColor: Color(0xFFF2F2F2),
-            indicatorColor: Color(0xFF008069),
-            iconColorSelected: Color(0xFF008069),
-          ),
-          searchViewConfig: const SearchViewConfig(
-            backgroundColor: Color(0xFFF2F2F2),
-            buttonIconColor: Color(0xFF008069),
-          ),
-        ),
+          // Add padding for system navigation bar (e.g. iPhone home bar or Android nav buttons)
+          SizedBox(height: MediaQuery.of(context).padding.bottom),
+        ],
       ),
     );
   }
@@ -1497,7 +1506,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
-          padding: EdgeInsets.fromLTRB(8.w, 4.h, 8.w, 8.h),
+          padding: EdgeInsets.fromLTRB(8.w, 4.h, 8.w, widget.showEmoji ? 4.h : 8.h),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -1641,7 +1650,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         : (_previewDuration.inSeconds > 0 ? _previewDuration.inSeconds : widget.recordDuration);
 
     return Container(
-      margin: EdgeInsets.all(8.w),
+      margin: widget.showEmoji ? EdgeInsets.fromLTRB(8.w, 8.w, 8.w, 4.w) : EdgeInsets.all(8.w),
       padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
       decoration: BoxDecoration(
         color: Colors.white,
