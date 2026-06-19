@@ -26,10 +26,28 @@ class VoicePlaybackManager extends ChangeNotifier {
 
   late final AudioPlayer _player;
   String? _currentAudioUrl;
+  double _currentSpeed = 1.0;
 
   AudioPlayer get player => _player;
   String? get currentAudioUrl => _currentAudioUrl;
   bool get isPlaying => _player.playing;
+  double get currentSpeed => _currentSpeed;
+
+  void setSpeed(double speed) {
+    _currentSpeed = speed;
+    _player.setSpeed(speed);
+    notifyListeners();
+  }
+
+  void toggleSpeed() {
+    if (_currentSpeed == 1.0) {
+      setSpeed(1.5);
+    } else if (_currentSpeed == 1.5) {
+      setSpeed(2.0);
+    } else {
+      setSpeed(1.0);
+    }
+  }
 
   Future<void> togglePlay(String url) async {
     try {
@@ -77,6 +95,7 @@ class VoicePlaybackManager extends ChangeNotifier {
             rethrow;
           }
         }
+        await _player.setSpeed(_currentSpeed);
         await _player.play();
       }
       notifyListeners();

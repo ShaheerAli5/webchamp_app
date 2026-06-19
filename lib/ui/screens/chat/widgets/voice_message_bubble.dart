@@ -113,6 +113,30 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   }
 
   Widget _buildAvatar() {
+    if (_isThisPlaying) {
+      return GestureDetector(
+        onTap: () => _manager.toggleSpeed(),
+        child: Container(
+          width: 36.r,
+          height: 36.r,
+          margin: EdgeInsets.only(right: 8.w),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9EDEF),
+            borderRadius: BorderRadius.circular(18.r),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '${_manager.currentSpeed.toString().replaceAll('.0', '')}x',
+            style: TextStyle(
+              fontSize: 12.sp,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF54656F),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Container(
       margin: EdgeInsets.only(right: 8.w),
       child: Stack(
