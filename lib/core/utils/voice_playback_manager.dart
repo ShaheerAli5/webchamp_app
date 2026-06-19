@@ -16,6 +16,7 @@ class VoicePlaybackManager extends ChangeNotifier {
       if (state.processingState == ProcessingState.completed) {
         _player.pause();
         _player.seek(Duration.zero);
+        _currentAudioUrl = null; // Revert to avatar when finished
       }
       notifyListeners();
     });
@@ -58,6 +59,7 @@ class VoicePlaybackManager extends ChangeNotifier {
           if (_player.processingState == ProcessingState.completed) {
             await _player.seek(Duration.zero);
           }
+          await _player.setSpeed(_currentSpeed);
           await _player.play();
         }
       } else {
@@ -89,9 +91,11 @@ class VoicePlaybackManager extends ChangeNotifier {
               await _player.setFilePath(filePath);
             } catch (fallbackError) {
               debugPrint('❌ [VOICE] Fallback failed: $fallbackError');
+              _currentAudioUrl = null;
               rethrow;
             }
           } else {
+            _currentAudioUrl = null;
             rethrow;
           }
         }
@@ -100,6 +104,8 @@ class VoicePlaybackManager extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
+      _currentAudioUrl = null;
+      notifyListeners();
       debugPrint('Error playing voice message: $e');
     }
   }
