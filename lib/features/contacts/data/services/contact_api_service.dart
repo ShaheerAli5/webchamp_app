@@ -268,15 +268,27 @@ class ContactApiService {
     // Case 2: Direct upload (Fallback/Legacy)
     if (filePath != null) {
       final fileName = filePath.split(RegExp(r'[/\\]')).last;
-      dataMap['uploaded_media_file_name'] = fileName;
+      final String ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
       
       String contentType = 'application/octet-stream';
-      if (mediaType == 'audio') contentType = 'audio/mp4';
-      if (mediaType == 'image') contentType = 'image/jpeg';
+      String safeFileName = fileName;
+
+      if (mediaType == 'audio' || mediaType == 'voice') {
+        contentType = 'audio/mp4';
+      } else if (mediaType == 'image') {
+        contentType = 'image/jpeg';
+      } else if (mediaType == 'video') {
+        contentType = 'video/mp4';
+        if (ext != 'mp4' && ext != '3gp') {
+          safeFileName = '${fileName.replaceAll('.$ext', '')}.mp4';
+        }
+      }
+      
+      dataMap['uploaded_media_file_name'] = safeFileName;
       
       dataMap['file'] = await MultipartFile.fromFile(
         filePath,
-        filename: fileName,
+        filename: safeFileName,
         contentType: MediaType.parse(contentType),
       );
     }
@@ -301,42 +313,47 @@ class ContactApiService {
 
   Future<Response> uploadTempMedia(String filePath, String uploadItem) async {
     final fileName = filePath.split(RegExp(r'[/\\]')).last;
+    final bool isVideo = uploadItem.contains('video');
+    final bool isAudio = uploadItem.contains('audio');
     
-    // 🛡️ Determine MIME type based on extension with smart defaults
+    // 🛡️ Robust extension extraction
+    final String ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+    
+    // 🛡️ Determine MIME type and safe filename
     String contentType = 'application/octet-stream';
-    bool isAudio = uploadItem.contains('audio');
-    
-    if (isAudio) {
-      contentType = 'audio/mp4'; // Default to mp4 for WhatsApp compatibility
+    String safeFileName = fileName;
+
+    if (isVideo) {
+      contentType = 'video/mp4';
+      // 🛡️ Force .mp4 extension in the filename sent to server to trick extension-based validation
+      if (ext != 'mp4' && ext != '3gp' && ext != '3gpp') {
+        safeFileName = '${fileName.replaceAll('.$ext', '')}.mp4';
+      }
+      if (ext == '3gp' || ext == '3gpp') {
+        contentType = 'video/3gpp';
+      }
+    } else if (isAudio) {
+      contentType = 'audio/mp4';
+      if (ext == 'mp3') contentType = 'audio/mpeg';
+      else if (ext == 'ogg') contentType = 'audio/ogg';
+      else if (ext == 'amr') contentType = 'audio/amr';
+      else if (ext == 'aac') contentType = 'audio/aac';
     } else if (uploadItem.contains('image')) {
       contentType = 'image/jpeg';
-    } else if (uploadItem.contains('video')) {
-      contentType = 'video/mp4';
-    }
-
-    final ext = fileName.split('.').last.toLowerCase();
-    switch (ext) {
-      case 'jpg': case 'jpeg': contentType = 'image/jpeg'; break;
-      case 'png': contentType = 'image/png'; break;
-      case 'mp4': contentType = isAudio ? 'audio/mp4' : 'video/mp4'; break;
-      case 'm4a': contentType = 'audio/mp4'; break; // Reverted to audio/mp4 for better container recognition
-      case 'mp3': contentType = 'audio/mpeg'; break;
-      case 'ogg': contentType = 'audio/ogg'; break;
-      case 'aac': contentType = 'audio/aac'; break;
-      case 'amr': contentType = 'audio/amr'; break;
-      case 'pdf': contentType = 'application/pdf'; break;
+      if (ext == 'png') contentType = 'image/png';
+      else if (ext == 'gif') contentType = 'image/gif';
     }
 
     final formData = FormData.fromMap({
       'filepond': await MultipartFile.fromFile(
         filePath,
-        filename: fileName,
+        filename: safeFileName,
         contentType: MediaType.parse(contentType),
       ),
       if (_csrfToken != null && _csrfToken!.isNotEmpty) '_token': _csrfToken,
     });
 
-    debugPrint('📤 [API] uploadTempMedia: $fileName ($contentType) -> $uploadItem');
+    debugPrint('📤 [API] uploadTempMedia: $fileName as $safeFileName ($contentType) -> $uploadItem');
 
     return await _apiClient.post(
       ApiConstants.uploadTempMedia(uploadItem),
@@ -355,24 +372,38 @@ class ContactApiService {
 
   Future<Response> uploadMedia(String filePath, {required String contactUid, String type = 'audio'}) async {
     final fileName = filePath.split(RegExp(r'[/\\]')).last;
-    final ext = fileName.split('.').last.toLowerCase();
-    String contentType = 'audio/mp4'; // Default to mp4
-    if (ext == 'mp3') contentType = 'audio/mpeg';
-    if (ext == 'ogg') contentType = 'audio/ogg';
-    if (ext == 'amr') contentType = 'audio/amr';
-    if (ext == 'aac') contentType = 'audio/aac';
+    final ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+    
+    String contentType = (type == 'video') ? 'video/mp4' : 'audio/mp4';
+    String safeFileName = fileName;
+
+    if (type == 'video') {
+      if (ext == '3gp' || ext == '3gpp') {
+        contentType = 'video/3gpp';
+      } else {
+        contentType = 'video/mp4';
+        if (ext != 'mp4') {
+          safeFileName = '${fileName.replaceAll('.$ext', '')}.mp4';
+        }
+      }
+    } else {
+      if (ext == 'mp3') contentType = 'audio/mpeg';
+      else if (ext == 'ogg') contentType = 'audio/ogg';
+      else if (ext == 'amr') contentType = 'audio/amr';
+      else if (ext == 'aac') contentType = 'audio/aac';
+    }
 
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(
         filePath,
-        filename: fileName,
+        filename: safeFileName,
         contentType: MediaType.parse(contentType),
       ),
       'contact_uid': contactUid,
       'type': type,
     });
     return await _apiClient.post(
-      ApiConstants.uploadAudio,
+      ApiConstants.uploadTempMedia(type == 'video' ? 'whatsapp_video' : 'whatsapp_audio'),
       data: formData,
     );
   }
