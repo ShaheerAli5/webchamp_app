@@ -947,10 +947,12 @@ class ContactProvider extends ChangeNotifier {
   }
 
   DateTime _getDateTime(dynamic msg) {
-    if (msg is! Map) return DateTime(1970);
+    if (msg is! Map) return DateTime.now();
     final timeStr = (msg['messaged_at'] ?? msg['created_at'] ?? msg['timestamp'] ?? msg['updated_at'])?.toString();
-    if (timeStr == null) return DateTime(1970);
-    return DateTime.tryParse(timeStr) ?? DateTime(1970);
+    if (timeStr == null || timeStr.isEmpty || timeStr == 'null') {
+      return DateTime.now();
+    }
+    return DateTime.tryParse(timeStr) ?? DateTime.now();
   }
 
   bool _isSameMessageList(List<dynamic> list1, List<dynamic> list2) {
@@ -1118,6 +1120,7 @@ class ContactProvider extends ChangeNotifier {
           ..._messages[index],
           ...result,
           'status': 'sent',
+          'created_at': result['created_at'] ?? _messages[index]['created_at'] ?? DateTime.now().toIso8601String(),
         };
         _messages[index] = updatedMsg;
         _updateContactLatestMessage(contactUid, updatedMsg);
@@ -1333,6 +1336,7 @@ class ContactProvider extends ChangeNotifier {
           ...result,
           if (mergedData.isNotEmpty) '__data': mergedData,
           'status': 'sent',
+          'created_at': result['created_at'] ?? _messages[index]['created_at'] ?? DateTime.now().toIso8601String(),
         };
         _messages[index] = updatedMsg;
         _updateContactLatestMessage(contactUid, updatedMsg);
