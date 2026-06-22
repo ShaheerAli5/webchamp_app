@@ -44,6 +44,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   bool _isTyping = false;
   final FocusNode _focusNode = FocusNode();
   bool _showEmoji = false;
+  bool _isSending = false;
   
   Timer? _pollingTimer;
   bool _isPolling = false;
@@ -232,12 +233,20 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   }
 
   void _sendVoiceMessage(String path) {
-    debugPrint('🎤 [VOICE] Sending voice message. Duration: $_recordDuration sec. Path: $path');
+    if (_isSending) return;
+    setState(() => _isSending = true);
+    debugPrint('🎤 [VOICE] Sending voice message. Path: $path');
+    
     context.read<ContactProvider>().sendVoiceMessage(
-          contactUid: widget.uid,
-          filePath: path,
-          duration: _recordDuration,
-        );
+      contactUid: widget.uid,
+      filePath: path,
+      duration: _recordDuration,
+    ).then((success) {
+      if (mounted) setState(() => _isSending = false);
+    }).catchError((e) {
+      if (mounted) setState(() => _isSending = false);
+    });
+    
     _scrollToBottom();
   }
 
@@ -321,17 +330,35 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   }
 
   void _sendImage(String path) {
-    context.read<ContactProvider>().sendImageMessage(contactUid: widget.uid, filePath: path);
+    if (_isSending) return;
+    setState(() => _isSending = true);
+    context.read<ContactProvider>().sendImageMessage(contactUid: widget.uid, filePath: path).then((_) {
+      if (mounted) setState(() => _isSending = false);
+    }).catchError((_) {
+      if (mounted) setState(() => _isSending = false);
+    });
     _scrollToBottom();
   }
 
   void _sendVideo(String path) {
-    context.read<ContactProvider>().sendVideoMessage(contactUid: widget.uid, filePath: path);
+    if (_isSending) return;
+    setState(() => _isSending = true);
+    context.read<ContactProvider>().sendVideoMessage(contactUid: widget.uid, filePath: path).then((_) {
+      if (mounted) setState(() => _isSending = false);
+    }).catchError((_) {
+      if (mounted) setState(() => _isSending = false);
+    });
     _scrollToBottom();
   }
 
   void _sendDocument(String path) {
-    context.read<ContactProvider>().sendDocumentMessage(contactUid: widget.uid, filePath: path);
+    if (_isSending) return;
+    setState(() => _isSending = true);
+    context.read<ContactProvider>().sendDocumentMessage(contactUid: widget.uid, filePath: path).then((_) {
+      if (mounted) setState(() => _isSending = false);
+    }).catchError((_) {
+      if (mounted) setState(() => _isSending = false);
+    });
     _scrollToBottom();
   }
 
@@ -366,25 +393,28 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   void _handleSend() async {
     final text = _messageController.text.trim();
-    if (text.isNotEmpty) {
+    if (text.isNotEmpty && !_isSending) {
       debugPrint('🖱️ [UI] Send button tapped');
+      setState(() => _isSending = true);
+      
       final provider = context.read<ContactProvider>();
       final replyId = _replyingTo?['whatsapp_message_id'] ?? _replyingTo?['wamid'];
       
-      // Clear input and reply status immediately for responsiveness
       _messageController.clear();
       if (_replyingTo != null) {
         setState(() { _replyingTo = null; });
       }
       
-      // Call provider to send message (it handles optimistic update and notifyListeners)
       provider.sendMessage(
         contactUid: widget.uid, 
         message: text, 
         replyToMessageId: replyId?.toString()
-      );
+      ).then((_) {
+        if (mounted) setState(() => _isSending = false);
+      }).catchError((_) {
+        if (mounted) setState(() => _isSending = false);
+      });
       
-      // Force scroll to bottom to show the new message
       _scrollToBottom();
     }
   }
@@ -502,6 +532,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                       controller: _messageController,
                       focusNode: _focusNode,
                       isTyping: _isTyping,
+                      isSending: _isSending,
                       showEmoji: _showEmoji,
                       onAttachment: _handleAttachment,
                       onCamera: _handleCamera,
@@ -635,6 +666,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                 onForward: () => _forwardMessage(messageData),
                 onShare: () => _shareMessage(content.toString(), type),
                 onDelete: () => _showDeleteDialog(messageData),
+                onRetry: () => _retryMessage(messageData),
                 onTapReply: (id) {
                   final targetIndex = messages.indexWhere((m) => (m['whatsapp_message_id'] ?? m['wamid'] ?? m['_uid'])?.toString() == id);
                   if (targetIndex != -1) {
@@ -691,6 +723,39 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         ],
       ),
     );
+  }
+
+  void _retryMessage(dynamic messageData) {
+    final type = _getMessageType(messageData);
+    final content = _getMessageContent(messageData);
+    final provider = context.read<ContactProvider>();
+    
+    // 1. Extract message ID
+    final messageId = (messageData['whatsapp_message_id'] ?? messageData['wamid'] ?? messageData['_uid'] ?? messageData['uid']).toString();
+    
+    // 2. Remove the failed message locally to avoid duplicates
+    provider.deleteMessage(contactUid: widget.uid, messageId: messageId, forEveryone: false);
+    
+    // 3. Resend based on type
+    if (type == 'text') {
+      provider.sendMessage(contactUid: widget.uid, message: content.toString());
+    } else if (type == 'image') {
+      provider.sendImageMessage(contactUid: widget.uid, filePath: content.toString());
+    } else if (type == 'video') {
+      provider.sendVideoMessage(contactUid: widget.uid, filePath: content.toString());
+    } else if (type == 'voice') {
+      // Use the duration extractor from ChatBubble logic (duplicated here for scope)
+      int? duration;
+      if (messageData is Map) {
+        duration = Helpers.toInt(messageData['duration']) ?? 
+                   Helpers.toInt(messageData['__data']?['media_values']?['duration']);
+      }
+      provider.sendVoiceMessage(contactUid: widget.uid, filePath: content.toString(), duration: duration);
+    } else if (type == 'document') {
+      provider.sendDocumentMessage(contactUid: widget.uid, filePath: content.toString());
+    }
+    
+    _scrollToBottom();
   }
 
   void _deleteMessage(dynamic messageData, {required bool forEveryone}) {
@@ -978,10 +1043,10 @@ class ChatBubble extends StatelessWidget {
   final String? imageUrl;
   final bool showTail;
   final bool isSelected;
-  final VoidCallback? onReply, onCopy, onForward, onShare, onDelete;
+  final VoidCallback? onReply, onCopy, onForward, onShare, onDelete, onRetry;
   final Function(String)? onTapReply;
 
-  const ChatBubble({super.key, required this.content, required this.time, required this.isMe, required this.type, this.messageData, this.imageUrl, this.showTail = true, this.isSelected = false, this.onReply, this.onCopy, this.onForward, this.onShare, this.onDelete, this.onTapReply});
+  const ChatBubble({super.key, required this.content, required this.time, required this.isMe, required this.type, this.messageData, this.imageUrl, this.showTail = true, this.isSelected = false, this.onReply, this.onCopy, this.onForward, this.onShare, this.onDelete, this.onRetry, this.onTapReply});
 
   @override
   Widget build(BuildContext context) {
@@ -1184,7 +1249,19 @@ class ChatBubble extends StatelessWidget {
     if (status == 'delivered') iconData = Icons.done_all;
     else if (status == 'sent') iconData = Icons.done;
     else if (status == 'read') { iconData = Icons.done_all; iconColor = const Color(0xFF34B7F1); }
-    else if (status == 'failed') return Icon(Icons.error_outline, size: 12.sp, color: Colors.red);
+    else if (status == 'failed') {
+      return GestureDetector(
+        onTap: onRetry,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 12.sp, color: Colors.red),
+            SizedBox(width: 2.w),
+            Text('Retry', style: TextStyle(color: Colors.red, fontSize: 9.sp, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      );
+    }
     return Icon(iconData, color: iconColor, size: 13.sp);
   }
 
@@ -1395,6 +1472,7 @@ class ChatInputBar extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool isTyping;
+  final bool isSending;
   final bool showEmoji;
   final RecordingState recordingState;
   final int recordDuration;
@@ -1409,6 +1487,7 @@ class ChatInputBar extends StatefulWidget {
     required this.controller, 
     required this.focusNode, 
     required this.isTyping, 
+    this.isSending = false,
     required this.showEmoji,
     required this.onAttachment, 
     required this.onCamera, 
@@ -1688,12 +1767,17 @@ class _ChatInputBarState extends State<ChatInputBar> {
           ),
           SizedBox(width: 8.w),
           GestureDetector(
-            onTap: widget.onSendVoice,
+            onTap: widget.isSending ? null : widget.onSendVoice,
             child: Container(
               height: 40.w,
               width: 40.w,
-              decoration: const BoxDecoration(color: Color(0xFF00A884), shape: BoxShape.circle),
-              child: const Icon(Icons.send, color: Colors.white, size: 20),
+              decoration: BoxDecoration(
+                color: widget.isSending ? Colors.grey : const Color(0xFF00A884), 
+                shape: BoxShape.circle
+              ),
+              child: widget.isSending 
+                ? SizedBox(width: 20.w, height: 20.w, child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.send, color: Colors.white, size: 20),
             ),
           ),
         ],
@@ -1722,6 +1806,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           ),
         GestureDetector(
           onTap: () {
+            if (widget.isSending) return;
             if (widget.isTyping) {
               widget.onSend();
             } else if (isRecording) {
@@ -1734,7 +1819,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             }
           },
           onVerticalDragUpdate: (details) {
-            if (isRecording) {
+            if (isRecording && !widget.isSending) {
               setState(() {
                 _dragOffset -= details.delta.dy;
                 if (_dragOffset > 60) {
@@ -1745,7 +1830,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             }
           },
           onHorizontalDragUpdate: (details) {
-            if (isRecording && details.delta.dx < -10) {
+            if (isRecording && details.delta.dx < -10 && !widget.isSending) {
               _dragOffset = 0;
               widget.onCancelRecording();
             }
@@ -1755,13 +1840,18 @@ class _ChatInputBarState extends State<ChatInputBar> {
             height: 52.w,
             width: 52.w,
             margin: EdgeInsets.only(bottom: isRecording ? _dragOffset.clamp(0, 10).h : 0),
-            decoration: const BoxDecoration(color: Color(0xFF00A884), shape: BoxShape.circle),
-            alignment: Alignment.center,
-            child: Icon(
-              widget.isTyping ? Icons.send : (isRecording ? Icons.stop : (isLocked ? Icons.send : Icons.mic)), 
-              color: Colors.white, 
-              size: 24.sp
+            decoration: BoxDecoration(
+              color: widget.isSending ? Colors.grey : const Color(0xFF00A884), 
+              shape: BoxShape.circle
             ),
+            alignment: Alignment.center,
+            child: widget.isSending && widget.isTyping
+              ? SizedBox(width: 24.w, height: 24.w, child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              : Icon(
+                  widget.isTyping ? Icons.send : (isRecording ? Icons.stop : (isLocked ? Icons.send : Icons.mic)), 
+                  color: Colors.white, 
+                  size: 24.sp
+                ),
           ),
         ),
       ],

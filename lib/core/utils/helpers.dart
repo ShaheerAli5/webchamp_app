@@ -11,19 +11,29 @@ class Helpers {
     );
   }
 
-  /// Converts any given timestamp to Pakistan Standard Time (PKT, UTC+5).
-  static DateTime toPKT(dynamic timestamp) {
-    if (timestamp == null) return DateTime.now().toUtc().add(const Duration(hours: 5));
+  /// Normalizes any given timestamp to UTC for internal storage.
+  /// If null, returns current UTC time.
+  static DateTime toUtc(dynamic timestamp) {
+    if (timestamp == null) return DateTime.now().toUtc();
     
     DateTime dt;
     if (timestamp is DateTime) {
       dt = timestamp;
     } else {
-      dt = DateTime.tryParse(timestamp.toString()) ?? DateTime.now();
+      String str = timestamp.toString();
+      // If backend returns "YYYY-MM-DD HH:MM:SS" without TZ, assume UTC
+      if (!str.contains('Z') && !str.contains('+') && RegExp(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}').hasMatch(str)) {
+        str = str.replaceFirst(' ', 'T') + 'Z';
+      }
+      dt = DateTime.tryParse(str) ?? DateTime.now();
     }
+    return dt.toUtc();
+  }
 
-    // Force to UTC then add 5 hours for PKT
-    return dt.toUtc().add(const Duration(hours: 5));
+  /// Converts any given timestamp to Pakistan Standard Time (PKT, UTC+5) for display.
+  static DateTime toPKT(dynamic timestamp) {
+    DateTime utc = toUtc(timestamp);
+    return utc.add(const Duration(hours: 5));
   }
 
   /// Formats date for Chat List and Chat Messages in PKT.

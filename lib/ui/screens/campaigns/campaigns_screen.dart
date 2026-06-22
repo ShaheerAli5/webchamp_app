@@ -54,69 +54,71 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      floatingActionButton: Container(
-        width: 60.w,
-        height: 60.w,
-        decoration: BoxDecoration(
-          color: const Color(0xFF21C063),
-          borderRadius: BorderRadius.circular(17.86.r),
-        ),
-        child: FloatingActionButton(
-          onPressed: () => context.push('/create-campaign'),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Iconsax.volume_high, color: Colors.white, size: 14.sp),
-              Text('+', style: TextStyle(color: Colors.white, fontSize: 18.sp, fontWeight: FontWeight.bold)),
-            ],
-          ),
-        ),
-      ),
+      // floatingActionButton: Container(
+      //   width: 60.w,
+      //   height: 60.w,
+      //   decoration: BoxDecoration(
+      //     color: const Color(0xFF21C063),
+      //     borderRadius: BorderRadius.circular(17.86.r),
+      //   ),
+      //   child: FloatingActionButton(
+      //     onPressed: () => context.push('/create-campaign'),
+      //     backgroundColor: Colors.transparent,
+      //     elevation: 0,
+      //     child: Row(
+      //       mainAxisAlignment: MainAxisAlignment.center,
+      //       children: [
+      //         Icon(Iconsax.volume_high, color: Colors.white, size: 14.sp),
+      //         Text('+', style: TextStyle(color: Colors.white, fontSize: 18.sp, fontWeight: FontWeight.bold)),
+      //       ],
+      //     ),
+      //   ),
+      // ),
       body: SafeArea(
         child: Column(
           children: [
             _buildHeader(),
             _buildTabs(),
             Expanded(
-              child: ListView(
-                padding: EdgeInsets.symmetric(horizontal: 16.w),
-                children: [
-                  SizedBox(height: 16.h),
-                  _buildSearchBar(),
-                  SizedBox(height: 16.h),
-                  if (filteredCampaigns.isEmpty)
-                    Padding(
-                      padding: EdgeInsets.only(top: 40.h),
-                      child: Column(
-                        children: [
-                          Icon(Iconsax.volume_high, size: 48.sp, color: Colors.grey[300]),
-                          SizedBox(height: 16.h),
-                          Text(
-                            'No campaigns found matching "${_searchController.text}"',
-                            style: TextStyle(color: Colors.grey, fontSize: 14.sp),
-                          ),
-                        ],
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(20.w),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF2F4F7),
+                        shape: BoxShape.circle,
                       ),
-                    )
-                  else
-                    ...filteredCampaigns.map((campaign) => Padding(
-                          padding: EdgeInsets.only(bottom: 18.h),
-                          child: _buildCampaignCard(
-                            title: campaign['title'],
-                            status: campaign['status'],
-                            statusColor: campaign['statusColor'],
-                            statusTextColor: campaign['statusTextColor'],
-                            template: campaign['template'],
-                            contacts: campaign['contacts'],
-                            createdAt: campaign['createdAt'],
-                            scheduledAt: campaign['scheduledAt'],
-                            isScheduledNotSet: campaign['isScheduledNotSet'] ?? false,
-                          ),
-                        )),
-                  SizedBox(height: 80.h),
-                ],
+                      child: Icon(
+                        Iconsax.info_circle,
+                        size: 40.sp,
+                        color: const Color(0xFF667085),
+                      ),
+                    ),
+                    SizedBox(height: 16.h),
+                    Text(
+                      'Feature coming soon',
+                      style: TextStyle(
+                        fontSize: 18.sp,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    SizedBox(height: 8.h),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 40.w),
+                      child: Text(
+                        'Campaigns is currently not available in this version. We are working hard to bring this feature to you soon!',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          color: const Color(0xFF667085),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

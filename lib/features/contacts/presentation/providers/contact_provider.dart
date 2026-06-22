@@ -19,6 +19,7 @@ class ContactProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
 
   bool _isFetchingContacts = false;
+  bool get isFetchingContacts => _isFetchingContacts;
   bool _isFetchingChat = false;
 
   // Bug 6: Flag for contacts loading completion
@@ -192,8 +193,17 @@ class ContactProvider extends ChangeNotifier {
     _errorMessage = null;
     _activeUserId = null;
     
-    final prefs = await SharedPreferences.getInstance();
-    prefs.remove('cached_contacts_'); // Partial match would be better but let's be simple
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys();
+      for (String key in keys) {
+        if (key.startsWith('cached_contacts_') || key.startsWith('cached_unread_')) {
+          prefs.remove(key);
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ [CACHE] Failed to clear persistent cache: $e');
+    }
 
     debugPrint('📊 After User Switch: ${_contacts.length} contacts remaining');
     notifyListeners();
@@ -282,7 +292,7 @@ class ContactProvider extends ChangeNotifier {
         cancelToken: _contactsCancelToken,
       );
       
-      // 🛑 SESSION CHECK: If a new request sequence started, discard this one.
+    // 🛡️ SESSION CHECK: If a new request sequence started, discard this one.
       if (currentSessionId != _activeRequestSessionId) {
         debugPrint('🛑 [CONTACTS] Session mismatch. Discarding Page $_currentPage.');
         return false;
@@ -294,6 +304,9 @@ class ContactProvider extends ChangeNotifier {
 
       List<dynamic> newContacts = _parseContactsResponse(result);
       
+      // Update pagination state BEFORE merging so we can use accurate counts
+      _updatePaginationState(result, newContacts.length, effectivePerPage);
+
       final existingUids = _contacts.map(_extractUid).whereType<String>().toSet();
       int addedInThisPage = 0;
 
@@ -319,9 +332,6 @@ class ContactProvider extends ChangeNotifier {
         }
       }
 
-      // Update pagination state AFTER merging so we know how many were NEW
-      _updatePaginationState(result, newContacts.length, addedInThisPage, effectivePerPage);
-
       // If Page 1 refresh returned fewer items than we had, it might be a user switch or data change
       // In a real app we'd handle this more complexly, but for now we trust the backend Page 1
       if (_currentPage == 1 && !loadMore && newContacts.isNotEmpty && !isSearching) {
@@ -344,7 +354,7 @@ class ContactProvider extends ChangeNotifier {
       _availableCountries = _extractCountriesFromResponse(result);
       
       // ✅ AUTOMATIC RECURSIVE FETCHING - Only if backend says there is more
-      if (autoLoadAll && _hasMore && newContacts.isNotEmpty && _currentPage < 30) {
+      if (autoLoadAll && _hasMore && newContacts.isNotEmpty && addedInThisPage > 0 && _currentPage < 30) {
         debugPrint('⏳ [CONTACTS] Auto-loading next page ($_currentPage + 1)...');
         // 🛡️ Stop if we got a very small page, likely reached the end regardless of has_more
         if (newContacts.length < 5) {
@@ -361,6 +371,11 @@ class ContactProvider extends ChangeNotifier {
             isRecursiveCall: true,
           );
         }
+      } else {
+         if (addedInThisPage == 0 && loadMore) {
+           debugPrint('🛑 [CONTACTS] No new contacts added in this page, stopping recursion.');
+           _hasMore = false;
+         }
       }
 
       // Finalize loading
@@ -406,7 +421,7 @@ class ContactProvider extends ChangeNotifier {
     }
   }
 
-  void _updatePaginationState(dynamic result, int newCount, int addedCount, int requestedPerPage) {
+  void _updatePaginationState(dynamic result, int newCount, int requestedPerPage) {
     if (result is! Map) return;
 
     final clientModels = result['client_models'];
@@ -428,8 +443,6 @@ class ContactProvider extends ChangeNotifier {
       } else if (backendPage != null && lastPage != null) {
         _hasMore = backendPage < lastPage;
       } else {
-        // Trust the backend: if we got any contacts, try the next page
-        // until we get an empty response.
         _hasMore = newCount > 0;
       }
     } else {
@@ -438,11 +451,18 @@ class ContactProvider extends ChangeNotifier {
         _total = foundTotal;
       }
       
-      // 🛡️ GUARD: If we got contacts but none were new, stop to avoid infinite loops
-      // especially when cache is returning the same results.
-      if (newCount > 0 && addedCount == 0) {
-        debugPrint('⚠️ [PAGINATION] No new contacts found in page result. Stopping fetch.');
+      // 🛡️ REFINED DETECTION: 
+      // If we got fewer than 5 contacts, or 0, it's definitely the end.
+      // In your logs, 12 was returned, so we'll allow that but stop if it ever drops.
+      if (newCount == 0) {
         _hasMore = false;
+      } else if (newCount < 5) {
+        _hasMore = false;
+      } else if (newCount < requestedPerPage && requestedPerPage > 20) {
+        // If we asked for 100 and got 12, the server likely has a limit of 12.
+        // We'll continue for now, but we can't be sure if there's more.
+        // Let's assume there's more if newCount is consistent.
+        _hasMore = true; 
       } else {
         _hasMore = newCount > 0;
       }
@@ -450,7 +470,7 @@ class ContactProvider extends ChangeNotifier {
 
     // 🛡️ Debug Verification
     debugPrint('📊 [PAGINATION DEBUG]');
-    debugPrint('   - Backend Total: $_total');
+    debugPrint('   - Backend Total: ${_total == 0 ? "Unknown" : _total}');
     debugPrint('   - Parsed Count (This page): $newCount');
     debugPrint('   - Total in List: ${_contacts.length}');
     debugPrint('   - Has More: $_hasMore');
@@ -500,13 +520,22 @@ class ContactProvider extends ChangeNotifier {
     if (result is! Map) return null;
     final keys = [
       'total', 'total_records', 'totalRecords', 'all_contacts_count', 
-      'count', 'contacts_count', 'total_count', 'totalCount'
+      'allContactsCount', 'count', 'contacts_count', 'total_count', 'totalCount'
     ];
-    final sources = [result, result['data'], result['client_models'], result['client_models']?['contactsPaginatePage']];
+    final sources = [
+      result, 
+      result['data'], 
+      result['client_models'], 
+      result['client_models']?['contactsPaginatePage'],
+      result['client_models']?['contacts_paginate_page'],
+    ];
     for (final source in sources) {
       if (source is Map) {
         for (final key in keys) {
-          if (source[key] != null) return _toInt(source[key]);
+          if (source[key] != null) {
+            final val = _toInt(source[key]);
+            if (val != null && val > 0) return val;
+          }
         }
       }
     }
@@ -814,9 +843,8 @@ class ContactProvider extends ChangeNotifier {
       final Map<String, dynamic> uniqueMap = {};
       debugPrint('🔄 [MERGE] Starting merge. Local messages: ${_messages.length}');
       
-      // 1. Start with ALL current local messages to prevent disappearance
       for (var msg in _messages) {
-        final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['timestamp'] ?? msg['created_at'];
+        final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['local_id'] ?? msg['timestamp'] ?? msg['created_at'] ?? msg.hashCode;
         if (id != null) {
           uniqueMap[id.toString()] = msg;
         }
@@ -826,7 +854,7 @@ class ContactProvider extends ChangeNotifier {
       if (rawNewMessages.isNotEmpty) {
         debugPrint('📡 [SYNC] Backend messages received: ${rawNewMessages.length}');
         for (var msg in rawNewMessages) {
-          final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['timestamp'] ?? msg['created_at'];
+          final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['local_id'] ?? msg['timestamp'] ?? msg['created_at'] ?? msg['id'];
           if (id != null) {
             final idStr = id.toString();
             
@@ -834,28 +862,47 @@ class ContactProvider extends ChangeNotifier {
             if (msg['is_incoming_message'] == 0 || msg['is_incoming_message'] == '0' || msg['is_incoming_message'] == false) {
               final initialSize = uniqueMap.length;
               uniqueMap.removeWhere((key, m) {
-                if (!key.startsWith('temp_') && m['status'] != 'sending' && m['status'] != 'sent') return false;
+                // Match by ID directly first
+                if (key == idStr) return true;
+
+                // Match by local_id if available (backend might echo it back in some cases)
+                if (m['local_id'] != null && msg['local_id'] == m['local_id']) return true;
+
+                // Match optimistic/sending messages by content
+                final bool isOptimistic = key.startsWith('temp_') || m['status'] == 'sending' || m['status'] == 'failed' || m['status'] == 'uploading';
+                if (!isOptimistic) return false;
                 
                 // Match by text content
                 final bool textMatch = (m['message'] == msg['message'] || m['message_body'] == msg['message_body'] || m['text'] == msg['text']);
-                if (textMatch && (m['message']?.toString().isNotEmpty ?? false)) {
-                  // 🛡️ Added time-window check (2 minutes) to prevent matching wrong messages with same text
+                if (textMatch && (m['message']?.toString().isNotEmpty ?? false) && m['message'] != 'Media') {
                   final mTime = _getDateTime(m);
                   final msgTime = _getDateTime(msg);
-                  if (mTime.difference(msgTime).abs().inMinutes < 2) return true;
+                  // Strict 5-minute window for text matches
+                  if (mTime.difference(msgTime).abs().inMinutes < 5) return true;
                 }
                 
                 // Match by media type if both are media
                 final String? mType = m['message_type'] ?? m['type'];
                 final String? msgType = msg['message_type'] ?? msg['type'];
-                if (mType != null && mType == msgType) {
-                   // 🛡️ For media, check filename or use a strict time window
+                if (mType != null && mType == msgType && mType != 'text') {
+                   // For media, check filename or use a strict time window
                    final mLink = m['__data']?['media_values']?['link']?.toString() ?? '';
-                   final msgLink = msg['__data']?['media_values']?['link']?.toString() ?? '';
-                   if (mLink.isNotEmpty && msgLink.isNotEmpty && mLink.split('/').last == msgLink.split('/').last) return true;
+                   final msgLink = msg['__data']?['media_values']?['link']?.toString() ?? msg['media_url']?.toString() ?? '';
                    
+                   bool linkMatch = false;
+                   if (mLink.isNotEmpty && msgLink.isNotEmpty) {
+                      final mFile = mLink.split('/').last.split('?').first;
+                      final msgFile = msgLink.split('/').last.split('?').first;
+                      if (mFile == msgFile) linkMatch = true;
+                   }
+
                    final mTime = _getDateTime(m);
                    final msgTime = _getDateTime(msg);
+                   
+                   // If filenames match and they are within 10 minutes, it's definitely the same
+                   if (linkMatch && mTime.difference(msgTime).abs().inMinutes < 10) return true;
+                   
+                   // If it's a very close time match (2 min) even without link match (server might rename)
                    if (mTime.difference(msgTime).abs().inMinutes < 2) return true;
                 }
                 
@@ -947,10 +994,9 @@ class ContactProvider extends ChangeNotifier {
   }
 
   DateTime _getDateTime(dynamic msg) {
-    if (msg is! Map) return DateTime(1970);
+    if (msg is! Map) return Helpers.toUtc(null);
     final timeStr = (msg['messaged_at'] ?? msg['created_at'] ?? msg['timestamp'] ?? msg['updated_at'])?.toString();
-    if (timeStr == null) return DateTime(1970);
-    return DateTime.tryParse(timeStr) ?? DateTime(1970);
+    return Helpers.toUtc(timeStr);
   }
 
   bool _isSameMessageList(List<dynamic> list1, List<dynamic> list2) {
@@ -979,7 +1025,7 @@ class ContactProvider extends ChangeNotifier {
   }
 
   List<dynamic> _extractMessagesFromResponse(List<dynamic> results) {
-    final Map<String, dynamic> allMessagesMap = {};
+    final Map<String, Map<String, dynamic>> allMessagesMap = {};
     
     for (final result in results) {
       if (result == null) continue;
@@ -1015,14 +1061,41 @@ class ContactProvider extends ChangeNotifier {
         }
       }
       
-      // Add messages from this result to the global map for deduplication
+      // Process messages from this result
       for (var msg in currentResultMessages) {
         if (msg is Map) {
-          final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['id'];
-          if (id != null) {
-            allMessagesMap[id.toString()] = msg;
+          final Map<String, dynamic> msgMap = Map<String, dynamic>.from(msg);
+          final id = msgMap['whatsapp_message_id'] ?? msgMap['wamid'] ?? msgMap['_uid'] ?? msgMap['uid'] ?? msgMap['id'];
+          final idStr = id?.toString() ?? msgMap.hashCode.toString();
+          
+          // 🛡️ DEDUPLICATION: If we already have this ID, or a very similar message by content/time
+          bool foundDuplicate = false;
+          if (allMessagesMap.containsKey(idStr)) {
+            foundDuplicate = true;
           } else {
-            allMessagesMap[msg.hashCode.toString()] = msg;
+            // Check for logical duplicates (same content, same sender, same time)
+            final msgBody = (msgMap['message'] ?? msgMap['message_body'] ?? msgMap['text'] ?? '').toString();
+            final msgTime = _getDateTime(msgMap);
+            final isIncoming = msgMap['is_incoming_message'];
+
+            for (final existing in allMessagesMap.values) {
+              final existingBody = (existing['message'] ?? existing['message_body'] ?? existing['text'] ?? '').toString();
+              final existingTime = _getDateTime(existing);
+              final existingIncoming = existing['is_incoming_message'];
+
+              if (isIncoming == existingIncoming && 
+                  msgBody == existingBody && 
+                  msgBody.isNotEmpty && 
+                  msgBody != 'Media' &&
+                  msgTime.difference(existingTime).abs().inSeconds < 10) {
+                foundDuplicate = true;
+                break;
+              }
+            }
+          }
+
+          if (!foundDuplicate) {
+            allMessagesMap[idStr] = msgMap;
           }
         }
       }
@@ -1065,30 +1138,26 @@ class ContactProvider extends ChangeNotifier {
     String? replyToMessageId,
   }) async {
     _errorMessage = null;
-    debugPrint('🚀 [SEND] Starting sendMessage. Provider: ${hashCode}');
-    debugPrint('📊 [SEND] Messages before: ${_messages.length}');
+    debugPrint('🚀 [SEND] Starting sendMessage. UID: $contactUid');
     
     // 🛡️ OPTIMISTIC UPDATE: Add message to UI immediately
     final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
     final optimisticMessage = {
       'whatsapp_message_id': tempId,
+      'local_id': tempId,
       'message': message,
       'message_body': message,
       'status': 'sending',
       'is_incoming_message': 0,
-      'created_at': DateTime.now().toIso8601String(),
+      'created_at': Helpers.toUtc(null).toIso8601String(),
       if (replyToMessageId != null) 'reply_to_message_id': replyToMessageId,
     };
     
     // Create a fresh list for the UI to detect change
     _messages = [optimisticMessage, ..._messages];
-    debugPrint('✅ [SEND] Message inserted locally. Temp ID: $tempId');
-    
-    // Update contact's latest message locally for sorting
+    debugPrint('✅ [SEND] Local message inserted. ID: $tempId');
     _updateContactLatestMessage(contactUid, optimisticMessage);
-    
     notifyListeners();
-    debugPrint('🔔 [SEND] notifyListeners() called for optimistic update');
 
     try {
       // Find contact to get wa_id
@@ -1100,7 +1169,7 @@ class ContactProvider extends ChangeNotifier {
         waId = (contact['wa_id'] ?? contact['phone_number'])?.toString();
       } catch (_) {}
 
-      debugPrint('📡 [SEND] Calling API repository.sendMessage...');
+      debugPrint('📡 [SEND] API Call Started...');
       final result = await _repository.sendMessage(
         contactUid: contactUid, 
         message: message,
@@ -1111,34 +1180,56 @@ class ContactProvider extends ChangeNotifier {
       debugPrint('✅ [SEND] API Success. Response: $result');
       
       // Update the temp message with real data from response if available
-      final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId);
+      final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId || m['local_id'] == tempId);
       if (index != -1 && result is Map) {
-        debugPrint('🔄 [SEND] Updating temp message at index $index');
-        final Map<String, dynamic> updatedMsg = {
-          ..._messages[index],
-          ...result,
-          'status': 'sent',
-        };
-        _messages[index] = updatedMsg;
-        _updateContactLatestMessage(contactUid, updatedMsg);
+        debugPrint('🔄 [SEND] Updating optimistic message with server data');
         
-        // Re-assign to force list reference change
+        // 🛡️ Extract actual message log from response
+        final List<dynamic> sentMessages = _extractMessagesFromResponse([result]);
+        final Map<String, dynamic>? serverMsg = (sentMessages.isNotEmpty && sentMessages.first is Map) 
+            ? Map<String, dynamic>.from(sentMessages.first) 
+            : null;
+
+        if (serverMsg != null) {
+          // 🛡️ Ensure ID is unified to prevent duplicates on next sync
+          final serverId = serverMsg['whatsapp_message_id'] ?? serverMsg['wamid'] ?? serverMsg['_uid'] ?? serverMsg['uid'];
+          
+          final Map<String, dynamic> updatedMsg = {
+            ..._messages[index],
+            ...serverMsg,
+            if (serverId != null) 'whatsapp_message_id': serverId.toString(),
+            'status': 'sent',
+          };
+          _messages[index] = updatedMsg;
+          _updateContactLatestMessage(contactUid, updatedMsg);
+        } else {
+          // Fallback if extraction failed but result is Map
+          _messages[index] = {
+            ..._messages[index],
+            ...result,
+            'status': 'sent',
+          };
+        }
+        
         _messages = List.from(_messages);
         notifyListeners();
-        debugPrint('🔔 [SEND] notifyListeners() called for API confirmation');
-      } else {
-        debugPrint('⚠️ [SEND] Could not find temp message to update or result is not Map');
       }
       
-      // Full background refresh to stay in sync with server state
-      debugPrint('🔄 [SEND] Triggering background sync (getContactChatBoxData)');
+      // Background sync to stay in sync with server state
+      debugPrint('🔄 [SEND] Triggering background sync');
       getContactChatBoxData(contactUid, showLoading: false, force: true, refresh: true);
       
       return true;
     } catch (e) {
       debugPrint('❌ [SEND] Error: $e');
-      _messages.removeWhere((m) => m['whatsapp_message_id'] == tempId);
-      _messages = List.from(_messages); // Force rebuild on error cleanup
+      final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId || m['local_id'] == tempId);
+      if (index != -1) {
+        _messages[index] = {
+          ..._messages[index],
+          'status': 'failed',
+        };
+        _messages = List.from(_messages);
+      }
       _errorMessage = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
       return false;
@@ -1265,16 +1356,17 @@ class ContactProvider extends ChangeNotifier {
     int? duration,
   }) async {
     _errorMessage = null;
-    debugPrint('🚀 [SEND MEDIA] Starting media send. Provider: ${hashCode}');
+    debugPrint('🚀 [SEND MEDIA] Starting flow: $mediaType. File: $filePath');
     
     final tempId = 'temp_media_${DateTime.now().millisecondsSinceEpoch}';
     final optimisticMessage = {
       'whatsapp_message_id': tempId,
+      'local_id': tempId,
       'message': 'Media',
       'message_body': 'Media',
       'status': 'sending',
       'is_incoming_message': 0,
-      'created_at': DateTime.now().toIso8601String(),
+      'created_at': Helpers.toUtc(null).toIso8601String(),
       'message_type': mediaType,
       '__data': {
         'media_values': {
@@ -1286,9 +1378,9 @@ class ContactProvider extends ChangeNotifier {
     };
     
     _messages = [optimisticMessage, ..._messages];
+    debugPrint('✅ [SEND MEDIA] Local message inserted. ID: $tempId');
     _updateContactLatestMessage(contactUid, optimisticMessage);
     notifyListeners();
-    debugPrint('🔔 [SEND MEDIA] notifyListeners() for optimistic update. Count: ${_messages.length}');
 
     try {
       String? waId;
@@ -1299,7 +1391,7 @@ class ContactProvider extends ChangeNotifier {
         waId = (contact['wa_id'] ?? contact['phone_number'])?.toString();
       } catch (_) {}
 
-      debugPrint('📡 [SEND MEDIA] Calling API repository.sendMedia...');
+      debugPrint('📡 [SEND MEDIA] Repository call started...');
       final result = await _repository.sendMedia(
         contactUid: contactUid,
         filePath: filePath,
@@ -1307,60 +1399,80 @@ class ContactProvider extends ChangeNotifier {
         waId: waId,
       );
       
-      debugPrint('✅ [SEND MEDIA] API Success. Response: $result');
+      debugPrint('✅ [SEND MEDIA] Repository Success. Result keys: ${result is Map ? result.keys : 'not map'}');
       
-      final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId);
+      final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId || m['local_id'] == tempId);
       if (index != -1 && result is Map) {
-        debugPrint('🔄 [SEND MEDIA] Updating temp message at index $index');
+        debugPrint('🔄 [SEND MEDIA] Updating optimistic message with server response');
         
-        // 🛡️ Deep merge __data to preserve optimistic duration/local links
+        // 🛡️ Extract actual message log from response
+        final List<dynamic> sentMessages = _extractMessagesFromResponse([result]);
+        final Map<String, dynamic> serverMsg = (sentMessages.isNotEmpty && sentMessages.first is Map) 
+            ? Map<String, dynamic>.from(sentMessages.first) 
+            : Map<String, dynamic>.from(result);
+
+        // 🛡️ Ensure ID is unified to prevent duplicates on next sync
+        final serverId = serverMsg['whatsapp_message_id'] ?? serverMsg['wamid'] ?? serverMsg['_uid'] ?? serverMsg['uid'];
+
+        // 🛡️ Deep merge __data to preserve optimistic local links if server link is not yet ready
         Map<String, dynamic> mergedData = Map.from(_messages[index]['__data'] ?? {});
-        if (result['__data'] is Map) {
-          mergedData.addAll(result['__data']);
-          
-          // Specifically ensure duration is preserved if missing in result
-          final oldDuration = _messages[index]['__data']?['media_values']?['duration'];
-          if (oldDuration != null && (mergedData['media_values']?['duration'] == null)) {
-             mergedData['media_values'] = {
-               ...(mergedData['media_values'] ?? {}),
-               'duration': oldDuration,
-             };
+        if (serverMsg['__data'] is Map) {
+          final serverMediaValues = serverMsg['__data']['media_values'];
+          if (serverMediaValues is Map) {
+            final Map<String, dynamic> localMediaValues = Map.from(mergedData['media_values'] ?? {});
+            
+            // Only overwrite link if server provides a valid URL
+            final String? serverLink = serverMediaValues['link']?.toString();
+            if (serverLink == null || serverLink.isEmpty || !serverLink.startsWith('http')) {
+              serverMediaValues['link'] = localMediaValues['link']; // Keep local path
+            }
+            
+            localMediaValues.addAll(Map<String, dynamic>.from(serverMediaValues));
+            mergedData['media_values'] = localMediaValues;
           }
+          
+          // Add other __data fields
+          final otherData = Map<String, dynamic>.from(serverMsg['__data']);
+          otherData.remove('media_values');
+          mergedData.addAll(otherData);
         }
 
         final Map<String, dynamic> updatedMsg = {
           ..._messages[index],
-          ...result,
-          if (mergedData.isNotEmpty) '__data': mergedData,
+          ...serverMsg,
+          if (serverId != null) 'whatsapp_message_id': serverId.toString(),
+          '__data': mergedData,
           'status': 'sent',
         };
         _messages[index] = updatedMsg;
         _updateContactLatestMessage(contactUid, updatedMsg);
         
-        _messages = List.from(_messages); // Force reference change
+        _messages = List.from(_messages);
         notifyListeners();
-        debugPrint('🔔 [SEND MEDIA] notifyListeners() for API confirmation');
+      } else {
+        debugPrint('⚠️ [SEND MEDIA] Could not find optimistic message to update (Index: $index)');
       }
       
-      // Wait a moment for server to process media before refresh
+      // Background sync
+      debugPrint('🔄 [SEND MEDIA] Triggering background sync');
       await Future.delayed(const Duration(seconds: 1));
-      debugPrint('🔄 [SEND MEDIA] Triggering background sync (getContactChatBoxData)');
-      
-      // 🛡️ Manually invalidate cache in the repository if possible
-      // (Bypassing via refresh: true for now)
       getContactChatBoxData(contactUid, showLoading: false, force: true, refresh: true);
       return true;
     } catch (e) {
       debugPrint('❌ [SEND MEDIA] Error: $e');
-      
-      // If we have a specific error message from the backend, show it
-      String errorMsg = e.toString().replaceAll('Exception: ', '');
-      if (errorMsg.contains('24 hours')) {
-        errorMsg = "Cannot send message: 24h window closed. Use a template.";
+      final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId || m['local_id'] == tempId);
+      if (index != -1) {
+        _messages[index] = {
+          ..._messages[index],
+          'status': 'failed',
+        };
+        _messages = List.from(_messages);
       }
       
-      _messages.removeWhere((m) => m['whatsapp_message_id'] == tempId);
-      _messages = List.from(_messages);
+      String errorMsg = e.toString().replaceAll('Exception: ', '');
+      if (errorMsg.contains('24 hours')) {
+        errorMsg = "Cannot send: 24h window closed. Use a template.";
+      }
       _errorMessage = errorMsg;
       notifyListeners();
       return false;

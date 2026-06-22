@@ -335,75 +335,57 @@ class ContactRepository {
     String? waId,
     String? caption,
   }) async {
+    debugPrint('🚀 [REPO] sendMedia called for $mediaType');
     try {
       final file = File(filePath);
       if (!await file.exists()) {
-        debugPrint('❌ [MEDIA SEND] File NOT found at path: $filePath');
+        debugPrint('❌ [REPO] File NOT found at path: $filePath');
         throw Exception('File not found: $filePath');
-      }
-
-      final fileSize = await file.length();
-      final extension = filePath.split('.').last.toLowerCase();
-      
-      debugPrint('🚀 [MEDIA SEND] Starting two-step process for $mediaType...');
-      debugPrint('   - Path: $filePath');
-      debugPrint('   - Size: ${(fileSize / 1024).toStringAsFixed(2)} KB');
-      debugPrint('   - Extension: $extension');
-
-      if (fileSize == 0) {
-        debugPrint('⚠️ [MEDIA SEND] WARNING: File is empty (0 bytes)!');
       }
 
       // Step 1: Upload to temporary storage
       String uploadItem;
       switch (mediaType.toLowerCase()) {
-        case 'image':
-          uploadItem = 'whatsapp_image';
-          break;
+        case 'image': uploadItem = 'whatsapp_image'; break;
         case 'audio':
-        case 'voice':
-          uploadItem = 'whatsapp_audio';
-          break;
-        case 'video':
-          uploadItem = 'whatsapp_video';
-          break;
+        case 'voice': uploadItem = 'whatsapp_audio'; break;
+        case 'video': uploadItem = 'whatsapp_video'; break;
         case 'document':
-        default:
-          uploadItem = 'whatsapp_document';
+        default: uploadItem = 'whatsapp_document';
       }
 
-      debugPrint('📤 [STEP 1] Uploading to temp storage ($uploadItem)...');
+      debugPrint('📤 [REPO] Step 1: Uploading temp media ($uploadItem)...');
       final uploadResponse = await _apiService.uploadTempMedia(filePath, uploadItem);
       
-      debugPrint('📥 [STEP 1] Response Status: ${uploadResponse.statusCode}');
-      debugPrint('📥 [STEP 1] Response Data: ${uploadResponse.data}');
+      debugPrint('📥 [REPO] Step 1 Response: ${uploadResponse.statusCode}');
 
       // Extract uploaded file name from response
       String? uploadedFileName;
       if (uploadResponse.data is String) {
         uploadedFileName = uploadResponse.data;
-        // 🛡️ Detect if the response string is actually an error message
-        if (uploadedFileName!.contains('error') || 
-            uploadedFileName.contains('failed') || 
-            uploadedFileName.contains('type')) {
-          throw Exception('Upload failed: $uploadedFileName');
-        }
       } else if (uploadResponse.data is Map) {
-        uploadedFileName = uploadResponse.data['file_name'] ?? 
-                           uploadResponse.data['fileName'] ??
-                           uploadResponse.data['data']?['file_name'] ??
-                           uploadResponse.data['data']?['fileName'] ??
-                           uploadResponse.data['id']?.toString();
+        final Map resMap = uploadResponse.data;
+        final dynamic nested = resMap['data'];
+        
+        if (nested is Map) {
+           uploadedFileName = nested['fileName']?.toString() ?? 
+                              nested['file_name']?.toString();
+        }
+        
+        uploadedFileName ??= resMap['fileName']?.toString() ?? 
+                             resMap['file_name']?.toString() ?? 
+                             resMap['id']?.toString();
       }
 
       if (uploadedFileName == null || uploadedFileName.isEmpty) {
+        debugPrint('❌ [REPO] Failed to get temp filename. Response: ${uploadResponse.data}');
         throw Exception('Failed to get temporary filename from upload response');
       }
 
-      debugPrint('✅ [STEP 1] Uploaded. Temp filename: $uploadedFileName');
+      debugPrint('✅ [REPO] Step 1 Success. Filename: $uploadedFileName');
 
       // Step 2: Send message referencing the uploaded file name
-      debugPrint('📤 [STEP 2] Sending message referencing temp file...');
+      debugPrint('📤 [REPO] Step 2: Finalizing media send...');
       final response = await _apiService.sendMedia(
         contactUid: contactUid,
         mediaType: mediaType.toLowerCase() == 'voice' ? 'audio' : mediaType,
@@ -413,26 +395,17 @@ class ContactRepository {
         isRecordedAudio: mediaType.toLowerCase() == 'voice',
       );
 
-      final data = response.data;
+      debugPrint('📥 [REPO] Step 2 Response: ${response.statusCode}');
 
-      // 🛡️ Detect HTML redirects
-      if (data is String && (data.contains('<!DOCTYPE html>') || data.contains('<html'))) {
-        throw Exception('Server returned HTML instead of JSON in step 2.');
+      if (response.data is Map && (response.data['result'] == 'failed' || response.data['reaction'] == 0)) {
+        throw Exception(response.data['message'] ?? 'Failed to send media in step 2');
       }
 
-      if (data is Map && (data['result'] == 'failed' || data['reaction'] == 0 || data['status'] == 'error')) {
-        throw Exception(data['message'] ?? 'Failed to send media in step 2');
-      }
-
-      final sanitizedData = Helpers.sanitizeData(data);
-      debugPrint('✅ [MEDIA SEND] Success: ${sanitizedData.toString()}');
+      final sanitizedData = Helpers.sanitizeData(response.data);
+      debugPrint('✅ [REPO] sendMedia flow completed successfully');
       return sanitizedData;
-    } on DioException catch (e) {
-      debugPrint('❌ [MEDIA SEND] Dio Error: ${e.message}');
-      debugPrint('   Response data: ${e.response?.data}');
-      throw Exception(_extractError(e));
     } catch (e) {
-      debugPrint('❌ [MEDIA SEND] Unexpected error: $e');
+      debugPrint('❌ [REPO] sendMedia Error: $e');
       rethrow;
     }
   }

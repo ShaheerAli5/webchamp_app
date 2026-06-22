@@ -4,7 +4,6 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import '../../../routes/app_routes.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
 
@@ -19,6 +18,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   Timer? _searchTimer;
   bool _isSetupCompleted = true;
   Timer? _pollingTimer;
@@ -31,17 +31,45 @@ class _ChatScreenState extends State<ChatScreen> {
     _searchController.addListener(() {
       setState(() {}); // For clear button visibility
     });
+    _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _fetchContacts();
+      _fetchContacts(refresh: true);
+      _startPolling();
     });
   }
 
-  Future<void> _fetchContacts({String? search}) async {
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
     final provider = context.read<ContactProvider>();
-    await provider.getContacts(search: search);
+    if (provider.isFetchingContacts || !provider.hasMore) return;
+    await provider.getContacts(loadMore: true, search: _searchController.text.isEmpty ? null : _searchController.text);
+  }
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (mounted && !_isPolling && _searchController.text.isEmpty) {
+        _fetchContacts(refresh: true);
+      }
+    });
+  }
+
+  Future<void> _fetchContacts({String? search, bool refresh = false}) async {
+    if (_isPolling) return;
+    _isPolling = true;
     
-    if (search == null && provider.contacts.isNotEmpty) {
-      provider.getContacts(refresh: true);
+    final provider = context.read<ContactProvider>();
+    await provider.getContacts(search: search, refresh: refresh);
+    
+    if (mounted) {
+      setState(() {
+        _isPolling = false;
+      });
     }
   }
 
@@ -60,6 +88,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     _searchTimer?.cancel();
     _pollingTimer?.cancel();
     super.dispose();
@@ -117,15 +146,19 @@ class _ChatScreenState extends State<ChatScreen> {
                       );
                     }
 
-                    return ListView.builder(
-                      itemCount: filtered.length + (provider.isLoading ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == filtered.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
+                    return RefreshIndicator(
+                      onRefresh: () => _fetchContacts(refresh: true, search: _searchController.text.isEmpty ? null : _searchController.text),
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        itemCount: filtered.length + (provider.isFetchingContacts ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == filtered.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
                         final contact = filtered[index];
                         final name = _contactName(contact);
                         final uid = _contactUid(contact);
@@ -142,12 +175,13 @@ class _ChatScreenState extends State<ChatScreen> {
                           unreadCount: unreadCount?.toString(),
                         );
                       },
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
-            ],
+            ),
           ],
+        ],
         ),
       ),
     );
@@ -333,28 +367,34 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildFilterChips() {
-    return Container(
-      height: 36.h,
-      margin: EdgeInsets.only(bottom: 8.h),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(horizontal: 16.w),
-        children: [
-          _buildChip('All',
-              isSelected: _activeFilter == 'all',
-              onTap: () => setState(() => _activeFilter = 'all')),
-          _buildChip('Unread',
-              isSelected: _activeFilter == 'unread',
-              onTap: () => setState(() => _activeFilter = 'unread')),
-          _buildChip('Groups',
-              isSelected: _activeFilter == 'groups',
-              onTap: () => context.push(AppRoutes.contactGroups)),
-          _buildChip('New List',
-              isAction: true,
-              hasAddIcon: true,
-              onTap: () => context.push(AppRoutes.createNewList)),
-        ],
-      ),
+    return Consumer<ContactProvider>(
+      builder: (context, provider, child) {
+        return Container(
+          height: 36.h,
+          margin: EdgeInsets.only(bottom: 8.h),
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: EdgeInsets.symmetric(horizontal: 16.w),
+            children: [
+              _buildChip('All',
+                  isSelected: _activeFilter == 'all',
+                  onTap: () => setState(() => _activeFilter = 'all')),
+              _buildChip(
+                provider.globalUnreadCount > 0 ? 'Unread (${provider.globalUnreadCount})' : 'Unread',
+                isSelected: _activeFilter == 'unread',
+                onTap: () => setState(() => _activeFilter = 'unread'),
+              ),
+              _buildChip('Groups',
+                  isSelected: _activeFilter == 'groups',
+                  onTap: () => context.push(AppRoutes.contactGroups)),
+              _buildChip('New List',
+                  isAction: true,
+                  hasAddIcon: true,
+                  onTap: () => context.push(AppRoutes.createNewList)),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -497,7 +537,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       child: FloatingActionButton(
         heroTag: 'chat_fab',
-        onPressed: () {}, // TODO: Implement New Chat
+        onPressed: () => context.push(AppRoutes.selectContacts),
         backgroundColor: Colors.transparent,
         elevation: 0,
         child: Icon(Icons.add_comment_rounded, color: Colors.white, size: 28.sp),

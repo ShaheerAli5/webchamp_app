@@ -49,7 +49,7 @@ class ApiConstants {
   static const String sendTemplate = '/vendor/whatsapp/contact/chat/send-template';
 
   // Contact Groups
-  static const String contactGroupsList = '/vendor/contact/group/list';
+  static const String contactGroupsList = '/vendor/groups';
   static const String createContactGroup = '/vendor/contact/group/create';
   static String updateContactGroup(String groupUid) => '/vendor/contact/group/update/$groupUid';
   static String deleteContactGroup(String groupUid) => '/vendor/contact/group/delete/$groupUid';
