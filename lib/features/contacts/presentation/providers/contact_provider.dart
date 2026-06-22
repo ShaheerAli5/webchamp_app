@@ -994,9 +994,18 @@ class ContactProvider extends ChangeNotifier {
   }
 
   DateTime _getDateTime(dynamic msg) {
+<<<<<<< HEAD
     if (msg is! Map) return Helpers.toUtc(null);
     final timeStr = (msg['messaged_at'] ?? msg['created_at'] ?? msg['timestamp'] ?? msg['updated_at'])?.toString();
     return Helpers.toUtc(timeStr);
+=======
+    if (msg is! Map) return DateTime.now();
+    final timeStr = (msg['messaged_at'] ?? msg['created_at'] ?? msg['timestamp'] ?? msg['updated_at'])?.toString();
+    if (timeStr == null || timeStr.isEmpty || timeStr == 'null') {
+      return DateTime.now();
+    }
+    return DateTime.tryParse(timeStr) ?? DateTime.now();
+>>>>>>> 64559deef38256d532369bd9c6f81113fb74423f
   }
 
   bool _isSameMessageList(List<dynamic> list1, List<dynamic> list2) {
@@ -1182,6 +1191,7 @@ class ContactProvider extends ChangeNotifier {
       // Update the temp message with real data from response if available
       final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId || m['local_id'] == tempId);
       if (index != -1 && result is Map) {
+<<<<<<< HEAD
         debugPrint('🔄 [SEND] Updating optimistic message with server data');
         
         // 🛡️ Extract actual message log from response
@@ -1210,6 +1220,17 @@ class ContactProvider extends ChangeNotifier {
             'status': 'sent',
           };
         }
+=======
+        debugPrint('🔄 [SEND] Updating temp message at index $index');
+        final Map<String, dynamic> updatedMsg = {
+          ..._messages[index],
+          ...result,
+          'status': 'sent',
+          'created_at': result['created_at'] ?? _messages[index]['created_at'] ?? DateTime.now().toIso8601String(),
+        };
+        _messages[index] = updatedMsg;
+        _updateContactLatestMessage(contactUid, updatedMsg);
+>>>>>>> 64559deef38256d532369bd9c6f81113fb74423f
         
         _messages = List.from(_messages);
         notifyListeners();
@@ -1443,6 +1464,7 @@ class ContactProvider extends ChangeNotifier {
           if (serverId != null) 'whatsapp_message_id': serverId.toString(),
           '__data': mergedData,
           'status': 'sent',
+          'created_at': result['created_at'] ?? _messages[index]['created_at'] ?? DateTime.now().toIso8601String(),
         };
         _messages[index] = updatedMsg;
         _updateContactLatestMessage(contactUid, updatedMsg);
