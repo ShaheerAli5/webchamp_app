@@ -37,6 +37,9 @@ class ContactApiService {
           'per_page': perPage,
           'perPage': perPage,
           'limit': perPage,
+          'page_size': perPage,
+          'count': perPage,
+          'size': perPage,
         },
       },
       options: Options(
@@ -342,6 +345,20 @@ class ContactApiService {
       contentType = 'image/jpeg';
       if (ext == 'png') contentType = 'image/png';
       else if (ext == 'gif') contentType = 'image/gif';
+    } else if (uploadItem.contains('document')) {
+      // 🛡️ Document MIME types
+      switch (ext) {
+        case 'pdf': contentType = 'application/pdf'; break;
+        case 'docx': contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'; break;
+        case 'doc': contentType = 'application/msword'; break;
+        case 'xlsx': contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; break;
+        case 'xls': contentType = 'application/vnd.ms-excel'; break;
+        case 'pptx': contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'; break;
+        case 'ppt': contentType = 'application/vnd.ms-powerpoint'; break;
+        case 'txt': contentType = 'text/plain'; break;
+        case 'zip': contentType = 'application/zip'; break;
+        default: contentType = 'application/octet-stream';
+      }
     }
 
     final formData = FormData.fromMap({

@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'dart:math' as math;
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:dio/dio.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class Helpers {
   static void showSnackBar(BuildContext context, String message) {
@@ -157,6 +165,13 @@ class Helpers {
     return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
+  static String formatFileSize(int bytes) {
+    if (bytes <= 0) return "0 B";
+    const suffixes = ["B", "KB", "MB", "GB", "TB"];
+    var i = (math.log(bytes) / math.log(1024)).floor();
+    return "${(bytes / math.pow(1024, i)).toStringAsFixed(1)} ${suffixes[i]}";
+  }
+
   /// Converts HTML string to WhatsApp-style plain text.
   static String htmlToPlainText(String? html) {
     if (html == null || html.isEmpty) return '';
@@ -185,5 +200,80 @@ class Helpers {
                .replaceAll('&#39;', "'");
                
     return text.trim();
+  }
+
+  /// Checks for permissions and opens a file. If the file is remote, it downloads it first.
+  static Future<void> openFile({
+    required String urlOrPath,
+    String? fileName,
+    Function(double)? onProgress,
+  }) async {
+    if (urlOrPath.isEmpty) return;
+
+    try {
+      // 1. Handle Permissions (Required for Android)
+      if (Platform.isAndroid) {
+        final sdkInt = await _getAndroidSdkInt();
+        if (sdkInt >= 33) {
+          // Android 13+ specific permissions
+          await [
+            Permission.photos,
+            Permission.videos,
+            Permission.audio,
+          ].request();
+        } else {
+          if (await Permission.storage.isDenied) {
+            await Permission.storage.request();
+          }
+        }
+      }
+
+      String localPath = urlOrPath;
+
+      // 2. Check if it's a remote URL
+      if (urlOrPath.startsWith('http')) {
+        final directory = await getApplicationDocumentsDirectory();
+        final String name = fileName ?? urlOrPath.split('/').last;
+        final String sanitizedName = name.replaceAll(RegExp(r'[^\w\s\.\-]'), '_');
+        localPath = '${directory.path}/$sanitizedName';
+
+        final File file = File(localPath);
+
+        // 3. Download if not already exists
+        if (!await file.exists()) {
+          debugPrint('📥 Downloading file to: $localPath');
+          final Dio dio = Dio();
+          await dio.download(
+            urlOrPath,
+            localPath,
+            onReceiveProgress: (received, total) {
+              if (total != -1 && onProgress != null) {
+                onProgress(received / total);
+              }
+            },
+          );
+        }
+      }
+
+      // 4. Open the file natively
+      debugPrint('📂 Opening file: $localPath');
+      final result = await OpenFilex.open(localPath);
+
+      if (result.type != ResultType.done) {
+        Fluttertoast.showToast(msg: result.message ?? "Could not open file");
+      }
+    } catch (e) {
+      debugPrint('❌ Error opening file: $e');
+      Fluttertoast.showToast(msg: "No application available to open this file.");
+    }
+  }
+
+  static Future<int> _getAndroidSdkInt() async {
+    if (Platform.isAndroid) {
+      final deviceInfo = DeviceInfoPlugin();
+      final androidInfo = await deviceInfo.androidInfo;
+      return androidInfo.version.sdkInt;
+    }
+    return 0;
   }
 }

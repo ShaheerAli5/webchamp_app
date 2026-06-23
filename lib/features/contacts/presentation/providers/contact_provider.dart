@@ -280,9 +280,13 @@ class ContactProvider extends ChangeNotifier {
 
     try {
       debugPrint('🚀 [CONTACTS] FETCH START - Page: $_currentPage, Search: $search');
-      
-      // Use larger perPage when auto-loading all for efficiency
       int effectivePerPage = perPage ?? (autoLoadAll ? 100 : 50);
+
+      // 🚀 OPTIMIZATION (Fix 1 & 2): Parallel Batch Loading
+      // Use parallel fetching only for initial background load (not searching, not manual loadMore)
+      if (autoLoadAll && !loadMore && !isSearching) {
+        return await _fetchAllContactsParallel(search, effectivePerPage, refresh, currentSessionId);
+      }
 
       var rawResult = await _repository.getContacts(
         search: search,
@@ -292,19 +296,14 @@ class ContactProvider extends ChangeNotifier {
         cancelToken: _contactsCancelToken,
       );
       
-    // 🛡️ SESSION CHECK: If a new request sequence started, discard this one.
+      // 🛡️ SESSION CHECK: If a new request sequence started, discard this one.
       if (currentSessionId != _activeRequestSessionId) {
         debugPrint('🛑 [CONTACTS] Session mismatch. Discarding Page $_currentPage.');
         return false;
       }
       
       final result = Helpers.sanitizeData(rawResult);
-      
-      debugPrint('📦 [CONTACTS] RESPONSE RECEIVED for Page $_currentPage');
-
       List<dynamic> newContacts = _parseContactsResponse(result);
-      
-      // Update pagination state BEFORE merging so we can use accurate counts
       _updatePaginationState(result, newContacts.length, effectivePerPage);
 
       final existingUids = _contacts.map(_extractUid).whereType<String>().toSet();
@@ -324,94 +323,56 @@ class ContactProvider extends ChangeNotifier {
           addedInThisPage++;
           existingUids.add(uid);
         } else if (uid != null && existingUids.contains(uid)) {
-          // Update existing contact data in-place if found
           final index = _contacts.indexWhere((c) => _extractUid(c) == uid);
-          if (index != -1) {
-            _contacts[index] = contact;
-          }
+          if (index != -1) _contacts[index] = contact;
         }
       }
 
-      // If Page 1 refresh returned fewer items than we had, it might be a user switch or data change
-      // In a real app we'd handle this more complexly, but for now we trust the backend Page 1
       if (_currentPage == 1 && !loadMore && newContacts.isNotEmpty && !isSearching) {
         _saveToPersistentCache();
       }
       
-      // ✅ VERIFICATION LOGS
-      debugPrint('----------------------------------------');
-      debugPrint('📊 [CONTACTS VERIFICATION]');
-      debugPrint('Logged User ID: ${_activeUserId ?? 'Unknown'}');
-      debugPrint('Backend Contact Count (Total): $_total');
-      debugPrint('Parsed Contact Count (Page): ${newContacts.length}');
-      debugPrint('UI Contact Count (Current List): ${_contacts.length}');
-      debugPrint('Cache Contact Count: ${_repository.cacheCount}');
-      debugPrint('New contacts added (deduplicated): $addedInThisPage');
-      debugPrint('Has More (from Backend): $_hasMore');
-      debugPrint('----------------------------------------');
-
       _availableGroups = _extractGroupsFromResponse(result);
       _availableCountries = _extractCountriesFromResponse(result);
       
-      // ✅ AUTOMATIC RECURSIVE FETCHING - Only if backend says there is more
-      if (autoLoadAll && _hasMore && newContacts.isNotEmpty && addedInThisPage > 0 && _currentPage < 30) {
+      if (newContacts.isEmpty) {
+        debugPrint('🛑 [CONTACTS] Page is empty. Stopping recursion.');
+        _hasMore = false;
+      } else if (autoLoadAll && _hasMore) {
         debugPrint('⏳ [CONTACTS] Auto-loading next page ($_currentPage + 1)...');
-        // 🛡️ Stop if we got a very small page, likely reached the end regardless of has_more
-        if (newContacts.length < 5) {
-          debugPrint('🛑 [CONTACTS] Small page received, stopping recursion.');
-          _hasMore = false;
-        } else {
-          // 🛡️ Increased delay to respect rate limits during massive background loads
-          await Future.delayed(const Duration(milliseconds: 2000));
-          return await getContacts(
-            search: search, 
-            loadMore: true, 
-            autoLoadAll: true,
-            perPage: effectivePerPage,
-            isRecursiveCall: true,
-          );
-        }
+        await Future.delayed(const Duration(milliseconds: 2000));
+        return await getContacts(
+          search: search, 
+          loadMore: true, 
+          autoLoadAll: true,
+          perPage: effectivePerPage,
+          isRecursiveCall: true,
+        );
       } else {
          if (addedInThisPage == 0 && loadMore) {
-           debugPrint('🛑 [CONTACTS] No new contacts added in this page, stopping recursion.');
+           debugPrint('🛑 [CONTACTS] No new unique contacts added in this page, stopping recursion.');
            _hasMore = false;
          }
       }
 
-      // Finalize loading
       _isFetchingContacts = false;
       _isLoading = false;
-      
-      if (!_hasMore) {
-        _contactsFullyLoaded = true;
-      }
-      
-      // Only poll global unread when the entire load sequence finishes to save API calls
-      if (!isRecursiveCall) {
-        getGlobalUnreadCount();
-      }
+      if (!_hasMore) _contactsFullyLoaded = true;
+      if (!isRecursiveCall) getGlobalUnreadCount();
       
       notifyListeners();
       return true;
-    } catch (e, stack) {
+    } catch (e) {
       debugPrint('❌ [CONTACTS] ERROR: $e');
-      
-      // Handle rate limit 429
       if (e.toString().contains("Too Many Attempts") || e.toString().contains("429")) {
         debugPrint('🛑 [CONTACTS] Rate limit hit. Waiting 30s before retry...');
         _isLoading = true;
         notifyListeners();
         await Future.delayed(const Duration(seconds: 30));
         _isFetchingContacts = false;
-        _currentPage--; // Reset page to retry the same one
-        return await getContacts(
-          search: search, 
-          loadMore: loadMore, 
-          autoLoadAll: autoLoadAll,
-          isRecursiveCall: true,
-        );
+        if (!loadMore) _currentPage--; 
+        return await getContacts(search: search, loadMore: loadMore, autoLoadAll: autoLoadAll, isRecursiveCall: true);
       }
-
       _errorMessage = e.toString();
       _isFetchingContacts = false;
       _isLoading = false;
@@ -421,8 +382,110 @@ class ContactProvider extends ChangeNotifier {
     }
   }
 
+  /// Optimized parallel batch fetching for massive contact lists (Fix 1, 2, 4)
+  Future<bool> _fetchAllContactsParallel(String? search, int perPage, bool refresh, String sessionId) async {
+    const int concurrency = 5; // Fetch 5 pages at once
+    const int uiUpdateBatch = 10; // Notify UI every 10 pages
+    List<dynamic> buffer = [];
+    bool endReached = false;
+    int pagesFetchedInCurrentBatch = 0;
+
+    try {
+      while (!endReached && sessionId == _activeRequestSessionId) {
+        debugPrint('🚀 [BATCH] Fetching pages $_currentPage to ${_currentPage + concurrency - 1}');
+        
+        List<Future<dynamic>> batch = [];
+        for (int i = 0; i < concurrency; i++) {
+          final page = _currentPage + i;
+          batch.add(_repository.getContacts(
+            search: search,
+            page: page,
+            perPage: perPage,
+            refresh: refresh || (page == 1),
+            cancelToken: _contactsCancelToken,
+          ).catchError((e) {
+            debugPrint('⚠️ [BATCH] Page $page failed: $e');
+            return null;
+          }));
+        }
+
+        final List<dynamic> batchResults = await Future.wait(batch);
+        
+        for (var rawResult in batchResults) {
+          if (rawResult == null) continue;
+          
+          final result = Helpers.sanitizeData(rawResult);
+          List<dynamic> newContacts = _parseContactsResponse(result);
+          
+          if (newContacts.isEmpty) {
+            endReached = true;
+            _hasMore = false;
+            break;
+          }
+          
+          _updatePaginationState(result, newContacts.length, perPage);
+
+          final existingUids = _contacts.map(_extractUid).whereType<String>().toSet();
+          final bufferUids = buffer.map(_extractUid).whereType<String>().toSet();
+
+          for (var contact in newContacts) {
+            if (contact is Map) {
+              contact['first_name'] = _sanitizeText(contact['first_name']?.toString());
+              contact['last_name'] = _sanitizeText(contact['last_name']?.toString());
+              contact['full_name'] = _sanitizeText(contact['full_name']?.toString());
+              contact['name'] = _sanitizeText(contact['name']?.toString());
+            }
+            final uid = _extractUid(contact);
+            if (uid != null && !existingUids.contains(uid) && !bufferUids.contains(uid)) {
+              buffer.add(contact);
+              bufferUids.add(uid);
+            }
+          }
+          
+          pagesFetchedInCurrentBatch++;
+          if (!endReached) _currentPage++;
+        }
+
+        // Fix 2: Batch UI Updates - avoid rebuilding 242 times
+        if (buffer.length >= 120 || endReached || pagesFetchedInCurrentBatch >= uiUpdateBatch) {
+          debugPrint('🔔 [UI] Batch Update: Adding ${buffer.length} contacts (Total: ${_contacts.length + buffer.length})');
+          _contacts.addAll(buffer);
+          buffer.clear();
+          pagesFetchedInCurrentBatch = 0;
+          _saveToPersistentCache(); // Fix 4: Save progress to local storage
+          notifyListeners();
+        }
+
+        if (endReached || !_hasMore) {
+          endReached = true;
+        } else {
+          // Fix 1: Parallel batches with small delay to respect rate limits
+          await Future.delayed(const Duration(milliseconds: 1200));
+        }
+      }
+
+      _isFetchingContacts = false;
+      _isLoading = false;
+      if (endReached) _contactsFullyLoaded = true;
+      getGlobalUnreadCount();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('❌ [BATCH] Error: $e');
+      _errorMessage = e.toString();
+      _isFetchingContacts = false;
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   void _updatePaginationState(dynamic result, int newCount, int requestedPerPage) {
     if (result is! Map) return;
+
+    // 🛡️ BUG FIX: Rely on newCount instead of unreliable backend flags.
+    // If we got 0 contacts, we definitely reached the end.
+    _hasMore = newCount > 0;
 
     final clientModels = result['client_models'];
     dynamic paginateInfo = clientModels?['contactsPaginatePage'] ?? 
@@ -434,37 +497,10 @@ class ContactProvider extends ChangeNotifier {
                _toInt(paginateInfo['total_records']) ?? 
                _toInt(paginateInfo['count']) ?? 
                _total;
-      
-      final lastPage = _toInt(paginateInfo['last_page']);
-      final backendPage = _toInt(paginateInfo['current_page']);
-      
-      if (paginateInfo.containsKey('has_more_pages')) {
-        _hasMore = paginateInfo['has_more_pages'] == true;
-      } else if (backendPage != null && lastPage != null) {
-        _hasMore = backendPage < lastPage;
-      } else {
-        _hasMore = newCount > 0;
-      }
     } else {
       int? foundTotal = _extractTotal(result);
       if (foundTotal != null) {
         _total = foundTotal;
-      }
-      
-      // 🛡️ REFINED DETECTION: 
-      // If we got fewer than 5 contacts, or 0, it's definitely the end.
-      // In your logs, 12 was returned, so we'll allow that but stop if it ever drops.
-      if (newCount == 0) {
-        _hasMore = false;
-      } else if (newCount < 5) {
-        _hasMore = false;
-      } else if (newCount < requestedPerPage && requestedPerPage > 20) {
-        // If we asked for 100 and got 12, the server likely has a limit of 12.
-        // We'll continue for now, but we can't be sure if there's more.
-        // Let's assume there's more if newCount is consistent.
-        _hasMore = true; 
-      } else {
-        _hasMore = newCount > 0;
       }
     }
 

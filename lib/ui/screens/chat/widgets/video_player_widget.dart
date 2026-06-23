@@ -105,12 +105,14 @@ class VideoBubblePreview extends StatefulWidget {
   final String videoUrl;
   final bool isMe;
   final VoidCallback onTap;
+  final bool isFullWidth;
 
   const VideoBubblePreview({
     super.key,
     required this.videoUrl,
     required this.isMe,
     required this.onTap,
+    this.isFullWidth = false,
   });
 
   @override
@@ -178,10 +180,10 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
       child: GestureDetector(
         onTap: _hasError ? _initController : widget.onTap,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(8.r),
+          borderRadius: BorderRadius.circular(widget.isFullWidth ? 0 : 8.r),
           child: Container(
-            width: 200.w,
-            height: 150.h,
+            width: widget.isFullWidth ? 1.sw : 200.w,
+            height: widget.isFullWidth ? 1.sh : 150.h,
             color: Colors.black,
             child: Stack(
               alignment: Alignment.center,
@@ -189,7 +191,7 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
                 if (_isInitialized && _controller != null)
                   SizedBox.expand(
                     child: FittedBox(
-                      fit: BoxFit.cover,
+                      fit: widget.isFullWidth ? BoxFit.contain : BoxFit.cover,
                       child: SizedBox(
                         width: _controller!.value.size.width,
                         height: _controller!.value.size.height,
@@ -213,14 +215,18 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
                 if (_isInitialized)
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.3),
+                      color: widget.isFullWidth ? Colors.black45 : Colors.black.withOpacity(0.3),
                       shape: BoxShape.circle,
                     ),
-                    padding: EdgeInsets.all(8.w),
-                    child: Icon(Icons.play_arrow, color: Colors.white, size: 40.sp),
+                    padding: EdgeInsets.all(widget.isFullWidth ? 16.w : 8.w),
+                    child: Icon(
+                      Icons.play_arrow, 
+                      color: Colors.white, 
+                      size: widget.isFullWidth ? 48.sp : 40.sp
+                    ),
                   ),
                 
-                if (_isInitialized && _controller != null)
+                if (_isInitialized && _controller != null && !widget.isFullWidth)
                   Positioned(
                     bottom: 8.h,
                     left: 8.w,

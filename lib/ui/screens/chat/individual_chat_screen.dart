@@ -262,7 +262,32 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   Future<void> _handleCamera() async {
     final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-    if (photo != null) _sendImage(photo.path);
+    if (photo != null) _showMediaPreview(photo.path, 'image');
+  }
+
+  Future<void> _handleVideoCamera() async {
+    final XFile? video = await _picker.pickVideo(source: ImageSource.camera);
+    if (video != null) _showMediaPreview(video.path, 'video');
+  }
+
+  Future<void> _showMediaPreview(String path, String type) async {
+    final bool? shouldSend = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black,
+      builder: (context) => MediaSendPreview(
+        path: path,
+        type: type,
+        onSend: () => Navigator.pop(context, true),
+        onCancel: () => Navigator.pop(context, false),
+      ),
+    );
+
+    if (shouldSend == true && mounted) {
+      if (type == 'image') _sendImage(path);
+      else if (type == 'video') _sendVideo(path);
+      else if (type == 'document') _sendDocument(path);
+    }
   }
 
   Future<void> _handleAttachment() async {
@@ -293,7 +318,10 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                   }
                 }),
                 _buildAttachmentOption(Icons.insert_drive_file, "Document", Colors.blue, () async {
-                  FilePickerResult? res = await FilePicker.platform.pickFiles();
+                  FilePickerResult? res = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'zip'],
+                  );
                   if (res != null && mounted) {
                     Navigator.pop(context, 'file:${res.files.single.path}');
                   }
@@ -307,11 +335,11 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
     if (result != null) {
       if (result.startsWith('image:')) {
-        _sendImage(result.substring(6));
+        _showMediaPreview(result.substring(6), 'image');
       } else if (result.startsWith('video:')) {
-        _sendVideo(result.substring(6));
+        _showMediaPreview(result.substring(6), 'video');
       } else if (result.startsWith('file:')) {
-        _sendDocument(result.substring(5));
+        _showMediaPreview(result.substring(5), 'document');
       }
     }
   }
@@ -536,6 +564,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                       showEmoji: _showEmoji,
                       onAttachment: _handleAttachment,
                       onCamera: _handleCamera,
+                      onVideoCamera: _handleVideoCamera,
                       onSend: _handleSend,
                       replyingTo: _replyingTo,
                       onCancelReply: () => setState(() => _replyingTo = null),
@@ -934,6 +963,296 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   }
 }
 
+class MediaSendPreview extends StatefulWidget {
+  final String path;
+  final String type;
+  final VoidCallback onSend;
+  final VoidCallback onCancel;
+
+  const MediaSendPreview({
+    super.key,
+    required this.path,
+    required this.type,
+    required this.onSend,
+    required this.onCancel,
+  });
+
+  @override
+  State<MediaSendPreview> createState() => _MediaSendPreviewState();
+}
+
+class _MediaSendPreviewState extends State<MediaSendPreview> {
+  final TextEditingController _captionController = TextEditingController();
+
+  @override
+  void dispose() {
+    _captionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // 1. Background Content (Image/Video)
+          Positioned.fill(
+            child: _buildPreview(),
+          ),
+
+          // 2. Top Bar
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 10.h, bottom: 10.h),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.w),
+                    child: Row(
+                      children: [
+                        _buildTopIconButton(Icons.close, widget.onCancel),
+                        const Spacer(),
+                        _buildTopIconButton(Icons.download, () {}),
+                        _buildTopIconButton(Icons.hd_outlined, () {}),
+                        _buildTopIconButton(Icons.sentiment_satisfied_alt_outlined, () {}),
+                        _buildTopIconButton(Icons.title, () {}),
+                        _buildTopIconButton(Icons.edit_outlined, () {}),
+                      ],
+                    ),
+                  ),
+                  if (widget.type == 'video') ...[
+                    SizedBox(height: 10.h),
+                    // Timeline Strip with Handles
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          height: 44.h,
+                          margin: EdgeInsets.symmetric(horizontal: 20.w),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.white, width: 2),
+                            borderRadius: BorderRadius.circular(4.r),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(2.r),
+                            child: Row(
+                              children: List.generate(10, (index) => Expanded(
+                                child: Container(
+                                  color: Colors.grey[800],
+                                  margin: EdgeInsets.symmetric(horizontal: 0.5.w),
+                                  child: Icon(Icons.image, size: 20, color: Colors.white24),
+                                ),
+                              )),
+                            ),
+                          ),
+                        ),
+                        // Left Handle
+                        Positioned(
+                          left: 10.w,
+                          top: 12.h,
+                          child: Container(
+                            width: 12.w,
+                            height: 20.h,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(2.r),
+                            ),
+                          ),
+                        ),
+                        // Right Handle
+                        Positioned(
+                          right: 10.w,
+                          top: 12.h,
+                          child: Container(
+                            width: 12.w,
+                            height: 20.h,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(2.r),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 12.h),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20.w),
+                      child: Row(
+                        children: [
+                          Icon(Icons.volume_up, color: Colors.white, size: 20.sp),
+                          SizedBox(width: 10.w),
+                          FutureBuilder<FileStat>(
+                            future: File(widget.path).stat(),
+                            builder: (context, snapshot) {
+                              String size = "";
+                              if (snapshot.hasData) size = " • ${Helpers.formatFileSize(snapshot.data!.size)}";
+                              return Text(
+                                "0:02$size",
+                                style: TextStyle(
+                                  color: Colors.white, 
+                                  fontSize: 14.sp, 
+                                  fontWeight: FontWeight.w500,
+                                  shadows: [Shadow(color: Colors.black45, blurRadius: 2)]
+                                ),
+                              );
+                            },
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: EdgeInsets.all(4.w),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00A884),
+                              borderRadius: BorderRadius.circular(6.r),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4.r),
+                                  ),
+                                  child: Icon(Icons.videocam, color: Colors.white, size: 18.sp),
+                                ),
+                                SizedBox(width: 4.w),
+                                Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 4.w),
+                                  child: Icon(Icons.grid_view_rounded, color: Colors.white, size: 18.sp),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+
+          // 3. Bottom Input & Send Area
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(16.w, 10.h, 16.w, MediaQuery.of(context).padding.bottom + 10.h),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Colors.black.withValues(alpha: 0.9), Colors.transparent],
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Caption Field
+                  Container(
+                    height: 50.h,
+                    padding: EdgeInsets.symmetric(horizontal: 16.w),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1F2C34),
+                      borderRadius: BorderRadius.circular(25.r),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.add_photo_alternate, color: Colors.white, size: 24.sp),
+                        SizedBox(width: 12.w),
+                        Expanded(
+                          child: TextField(
+                            controller: _captionController,
+                            style: TextStyle(color: Colors.white, fontSize: 16.sp),
+                            decoration: InputDecoration(
+                              hintText: "Add a caption...",
+                              hintStyle: TextStyle(color: Colors.white70, fontSize: 16.sp),
+                              border: InputBorder.none,
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 16.h),
+                  // Footer Row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      GestureDetector(
+                        onTap: widget.onSend,
+                        child: Container(
+                          height: 52.w,
+                          width: 52.w,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF00A884),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.send, color: Colors.white, size: 26),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopIconButton(IconData icon, VoidCallback onTap) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 4.w),
+      child: IconButton(
+        icon: Icon(icon, color: Colors.white, size: 24.sp),
+        onPressed: onTap,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+      ),
+    );
+  }
+
+  Widget _buildPreview() {
+    if (widget.type == 'image') {
+      return InteractiveViewer(child: Image.file(File(widget.path), fit: BoxFit.contain));
+    } else if (widget.type == 'video') {
+      return VideoBubblePreview(
+        videoUrl: widget.path, 
+        isMe: true, 
+        isFullWidth: true,
+        onTap: () {},
+      );
+    } else {
+      final fileName = widget.path.split('/').last;
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.insert_drive_file, size: 100.sp, color: Colors.blue),
+          SizedBox(height: 20.h),
+          Text(fileName, style: TextStyle(color: Colors.white, fontSize: 16.sp), textAlign: TextAlign.center),
+          FutureBuilder<FileStat>(
+            future: File(widget.path).stat(),
+            builder: (context, snapshot) {
+              if (snapshot.hasData) return Text(Helpers.formatFileSize(snapshot.data!.size), style: TextStyle(color: Colors.white70, fontSize: 14.sp));
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
+      );
+    }
+  }
+}
+
 class ChatAppBar extends StatelessWidget {
   final String name;
   final String uid;
@@ -1244,7 +1563,13 @@ class ChatBubble extends StatelessWidget {
 
   Widget _buildStatusIcon(dynamic messageData) {
     final status = (messageData?['status'] ?? '').toString().toLowerCase();
-    if (status == 'sending') return Icon(Icons.access_time, size: 10.sp, color: Colors.grey);
+    if (status == 'sending' || status == 'uploading') {
+      return SizedBox(
+        width: 12.sp,
+        height: 12.sp,
+        child: const CircularProgressIndicator(strokeWidth: 1.5, color: Colors.grey),
+      );
+    }
     Color iconColor = Colors.grey; IconData iconData = Icons.done;
     if (status == 'delivered') iconData = Icons.done_all;
     else if (status == 'sent') iconData = Icons.done;
@@ -1376,25 +1701,33 @@ class ChatBubble extends StatelessWidget {
   Widget _buildImageContent(BuildContext context) {
     final String url = content.toString();
     final bool isLocal = url.startsWith('/') || url.contains('cache/');
+    
     return GestureDetector(
       onTap: () => _openFullscreenMedia(context, url, 'image'),
-      child: ClipRRect(
-          borderRadius: BorderRadius.circular(8.r),
-          child: isLocal
-              ? Image.file(File(url), height: 150.h, width: 200.w, fit: BoxFit.cover)
-              : CachedNetworkImage(
-                  imageUrl: url,
-                  fit: BoxFit.cover,
-                  height: 150.h,
-                  width: 200.w,
-                  placeholder: (context, url) => Container(
-                    height: 150.h,
-                    width: 200.w,
-                    color: Colors.grey[200],
-                    child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                  ),
-                  errorWidget: (context, url, error) => const Icon(Icons.error),
-                )),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          ClipRRect(
+              borderRadius: BorderRadius.circular(8.r),
+              child: isLocal
+                  ? Image.file(File(url), height: 150.h, width: 200.w, fit: BoxFit.cover)
+                  : CachedNetworkImage(
+                      imageUrl: url,
+                      fit: BoxFit.cover,
+                      height: 150.h,
+                      width: 200.w,
+                      placeholder: (context, url) => Container(
+                        height: 150.h,
+                        width: 200.w,
+                        color: Colors.grey[200],
+                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00A884))),
+                      ),
+                      errorWidget: (context, url, error) => const Icon(Icons.error),
+                    )),
+          if (!isLocal && !url.startsWith('http')) 
+            const Icon(Icons.download, color: Colors.white70, size: 30),
+        ],
+      ),
     );
   }
 
@@ -1407,9 +1740,91 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildFileContent() => Container(width: 200.w, padding: EdgeInsets.all(8.w), decoration: BoxDecoration(color: isMe ? const Color(0xFFC3E7B2) : const Color(0xFFF0F2F5), borderRadius: BorderRadius.circular(8.r)), child: Row(children: [const Icon(Icons.insert_drive_file, color: Colors.grey), SizedBox(width: 8.w), Expanded(child: Text(content.toString().split('/').last, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14.sp))), const Icon(Icons.download, color: Colors.grey, size: 20)]));
+  Widget _buildFileContent() {
+    final String path = content.toString();
+    final String fileName = path.split('/').last;
+    final String ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+    
+    IconData iconData = Icons.insert_drive_file;
+    Color iconColor = Colors.grey;
+    
+    if (ext == 'pdf') { iconData = Icons.picture_as_pdf; iconColor = Colors.red; }
+    else if (['doc', 'docx'].contains(ext)) { iconData = Icons.description; iconColor = Colors.blue; }
+    else if (['xls', 'xlsx'].contains(ext)) { iconData = Icons.table_chart; iconColor = Colors.green; }
+    else if (['ppt', 'pptx'].contains(ext)) { iconData = Icons.slideshow; iconColor = Colors.orange; }
+    else if (ext == 'zip') { iconData = Icons.archive; iconColor = Colors.brown; }
+    else if (ext == 'txt') { iconData = Icons.text_snippet; iconColor = Colors.blueGrey; }
 
-  void _openFullscreenMedia(BuildContext context, String url, String type) {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        double downloadProgress = 0;
+        bool isDownloading = false;
+
+        return GestureDetector(
+          onTap: isDownloading ? null : () async {
+            setState(() => isDownloading = true);
+            await Helpers.openFile(
+              urlOrPath: path,
+              fileName: fileName,
+              onProgress: (p) => setState(() => downloadProgress = p),
+            );
+            if (context.mounted) setState(() => isDownloading = false);
+          },
+          child: Container(
+            width: 220.w,
+            padding: EdgeInsets.all(8.w),
+            decoration: BoxDecoration(
+              color: isMe ? const Color(0xFFC3E7B2) : const Color(0xFFF0F2F5),
+              borderRadius: BorderRadius.circular(8.r),
+            ),
+            child: Row(
+              children: [
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(iconData, color: iconColor, size: 30.sp),
+                    if (isDownloading)
+                      SizedBox(
+                        width: 30.sp,
+                        height: 30.sp,
+                        child: CircularProgressIndicator(
+                          value: downloadProgress > 0 ? downloadProgress : null,
+                          strokeWidth: 2,
+                          color: const Color(0xFF00A884),
+                        ),
+                      ),
+                  ],
+                ),
+                SizedBox(width: 8.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        isDownloading 
+                          ? "${(downloadProgress * 100).toInt()}%" 
+                          : ext.toUpperCase(),
+                        style: TextStyle(fontSize: 10.sp, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.open_in_new, color: Colors.grey, size: 20.sp),
+              ],
+            ),
+          ),
+        );
+      }
+    );
+  }
+
+  void _openFullscreenMedia(BuildContext context, String url, String type) async {
     if (type == 'video') {
       Navigator.push(
         context,
@@ -1419,16 +1834,92 @@ class ChatBubble extends StatelessWidget {
       );
       return;
     }
-    final bool isLocal = url.startsWith('/') || url.contains('cache/');
-    showDialog(
+
+    if (type == 'image') {
+      showDialog(
         context: context,
-        builder: (context) => Dialog(
-            backgroundColor: Colors.black,
-            insetPadding: EdgeInsets.zero,
-            child: Stack(children: [
-              Center(child: InteractiveViewer(child: isLocal ? Image.file(File(url)) : CachedNetworkImage(imageUrl: url, placeholder: (context, url) => const CircularProgressIndicator(), errorWidget: (context, url, error) => const Icon(Icons.error)))),
-              Positioned(top: 40.h, right: 20.w, child: IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 30), onPressed: () => Navigator.pop(context)))
-            ])));
+        builder: (context) => _ImageGalleryViewer(url: url),
+      );
+      return;
+    }
+    
+    // Fallback for other types
+    Helpers.openFile(urlOrPath: url);
+  }
+}
+
+class _ImageGalleryViewer extends StatefulWidget {
+  final String url;
+  const _ImageGalleryViewer({required this.url});
+
+  @override
+  State<_ImageGalleryViewer> createState() => _ImageGalleryViewerState();
+}
+
+class _ImageGalleryViewerState extends State<_ImageGalleryViewer> {
+  bool _isDownloading = false;
+  double _progress = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isLocal = widget.url.startsWith('/') || widget.url.contains('cache/');
+    
+    return Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: EdgeInsets.zero,
+      child: Stack(
+        children: [
+          Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: isLocal 
+                ? Image.file(File(widget.url)) 
+                : CachedNetworkImage(
+                    imageUrl: widget.url, 
+                    placeholder: (context, url) => const CircularProgressIndicator(color: Color(0xFF00A884)),
+                    errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.white),
+                  ),
+            ),
+          ),
+          Positioned(
+            top: 40.h, 
+            left: 10.w,
+            right: 10.w,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 30), 
+                  onPressed: () => Navigator.pop(context)
+                ),
+                IconButton(
+                  icon: _isDownloading 
+                    ? SizedBox(
+                        width: 24.w, 
+                        height: 24.w, 
+                        child: CircularProgressIndicator(
+                          value: _progress > 0 ? _progress : null, 
+                          strokeWidth: 2, 
+                          color: Colors.white
+                        )
+                      )
+                    : const Icon(Icons.download, color: Colors.white, size: 30),
+                  onPressed: _isDownloading ? null : () async {
+                    setState(() => _isDownloading = true);
+                    await Helpers.openFile(
+                      urlOrPath: widget.url,
+                      onProgress: (p) => setState(() => _progress = p),
+                    );
+                    if (mounted) setState(() => _isDownloading = false);
+                  },
+                ),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
   }
 }
 
@@ -1476,7 +1967,7 @@ class ChatInputBar extends StatefulWidget {
   final bool showEmoji;
   final RecordingState recordingState;
   final int recordDuration;
-  final VoidCallback onAttachment, onCamera, onSend, onCancelReply, onStartRecording, onCancelRecording, onLockRecording, onSendVoice, onEmojiToggle;
+  final VoidCallback onAttachment, onCamera, onVideoCamera, onSend, onCancelReply, onStartRecording, onCancelRecording, onLockRecording, onSendVoice, onEmojiToggle;
   final Function({bool sendImmediately}) onStopRecording;
   final Map<String, dynamic>? replyingTo;
   final RecorderController recorderController;
@@ -1491,6 +1982,7 @@ class ChatInputBar extends StatefulWidget {
     required this.showEmoji,
     required this.onAttachment, 
     required this.onCamera, 
+    required this.onVideoCamera,
     required this.onSend, 
     this.replyingTo, 
     required this.onCancelReply, 
@@ -1650,8 +2142,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
           )
         ),
         IconButton(onPressed: widget.onAttachment, icon: Transform.rotate(angle: -0.7, child: const Icon(Icons.attach_file, color: Color(0xFF8696A0)))),
-        if (!widget.isTyping)
-          IconButton(onPressed: widget.onCamera, icon: const Icon(Icons.camera_alt, color: Color(0xFF8696A0))),
+        if (!widget.isTyping) ...[
+          IconButton(onPressed: widget.onVideoCamera, icon: const Icon(Icons.videocam_outlined, color: Color(0xFF8696A0))),
+          IconButton(onPressed: widget.onCamera, icon: const Icon(Icons.camera_alt_outlined, color: Color(0xFF8696A0))),
+        ],
       ],
     );
   }
