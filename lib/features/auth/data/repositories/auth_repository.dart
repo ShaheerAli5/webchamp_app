@@ -201,16 +201,36 @@ class AuthRepository {
     return await _storageService.getToken();
   }
 
-  Future<void> saveCredentials(String email, String password) async {
-    await _storageService.saveCredentials(email, password);
+  Future<List<Map<String, dynamic>>> getSavedAccounts() async {
+    return await _storageService.getSavedAccounts();
   }
 
-  Future<Map<String, String?>> getSavedCredentials() async {
-    return await _storageService.getCredentials();
+  Future<void> saveAccount(Map<String, dynamic> userData, {String? password}) async {
+    await _storageService.saveAccount(userData, password: password);
   }
 
-  Future<void> clearSavedCredentials() async {
-    await _storageService.clearCredentials();
+  Future<void> removeAccount(String id) async {
+    await _storageService.removeAccount(id);
+  }
+
+  Future<String?> getAccountPassword(String email) async {
+    return await _storageService.getAccountPassword(email);
+  }
+
+  Future<void> setActiveAccount(String id) async {
+    await _storageService.setActiveAccountId(id);
+  }
+
+  Future<Map<String, String>?> getRememberMe() async {
+    return await _storageService.getRememberMe();
+  }
+
+  Future<void> clearRememberMe() async {
+    await _storageService.clearRememberMe();
+  }
+
+  Future<void> saveRememberMe(String email, String password) async {
+    await _storageService.saveRememberMe(email, password);
   }
 
   Future<void> logout() async {

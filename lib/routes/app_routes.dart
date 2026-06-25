@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import '../ui/screens/auth/login_screen.dart';
 import '../ui/screens/auth/signup_screen.dart';
 import '../ui/screens/auth/forgot_password_screen.dart';
+import '../ui/screens/auth/account_switcher_screen.dart';
 import '../ui/screens/auth/verify_email_screen.dart';
 import '../ui/screens/auth/reset_password_screen.dart';
 import '../ui/screens/main_screen.dart';
@@ -48,6 +49,7 @@ class AppRoutes {
   static const String more = '/more';
   
   static const String login = '/login';
+  static const String accountSwitcher = '/account-switcher';
   static const String signup = '/signup';
   static const String forgotPassword = '/forgot-password';
   static const String verifyEmail = '/verify-email';
@@ -89,10 +91,14 @@ class AppRoutes {
       refreshListenable: authProvider,
       redirect: (context, state) {
         final isLoggedIn = authProvider.isLoggedIn;
-        final isAuthRoute = state.matchedLocation == login || state.matchedLocation == signup || state.matchedLocation == forgotPassword;
+        final hasSavedAccounts = authProvider.savedAccounts.isNotEmpty;
+        final isAuthRoute = state.matchedLocation == login || 
+                           state.matchedLocation == signup || 
+                           state.matchedLocation == forgotPassword ||
+                           state.matchedLocation == accountSwitcher;
 
         if (!isLoggedIn && !isAuthRoute) {
-          return login;
+          return hasSavedAccounts ? accountSwitcher : login;
         }
         if (isLoggedIn && isAuthRoute) {
           return home;
@@ -100,6 +106,10 @@ class AppRoutes {
         return null;
       },
       routes: [
+        GoRoute(
+          path: accountSwitcher,
+          builder: (context, state) => const AccountSwitcherScreen(),
+        ),
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
             return MainScreen(navigationShell: navigationShell);

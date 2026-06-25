@@ -45,6 +45,8 @@ dependencies:
   open_filex: ^4.5.0
   device_info_plus: ^11.1.0
   video_thumbnail: ^0.5.6
+  pdf: ^3.11.1
+  local_auth: ^2.3.0
 
 dev_dependencies:
   flutter_test:

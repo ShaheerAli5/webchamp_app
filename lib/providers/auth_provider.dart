@@ -25,6 +25,9 @@ class AuthProvider extends ChangeNotifier {
   String? _savedPassword;
   String? get savedPassword => _savedPassword;
 
+  List<Map<String, dynamic>> _savedAccounts = [];
+  List<Map<String, dynamic>> get savedAccounts => _savedAccounts;
+
   UserModel? _user;
   UserModel? get user => _user;
 
@@ -35,15 +38,19 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // Load Remember Me state and saved credentials
+    // Load Remember Me state
     final prefs = await SharedPreferences.getInstance();
     _rememberMe = prefs.getBool('remember_me') ?? false;
 
     if (_rememberMe) {
-      final creds = await _authRepository.getSavedCredentials();
-      _savedEmail = creds['email'];
-      _savedPassword = creds['password'];
+      final creds = await _authRepository.getRememberMe();
+      if (creds != null) {
+        _savedEmail = creds['email'];
+        _savedPassword = creds['password'];
+      }
     }
+
+    await loadSavedAccounts();
 
     _user = await _authRepository.getSavedUser();
     _isLoggedIn = _user != null;
@@ -59,19 +66,40 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> loadSavedAccounts() async {
+    _savedAccounts = await _authRepository.getSavedAccounts();
+    notifyListeners();
+  }
+
+  Future<void> saveCurrentAccount({String? password}) async {
+    if (_user != null) {
+      await _authRepository.saveAccount(_user!.toJson(), password: password);
+      await loadSavedAccounts();
+    }
+  }
+
+  Future<void> removeSavedAccount(String id) async {
+    await _authRepository.removeAccount(id);
+    await loadSavedAccounts();
+  }
+
+  Future<String?> getSavedPassword(String email) async {
+    return await _authRepository.getAccountPassword(email);
+  }
+
   void setRememberMe(bool value) async {
     _rememberMe = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('remember_me', value);
     if (!value) {
-      await _authRepository.clearSavedCredentials();
+      await _authRepository.clearRememberMe();
       _savedEmail = null;
       _savedPassword = null;
     }
     notifyListeners();
   }
 
-  Future<bool> login(String email, String password) async {
+  Future<bool> login(String email, String password, {bool saveAccount = false}) async {
     debugPrint('=== PROVIDER LOGIN START ===');
     _isLoading = true;
     _errorMessage = null;
@@ -83,15 +111,14 @@ class AuthProvider extends ChangeNotifier {
       _isLoggedIn = _user != null;
       debugPrint('Provider Login Success: $_isLoggedIn');
       if (_user != null) {
-        // Save credentials if Remember Me is enabled
+        if (saveAccount) {
+          await saveCurrentAccount(password: password);
+        }
+
         if (_rememberMe) {
-          await _authRepository.saveCredentials(email, password);
           _savedEmail = email;
           _savedPassword = password;
-        } else {
-          await _authRepository.clearSavedCredentials();
-          _savedEmail = null;
-          _savedPassword = null;
+          await _authRepository.saveRememberMe(email, password);
         }
 
         debugPrint('User Email: ${_user!.email}');
@@ -132,8 +159,6 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      debugPrint('Registering with params: $firstName, $lastName, $email, $username, $mobileNumber, $vendorTitle, $passwordConfirmation, $termsAndConditions');
-
       final response = await _authRepository.registerVendor(
         firstName: firstName,
         lastName: lastName,
@@ -145,7 +170,6 @@ class AuthProvider extends ChangeNotifier {
         passwordConfirmation: passwordConfirmation,
         termsAndConditions: termsAndConditions,
       );
-      debugPrint('Registration Response: $response');
       _isLoading = false;
       notifyListeners();
       return response;
@@ -209,4 +233,3 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 }
-

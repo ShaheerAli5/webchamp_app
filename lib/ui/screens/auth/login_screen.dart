@@ -188,7 +188,27 @@ class _LoginScreenState extends State<LoginScreen> {
                                 
                                 if (context.mounted) {
                                   if (success) {
-                                    context.go('/');
+                                    final bool alreadySaved = auth.savedAccounts.any((a) => a['email'] == _emailController.text.trim().toLowerCase());
+                                    
+                                    if (!alreadySaved) {
+                                      final bool? save = await showDialog<bool>(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          title: const Text('Save Account?'),
+                                          content: const Text('Would you like to save this account for instant one-tap login later?'),
+                                          actions: [
+                                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('NOT NOW')),
+                                            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('SAVE')),
+                                          ],
+                                        ),
+                                      );
+                                      
+                                      if (save == true) {
+                                        await auth.saveCurrentAccount(password: _passwordController.text);
+                                      }
+                                    }
+                                    
+                                    if (context.mounted) context.go('/');
                                   } else {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(content: Text(auth.errorMessage ?? 'Login failed')),

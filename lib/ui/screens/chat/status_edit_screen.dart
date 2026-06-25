@@ -7,12 +7,15 @@ import 'package:video_player/video_player.dart';
 import 'package:iconsax_flutter/iconsax_flutter.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:intl/intl.dart';
 import '../../../core/utils/helpers.dart';
 
 class StatusEditScreen extends StatefulWidget {
   final String path;
   final String type;
-  final Function(String caption) onSend;
+  final Function(String caption, {String? newPath, String? newType}) onSend;
 
   const StatusEditScreen({
     super.key,
@@ -33,6 +36,7 @@ class _StatusEditScreenState extends State<StatusEditScreen>
 
   bool _isInitialized = false;
   bool _isPlaying = false;
+  bool _sendAsDocument = false;
   double _rotationDeg = 0.0;
   List<String> _thumbnails = [];
 
@@ -296,16 +300,58 @@ class _StatusEditScreenState extends State<StatusEditScreen>
           child: !_isInitialized
               ? CircularProgressIndicator(color: _waGreen, strokeWidth: 2.w)
               : Transform.rotate(
-            angle: _rotationDeg * (3.14159265 / 180),
-            child: widget.type == 'video'
-                ? AspectRatio(
-              aspectRatio: _controller.value.aspectRatio,
-              child: VideoPlayer(_controller),
-            )
-                : Image.file(File(widget.path), fit: BoxFit.contain),
-          ),
+                  angle: _rotationDeg * (3.14159265 / 180),
+                  child: widget.type == 'video'
+                      ? AspectRatio(
+                          aspectRatio: _controller.value.aspectRatio,
+                          child: VideoPlayer(_controller),
+                        )
+                      : (widget.type == 'image'
+                          ? Image.file(
+                              File(widget.path),
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) => _buildDocumentPreview(),
+                            )
+                          : _buildDocumentPreview()),
+                ),
         ),
       ),
+    );
+  }
+
+  Widget _buildDocumentPreview() {
+    final fileName = widget.path.split('/').last;
+    final extension = fileName.split('.').last.toUpperCase();
+    
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.insert_drive_file, size: 80.sp, color: Colors.blue),
+        SizedBox(height: 20.h),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 40.w),
+          child: Text(
+            fileName,
+            style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        SizedBox(height: 8.h),
+        FutureBuilder<FileStat>(
+          future: File(widget.path).stat(),
+          builder: (context, snapshot) {
+            if (snapshot.hasData) {
+              return Text(
+                "$extension • ${Helpers.formatFileSize(snapshot.data!.size)}",
+                style: TextStyle(color: _textMuted, fontSize: 14.sp),
+              );
+            }
+            return const SizedBox.shrink();
+          },
+        ),
+      ],
     );
   }
 
@@ -351,30 +397,30 @@ class _StatusEditScreenState extends State<StatusEditScreen>
         padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
         child: Row(
           children: [
-            _circleBtn(Icons.arrow_back_ios_new_rounded, () => Navigator.pop(context)),
-            SizedBox(width: 6.w),
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                child: Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _topPill(Icons.hd_outlined, 'HD', () => _snack('HD quality enabled')),
-                      SizedBox(width: 6.w),
-                      _topPill(Icons.emoji_emotions_outlined, 'Emoji', () => _snack('Emoji')),
-                      SizedBox(width: 6.w),
-                      _topPill(Icons.title_rounded, 'Title', () => _captionFocusNode.requestFocus()),
-                      SizedBox(width: 6.w),
-                      _topPill(Icons.music_note_rounded, 'Music', () => _snack('Music — coming soon')),
-                    ],
-                  ),
-                ),
+            _circleBtn(Icons.close_rounded, () => Navigator.pop(context)),
+            const Spacer(),
+            if (widget.type == 'image')
+              _topPill(
+                _sendAsDocument ? Icons.description : Icons.image,
+                _sendAsDocument ? 'Send as PDF' : 'Send as Image',
+                () => setState(() => _sendAsDocument = !_sendAsDocument),
+                active: _sendAsDocument,
               ),
+            SizedBox(width: 8.w),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _circleBtn(Icons.download_rounded, () => _snack('Saved to gallery')),
+                SizedBox(width: 8.w),
+                _circleBtn(Icons.hd_outlined, () => _snack('HD quality enabled')),
+                SizedBox(width: 8.w),
+                _circleBtn(Icons.emoji_emotions_outlined, () => _snack('Emoji')),
+                SizedBox(width: 8.w),
+                _circleBtn(Icons.title_rounded, () => _captionFocusNode.requestFocus()),
+                SizedBox(width: 8.w),
+                _circleBtn(Icons.edit_outlined, () => _snack('Draw mode enabled')),
+              ],
             ),
-            SizedBox(width: 6.w),
-            _exportBtn(),
           ],
         ),
       ),
@@ -385,34 +431,33 @@ class _StatusEditScreenState extends State<StatusEditScreen>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 38.w,
-        height: 38.w,
+        width: 34.w,
+        height: 34.w,
         decoration: BoxDecoration(
           color: Colors.black38,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white24),
         ),
-        child: Icon(icon, color: _textPrimary, size: 18.sp),
+        child: Icon(icon, color: Colors.white, size: 20.sp),
       ),
     );
   }
 
-  Widget _topPill(IconData icon, String label, VoidCallback onTap) {
+  Widget _topPill(IconData icon, String label, VoidCallback onTap, {bool active = false}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
         decoration: BoxDecoration(
-          color: Colors.black38,
+          color: active ? _waGreen.withOpacity(0.2) : Colors.black38,
           borderRadius: BorderRadius.circular(20.r),
-          border: Border.all(color: Colors.white),
+          border: Border.all(color: active ? _waGreen : Colors.white),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: _textPrimary, size: 15.sp),
+            Icon(icon, color: active ? _waGreen : Colors.white, size: 15.sp),
             SizedBox(width: 4.w),
-            Text(label, style: TextStyle(color: _textPrimary, fontSize: 11.sp, fontWeight: FontWeight.w500)),
+            Text(label, style: TextStyle(color: active ? _waGreen : Colors.white, fontSize: 11.sp, fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -718,7 +763,14 @@ class _StatusEditScreenState extends State<StatusEditScreen>
           onTapDown: (_) => _sendAnimCtrl.forward(),
           onTapUp:   (_) => _sendAnimCtrl.reverse(),
           onTapCancel: ()  => _sendAnimCtrl.reverse(),
-          onTap: () => widget.onSend(_captionController.text),
+          onTap: () async {
+            if (_sendAsDocument && widget.type == 'image') {
+              final pdfPath = await _convertToPdf(widget.path);
+              widget.onSend(_captionController.text, newPath: pdfPath, newType: 'document');
+            } else {
+              widget.onSend(_captionController.text);
+            }
+          },
           child: ScaleTransition(
             scale: _sendScale,
             child: Container(
@@ -742,6 +794,26 @@ class _StatusEditScreenState extends State<StatusEditScreen>
         ),
       ],
     );
+  }
+
+  Future<String> _convertToPdf(String imagePath) async {
+    _flashTool('Generating PDF...');
+    final pdf = pw.Document();
+    final image = pw.MemoryImage(File(imagePath).readAsBytesSync());
+
+    pdf.addPage(pw.Page(
+      build: (pw.Context context) {
+        return pw.Center(
+          child: pw.Image(image),
+        );
+      },
+    ));
+
+    final output = await getTemporaryDirectory();
+    final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    final file = File("${output.path}/Image_$timestamp.pdf");
+    await file.writeAsBytes(await pdf.save());
+    return file.path;
   }
 }
 

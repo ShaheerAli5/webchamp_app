@@ -278,8 +278,10 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         builder: (context) => StatusEditScreen(
           path: path,
           type: type,
-          onSend: (caption) {
+          onSend: (caption, {newPath, newType}) {
             _messageController.text = caption;
+            if (newPath != null) path = newPath;
+            if (newType != null) type = newType;
             Navigator.pop(context, true);
           },
         ),
