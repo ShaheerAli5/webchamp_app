@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../features/auth/data/models/user_model.dart';
 import '../features/auth/data/repositories/auth_repository.dart';
 
@@ -15,6 +16,15 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoggedIn = false;
   bool get isLoggedIn => _isLoggedIn;
 
+  bool _rememberMe = false;
+  bool get rememberMe => _rememberMe;
+
+  String? _savedEmail;
+  String? get savedEmail => _savedEmail;
+
+  String? _savedPassword;
+  String? get savedPassword => _savedPassword;
+
   UserModel? _user;
   UserModel? get user => _user;
 
@@ -24,6 +34,16 @@ class AuthProvider extends ChangeNotifier {
   Future<void> checkAuthStatus() async {
     _isLoading = true;
     notifyListeners();
+
+    // Load Remember Me state and saved credentials
+    final prefs = await SharedPreferences.getInstance();
+    _rememberMe = prefs.getBool('remember_me') ?? false;
+
+    if (_rememberMe) {
+      final creds = await _authRepository.getSavedCredentials();
+      _savedEmail = creds['email'];
+      _savedPassword = creds['password'];
+    }
 
     _user = await _authRepository.getSavedUser();
     _isLoggedIn = _user != null;
@@ -39,6 +59,18 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setRememberMe(bool value) async {
+    _rememberMe = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('remember_me', value);
+    if (!value) {
+      await _authRepository.clearSavedCredentials();
+      _savedEmail = null;
+      _savedPassword = null;
+    }
+    notifyListeners();
+  }
+
   Future<bool> login(String email, String password) async {
     debugPrint('=== PROVIDER LOGIN START ===');
     _isLoading = true;
@@ -51,6 +83,17 @@ class AuthProvider extends ChangeNotifier {
       _isLoggedIn = _user != null;
       debugPrint('Provider Login Success: $_isLoggedIn');
       if (_user != null) {
+        // Save credentials if Remember Me is enabled
+        if (_rememberMe) {
+          await _authRepository.saveCredentials(email, password);
+          _savedEmail = email;
+          _savedPassword = password;
+        } else {
+          await _authRepository.clearSavedCredentials();
+          _savedEmail = null;
+          _savedPassword = null;
+        }
+
         debugPrint('User Email: ${_user!.email}');
         debugPrint('User ID: ${_user!.id}');
         final token = await _authRepository.getToken();

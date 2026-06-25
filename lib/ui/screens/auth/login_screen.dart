@@ -19,6 +19,18 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider>();
+      if (auth.rememberMe) {
+        _emailController.text = auth.savedEmail ?? '';
+        _passwordController.text = auth.savedPassword ?? '';
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
@@ -109,19 +121,49 @@ class _LoginScreenState extends State<LoginScreen> {
                         onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
                       ),
                       
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: GestureDetector(
-                          onTap: () => context.push(AppRoutes.forgotPassword),
-                          child: Text(
-                            'Forgot password?',
-                            style: TextStyle(
-                              fontSize: 13.sp,
-                              color: const Color(0xFF007176),
-                              fontWeight: FontWeight.w500,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Consumer<AuthProvider>(
+                            builder: (context, auth, child) {
+                              return Row(
+                                children: [
+                                  SizedBox(
+                                    height: 24.w,
+                                    width: 24.w,
+                                    child: Checkbox(
+                                      value: auth.rememberMe,
+                                      onChanged: (value) => auth.setRememberMe(value ?? false),
+                                      activeColor: const Color(0xFF007176),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(4.r),
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(width: 8.w),
+                                  Text(
+                                    'Remember me',
+                                    style: TextStyle(
+                                      fontSize: 13.sp,
+                                      color: const Color(0xFF475467),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                          GestureDetector(
+                            onTap: () => context.push(AppRoutes.forgotPassword),
+                            child: Text(
+                              'Forgot password?',
+                              style: TextStyle(
+                                fontSize: 13.sp,
+                                color: const Color(0xFF007176),
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
                       
                       SizedBox(height: 32.h),

@@ -201,14 +201,26 @@ class AuthRepository {
     return await _storageService.getToken();
   }
 
+  Future<void> saveCredentials(String email, String password) async {
+    await _storageService.saveCredentials(email, password);
+  }
+
+  Future<Map<String, String?>> getSavedCredentials() async {
+    return await _storageService.getCredentials();
+  }
+
+  Future<void> clearSavedCredentials() async {
+    await _storageService.clearCredentials();
+  }
+
   Future<void> logout() async {
     try {
       await _apiService.logout();
     } catch (e) {
       debugPrint('Logout API error: $e');
     } finally {
-      // Always clear local storage even if API fails
-      await _storageService.clearAll();
+      // Clear local auth data but preserve saved credentials if they exist
+      await _storageService.clearAuthData();
     }
   }
 

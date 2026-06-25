@@ -25,6 +25,7 @@ import '../../../core/utils/helpers.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
 import 'widgets/voice_message_bubble.dart';
 import 'widgets/video_player_widget.dart';
+import 'status_edit_screen.dart';
 
 enum RecordingState { idle, recording, locked, preview }
 
@@ -271,15 +272,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   }
 
   Future<void> _showMediaPreview(String path, String type) async {
-    final bool? shouldSend = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.black,
-      builder: (context) => MediaSendPreview(
-        path: path,
-        type: type,
-        onSend: () => Navigator.pop(context, true),
-        onCancel: () => Navigator.pop(context, false),
+    final bool? shouldSend = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => StatusEditScreen(
+          path: path,
+          type: type,
+          onSend: (caption) {
+            _messageController.text = caption;
+            Navigator.pop(context, true);
+          },
+        ),
       ),
     );
 
