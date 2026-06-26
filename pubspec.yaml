@@ -41,12 +41,17 @@ dependencies:
   video_player: ^2.8.0
   chewie: ^1.7.0
   visibility_detector: ^0.4.0+2
-  emoji_picker_flutter: ^3.0.0
+  emoji_picker_flutter: ^4.0.1
   open_filex: ^4.5.0
   device_info_plus: ^11.1.0
   video_thumbnail: ^0.5.6
   pdf: ^3.11.1
   local_auth: ^2.3.0
+  photo_manager: ^3.3.0
+  flutter_image_compress: ^2.3.0
+  video_compress: ^3.1.2
+  flutter_riverpod: ^2.5.1
+  image_cropper: ^8.0.2
 
 dev_dependencies:
   flutter_test:
