@@ -6,6 +6,7 @@ import 'core/theme/app_theme.dart';
 import 'core/network/api_client.dart';
 import 'core/storage/secure_storage_service.dart';
 import 'features/auth/data/services/auth_api_service.dart';
+import 'features/auth/data/services/multi_account_service.dart';
 import 'features/auth/data/repositories/auth_repository.dart';
 import 'providers/auth_provider.dart';
 import 'features/contacts/data/services/contact_api_service.dart';
@@ -18,9 +19,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   final secureStorage = SecureStorageService();
+  final multiAccountService = MultiAccountService(secureStorage);
   final apiClient = ApiClient(secureStorage);
   final authService = AuthApiService(apiClient);
-  final authRepository = AuthRepository(authService, secureStorage);
+  final authRepository = AuthRepository(authService, secureStorage, multiAccountService);
   final authProvider = AuthProvider(authRepository);
 
   final contactService = ContactApiService(apiClient);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../features/auth/data/models/user_model.dart';
+import '../features/auth/data/models/saved_account_model.dart';
 import '../features/auth/data/repositories/auth_repository.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -25,8 +26,8 @@ class AuthProvider extends ChangeNotifier {
   String? _savedPassword;
   String? get savedPassword => _savedPassword;
 
-  List<Map<String, dynamic>> _savedAccounts = [];
-  List<Map<String, dynamic>> get savedAccounts => _savedAccounts;
+  List<SavedAccountModel> _savedAccounts = [];
+  List<SavedAccountModel> get savedAccounts => _savedAccounts;
 
   UserModel? _user;
   UserModel? get user => _user;
@@ -71,20 +72,64 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> saveCurrentAccount({String? password}) async {
+  Future<void> saveCurrentAccount() async {
     if (_user != null) {
-      await _authRepository.saveAccount(_user!.toJson(), password: password);
-      await loadSavedAccounts();
+      final token = await _authRepository.getToken();
+      if (token != null) {
+        await _authRepository.saveAccount(_user!.toJson(), token: token);
+        await loadSavedAccounts();
+      }
+    }
+  }
+
+  Future<void> switchAccount(String userId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    
+    try {
+      final account = _savedAccounts.firstWhere((a) => a.userId == userId);
+      
+      // 1. Try to switch using current token
+      await _authRepository.switchAccount(userId);
+      
+      // 2. Validate token
+      final isValid = await _authRepository.validateToken(account.accessToken);
+      
+      if (isValid == null) {
+        // 3. Token expired, try refresh
+        if (account.refreshToken != null) {
+          final newToken = await _authRepository.refreshAccessToken(account.refreshToken!);
+          if (newToken != null) {
+            await _authRepository.saveAccount(
+              account.userData, 
+              token: newToken, 
+              refreshToken: account.refreshToken
+            );
+            await _authRepository.switchAccount(userId);
+          } else {
+            await _authRepository.markAsNeedsReauth(userId);
+            throw Exception('Session expired. Please log in again.');
+          }
+        } else {
+          await _authRepository.markAsNeedsReauth(userId);
+          throw Exception('Session expired. Please log in again.');
+        }
+      }
+
+      await checkAuthStatus();
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
   Future<void> removeSavedAccount(String id) async {
     await _authRepository.removeAccount(id);
     await loadSavedAccounts();
-  }
-
-  Future<String?> getSavedPassword(String email) async {
-    return await _authRepository.getAccountPassword(email);
   }
 
   void setRememberMe(bool value) async {
@@ -112,7 +157,7 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('Provider Login Success: $_isLoggedIn');
       if (_user != null) {
         if (saveAccount) {
-          await saveCurrentAccount(password: password);
+          await saveCurrentAccount();
         }
 
         if (_rememberMe) {

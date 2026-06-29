@@ -188,7 +188,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 
                                 if (context.mounted) {
                                   if (success) {
-                                    final bool alreadySaved = auth.savedAccounts.any((a) => a['email'] == _emailController.text.trim().toLowerCase());
+                                    final bool alreadySaved = auth.savedAccounts.any((a) => a.email == _emailController.text.trim().toLowerCase());
                                     
                                     if (!alreadySaved) {
                                       final bool? save = await showDialog<bool>(
@@ -204,7 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       );
                                       
                                       if (save == true) {
-                                        await auth.saveCurrentAccount(password: _passwordController.text);
+                                        await auth.saveCurrentAccount();
                                       }
                                     }
                                     

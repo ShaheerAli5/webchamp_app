@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:local_auth/local_auth.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../core/utils/helpers.dart';
+import '../../../features/auth/data/models/saved_account_model.dart';
 
 class AccountSwitcherScreen extends StatefulWidget {
   const AccountSwitcherScreen({super.key});
@@ -16,67 +17,55 @@ class AccountSwitcherScreen extends StatefulWidget {
 class _AccountSwitcherScreenState extends State<AccountSwitcherScreen> {
   final LocalAuthentication auth = LocalAuthentication();
   bool _isSwitching = false;
-  Map<String, String> _revealedPasswords = {};
 
-  Future<void> _handlePasswordReveal(String email) async {
+  Future<bool> _authenticate() async {
     try {
       final bool canAuthenticateWithBiometrics = await auth.canCheckBiometrics;
       final bool canAuthenticate = canAuthenticateWithBiometrics || await auth.isDeviceSupported();
 
-      if (!canAuthenticate) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Biometric authentication not supported on this device')),
-        );
-        return;
-      }
+      if (!canAuthenticate) return true; // Proceed if not supported
 
-      final bool didAuthenticate = await auth.authenticate(
-        localizedReason: 'Authenticate to view your saved password',
+      return await auth.authenticate(
+        localizedReason: 'Authenticate to switch account',
         options: const AuthenticationOptions(
           stickyAuth: true,
           biometricOnly: false,
         ),
       );
-
-      if (didAuthenticate) {
-        final password = await context.read<AuthProvider>().getSavedPassword(email);
-        if (password != null) {
-          setState(() {
-            _revealedPasswords[email] = password;
-          });
-        }
-      }
     } catch (e) {
       debugPrint('Biometric error: $e');
+      return false;
     }
   }
 
-  Future<void> _loginInstantly(Map<String, dynamic> account) async {
+  Future<void> _loginInstantly(SavedAccountModel account) async {
     if (_isSwitching) return;
     
-    setState(() => _isSwitching = true);
-    final email = account['email'];
-    final authProvider = context.read<AuthProvider>();
-    final password = await authProvider.getSavedPassword(email);
+    // 1. Authenticate user before switching
+    final didAuth = await _authenticate();
+    if (!didAuth) return;
 
-    if (password != null) {
-      final success = await authProvider.login(email, password, saveAccount: false);
-      if (success && mounted) {
+    setState(() => _isSwitching = true);
+    final authProvider = context.read<AuthProvider>();
+
+    try {
+      // 2. Try switching using saved tokens (handles refresh automatically)
+      await authProvider.switchAccount(account.userId);
+      
+      if (mounted) {
         context.go('/');
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login failed. Please enter password manually.')),
-        );
-        context.push('/login');
       }
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved password not found. Please log in again.')),
-      );
-      context.push('/login');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        );
+        // If it requires re-auth, navigate to login with email pre-filled if possible
+        context.push('/login', extra: {'email': account.email});
+      }
+    } finally {
+      if (mounted) setState(() => _isSwitching = false);
     }
-    
-    if (mounted) setState(() => _isSwitching = false);
   }
 
   @override
@@ -105,6 +94,10 @@ class _AccountSwitcherScreenState extends State<AccountSwitcherScreen> {
                   color: const Color(0xFF667085),
                 ),
               ),
+              if (_isSwitching) ...[
+                SizedBox(height: 16.h),
+                const LinearProgressIndicator(),
+              ],
               SizedBox(height: 32.h),
               Expanded(
                 child: Consumer<AuthProvider>(
@@ -129,14 +122,16 @@ class _AccountSwitcherScreenState extends State<AccountSwitcherScreen> {
                       separatorBuilder: (_, __) => SizedBox(height: 16.h),
                       itemBuilder: (context, index) {
                         final account = accounts[index];
-                        final email = account['email'] ?? '';
-                        final name = account['name'] ?? account['username'] ?? 'User';
-                        final isRevealed = _revealedPasswords.containsKey(email);
+                        final email = account.email;
+                        final name = account.name;
+                        final isActive = account.isCurrentAccount;
+                        final needsReauth = account.needsReauth;
 
                         return Container(
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(20.r),
+                            border: isActive ? Border.all(color: const Color(0xFF007176), width: 2) : null,
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.03),
@@ -155,27 +150,44 @@ class _AccountSwitcherScreenState extends State<AccountSwitcherScreen> {
                                   CircleAvatar(
                                     radius: 24.r,
                                     backgroundColor: const Color(0xFF007176).withOpacity(0.1),
-                                    child: Text(
+                                    backgroundImage: account.profileImage != null ? NetworkImage(account.profileImage!) : null,
+                                    child: account.profileImage == null ? Text(
                                       Helpers.getInitial(name),
                                       style: TextStyle(
                                         color: const Color(0xFF007176),
                                         fontWeight: FontWeight.bold,
                                         fontSize: 18.sp,
                                       ),
-                                    ),
+                                    ) : null,
                                   ),
                                   SizedBox(width: 16.w),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          name,
-                                          style: TextStyle(
-                                            fontSize: 16.sp,
-                                            fontWeight: FontWeight.w700,
-                                            color: const Color(0xFF151515),
-                                          ),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                name,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 16.sp,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: const Color(0xFF151515),
+                                                ),
+                                              ),
+                                            ),
+                                            if (isActive) ...[
+                                              SizedBox(width: 8.w),
+                                              _buildBadge('Active', const Color(0xFF007176)),
+                                            ],
+                                            if (needsReauth) ...[
+                                              SizedBox(width: 8.w),
+                                              _buildBadge('Expired', Colors.orange),
+                                            ],
+                                          ],
                                         ),
                                         Text(
                                           email,
@@ -184,51 +196,11 @@ class _AccountSwitcherScreenState extends State<AccountSwitcherScreen> {
                                             color: const Color(0xFF667085),
                                           ),
                                         ),
-                                        SizedBox(height: 4.h),
-                                        Row(
-                                          children: [
-                                            Text(
-                                              isRevealed ? _revealedPasswords[email]! : '••••••••',
-                                              style: TextStyle(
-                                                fontSize: 14.sp,
-                                                color: Colors.black,
-                                                letterSpacing: isRevealed ? 0 : 2,
-                                              ),
-                                            ),
-                                            SizedBox(width: 8.w),
-                                            GestureDetector(
-                                              onTap: () => _handlePasswordReveal(email),
-                                              child: Icon(
-                                                isRevealed ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                                                size: 16.sp,
-                                                color: const Color(0xFF007176),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
                                       ],
                                     ),
                                   ),
                                   IconButton(
-                                    onPressed: () {
-                                      showDialog(
-                                        context: context,
-                                        builder: (context) => AlertDialog(
-                                          title: const Text('Remove Account?'),
-                                          content: Text('Are you sure you want to remove $name from this device?'),
-                                          actions: [
-                                            TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
-                                            TextButton(
-                                              onPressed: () {
-                                                provider.removeSavedAccount(account['id'].toString());
-                                                Navigator.pop(context);
-                                              },
-                                              child: const Text('REMOVE', style: TextStyle(color: Colors.red)),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
+                                    onPressed: () => _showRemoveDialog(context, provider, account),
                                     icon: const Icon(Icons.delete_outline, color: Colors.red),
                                   ),
                                 ],
@@ -263,6 +235,44 @@ class _AccountSwitcherScreenState extends State<AccountSwitcherScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBadge(String text, Color color) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4.r),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10.sp,
+          color: color,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  void _showRemoveDialog(BuildContext context, AuthProvider provider, SavedAccountModel account) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Account?'),
+        content: Text('Are you sure you want to remove ${account.name} from this device?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          TextButton(
+            onPressed: () {
+              provider.removeSavedAccount(account.userId);
+              Navigator.pop(context);
+            },
+            child: const Text('REMOVE', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
   }

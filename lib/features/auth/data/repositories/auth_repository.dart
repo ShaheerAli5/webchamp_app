@@ -2,14 +2,17 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
+import '../models/saved_account_model.dart';
 import '../services/auth_api_service.dart';
+import '../services/multi_account_service.dart';
 import '../../../../core/storage/secure_storage_service.dart';
 
 class AuthRepository {
   final AuthApiService _apiService;
   final SecureStorageService _storageService;
+  final MultiAccountService _multiAccountService;
 
-  AuthRepository(this._apiService, this._storageService);
+  AuthRepository(this._apiService, this._storageService, this._multiAccountService);
 
   Future<UserModel> login(String email, String password) async {
     try {
@@ -45,6 +48,10 @@ class AuthRepository {
             data['token'] ??
             data['data']?['token'] ??
             data['data']?['auth_token'];
+        
+        final refreshToken = data['data']?['refresh_token'] ??
+            data['refresh_token'] ??
+            data['data']?['tokens']?['refresh_token'];
 
         debugPrint('Extracted Token: ${token != null ? "FOUND" : "NOT FOUND"}');
 
@@ -79,10 +86,31 @@ class AuthRepository {
         debugPrint('Extracted User Data: ${userData != null ? "FOUND" : "NOT FOUND"}');
 
         if (token != null && userData != null) {
-          await _storageService.saveToken(token.toString());
-          await _storageService.saveUserData(jsonEncode(userData));
-          debugPrint('=== TOKEN AND USER DATA SAVED ===');
-          return UserModel.fromJson(userData);
+          final userModel = UserModel.fromJson(userData);
+          
+          // 3. Try to find profile image
+          final profileImage = userData['profile_image'] ?? 
+                             userData['avatar'] ?? 
+                             userData['image_url'] ??
+                             userData['photo'];
+
+          // Save to multi-account system
+          final savedAccount = SavedAccountModel(
+            userId: userModel.id.toString(),
+            name: userModel.displayName,
+            email: userModel.email,
+            profileImage: profileImage?.toString(),
+            accessToken: token.toString(),
+            refreshToken: refreshToken?.toString(),
+            loginTimestamp: DateTime.now(),
+            lastUsedAt: DateTime.now(),
+            isCurrentAccount: true,
+            userData: userData,
+          );
+          await _multiAccountService.saveAccount(savedAccount);
+          
+          debugPrint('=== TOKEN AND USER DATA SAVED IN MULTI-ACCOUNT SYSTEM ===');
+          return userModel;
         }
 
         if (token == null && userData != null) {
@@ -201,24 +229,65 @@ class AuthRepository {
     return await _storageService.getToken();
   }
 
-  Future<List<Map<String, dynamic>>> getSavedAccounts() async {
-    return await _storageService.getSavedAccounts();
+  Future<List<SavedAccountModel>> getSavedAccounts() async {
+    return await _multiAccountService.getSavedAccounts();
   }
 
-  Future<void> saveAccount(Map<String, dynamic> userData, {String? password}) async {
-    await _storageService.saveAccount(userData, password: password);
+  Future<void> saveAccount(Map<String, dynamic> userData, {required String token, String? refreshToken}) async {
+    final userModel = UserModel.fromJson(userData);
+    
+    final profileImage = userData['profile_image'] ?? 
+                       userData['avatar'] ?? 
+                       userData['image_url'] ??
+                       userData['photo'];
+
+    final savedAccount = SavedAccountModel(
+      userId: userModel.id.toString(),
+      name: userModel.displayName,
+      email: userModel.email,
+      profileImage: profileImage?.toString(),
+      accessToken: token,
+      refreshToken: refreshToken,
+      loginTimestamp: DateTime.now(),
+      lastUsedAt: DateTime.now(),
+      isCurrentAccount: true,
+      userData: userData,
+    );
+    await _multiAccountService.saveAccount(savedAccount);
   }
 
-  Future<void> removeAccount(String id) async {
-    await _storageService.removeAccount(id);
+  Future<void> removeAccount(String userId) async {
+    await _multiAccountService.removeAccount(userId);
   }
 
-  Future<String?> getAccountPassword(String email) async {
-    return await _storageService.getAccountPassword(email);
+  Future<void> switchAccount(String userId) async {
+    await _multiAccountService.switchAccount(userId);
   }
 
-  Future<void> setActiveAccount(String id) async {
-    await _storageService.setActiveAccountId(id);
+  Future<UserModel?> validateToken(String token) async {
+    try {
+      // Assuming login call without params might work as a check or there's a profile endpoint
+      // For now, if we can get the saved user, we assume it's somewhat valid or let DioInterceptor handle 401
+      return await getSavedUser();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<String?> refreshAccessToken(String refreshToken) async {
+    try {
+      // Placeholder for refresh token logic
+      // final response = await _apiService.refreshToken(refreshToken);
+      // return response.data['access_token'];
+      return null; // Not implemented on backend yet
+    } catch (e) {
+      debugPrint('Token refresh failed: $e');
+      return null;
+    }
+  }
+
+  Future<void> markAsNeedsReauth(String userId) async {
+    await _multiAccountService.markAsNeedsReauth(userId);
   }
 
   Future<Map<String, String>?> getRememberMe() async {
@@ -239,8 +308,8 @@ class AuthRepository {
     } catch (e) {
       debugPrint('Logout API error: $e');
     } finally {
-      // Clear local auth data but preserve saved credentials if they exist
-      await _storageService.clearAuthData();
+      // Clear local auth session but preserve saved accounts
+      await _multiAccountService.clearCurrentSession();
     }
   }
 
