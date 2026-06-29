@@ -159,7 +159,10 @@ class AppRoutes {
         ),
         GoRoute(
           path: login,
-          builder: (context, state) => const LoginScreen(),
+          builder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>?;
+            return LoginScreen(isAddingAccount: extra?['isAddingAccount'] ?? false);
+          },
         ),
         GoRoute(
           path: signup,

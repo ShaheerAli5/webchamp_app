@@ -6,7 +6,8 @@ import '../../../providers/auth_provider.dart';
 import '../../../routes/app_routes.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool isAddingAccount;
+  const LoginScreen({super.key, this.isAddingAccount = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -15,6 +16,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final FocusNode _emailFocusNode = FocusNode();
 
   bool _obscurePassword = true;
 
@@ -23,7 +25,15 @@ class _LoginScreenState extends State<LoginScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
-      if (auth.rememberMe) {
+      
+      if (widget.isAddingAccount) {
+        // Clear fields and uncheck remember me
+        _emailController.clear();
+        _passwordController.clear();
+        auth.setRememberMe(false);
+        // Set focus to email field
+        _emailFocusNode.requestFocus();
+      } else if (auth.rememberMe) {
         _emailController.text = auth.savedEmail ?? '';
         _passwordController.text = auth.savedPassword ?? '';
       }
@@ -34,6 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _emailFocusNode.dispose();
     super.dispose();
   }
 
@@ -111,7 +122,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       SizedBox(height: 24.h),
                       
-                      _buildInputField('EMAIL / USERNAME / PHONE NUMBER', 'admin@company.com', _emailController),
+                      _buildInputField(
+                        'EMAIL / USERNAME / PHONE NUMBER', 
+                        'admin@company.com', 
+                        _emailController,
+                        focusNode: _emailFocusNode,
+                      ),
                       _buildInputField(
                         'PASSWORD', 
                         '••••••••', 
@@ -299,6 +315,7 @@ class _LoginScreenState extends State<LoginScreen> {
     bool isPassword = false,
     bool obscureText = false,
     VoidCallback? onToggleVisibility,
+    FocusNode? focusNode,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,6 +344,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Expanded(
                 child: TextField(
                   controller: controller,
+                  focusNode: focusNode,
                   obscureText: obscureText,
                   decoration: InputDecoration(
                     hintText: hint,

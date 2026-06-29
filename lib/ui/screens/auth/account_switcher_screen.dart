@@ -218,7 +218,7 @@ class _AccountSwitcherScreenState extends State<AccountSwitcherScreen> {
                 width: double.infinity,
                 height: 52.h,
                 child: OutlinedButton.icon(
-                  onPressed: () => context.push('/login'),
+                  onPressed: () => context.push('/login', extra: {'isAddingAccount': true}),
                   icon: const Icon(Icons.add),
                   label: Text(
                     'Add Another Account',
