@@ -36,31 +36,43 @@ class AuthProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
 
   Future<void> checkAuthStatus() async {
+    debugPrint('🚀 [AUTH-PROVIDER] checkAuthStatus starting...');
     _isLoading = true;
     notifyListeners();
 
-    // Load Remember Me state
-    final prefs = await SharedPreferences.getInstance();
-    _rememberMe = prefs.getBool('remember_me') ?? false;
+    try {
+      // Load Remember Me state
+      final prefs = await SharedPreferences.getInstance();
+      _rememberMe = prefs.getBool('remember_me') ?? false;
+      debugPrint('🚀 [AUTH-PROVIDER] Remember Me: $_rememberMe');
 
-    if (_rememberMe) {
-      final creds = await _authRepository.getRememberMe();
-      if (creds != null) {
-        _savedEmail = creds['email'];
-        _savedPassword = creds['password'];
+      if (_rememberMe) {
+        final creds = await _authRepository.getRememberMe();
+        if (creds != null) {
+          _savedEmail = creds['email'];
+          _savedPassword = creds['password'];
+          debugPrint('🚀 [AUTH-PROVIDER] Loaded Remember Me credentials for: $_savedEmail');
+        }
       }
-    }
 
-    await loadSavedAccounts();
+      debugPrint('🚀 [AUTH-PROVIDER] Loading saved accounts...');
+      await loadSavedAccounts();
+      debugPrint('🚀 [AUTH-PROVIDER] Total saved accounts: ${_savedAccounts.length}');
 
-    _user = await _authRepository.getSavedUser();
-    _isLoggedIn = _user != null;
+      _user = await _authRepository.getSavedUser();
+      _isLoggedIn = _user != null;
+      debugPrint('🚀 [AUTH-PROVIDER] Is Logged In: $_isLoggedIn');
 
-    if (_isLoggedIn && _user != null) {
-      final token = await _authRepository.getToken();
-      if (token != null) {
-        onLogin?.call(_user!, token);
+      if (_isLoggedIn && _user != null) {
+        debugPrint('🚀 [AUTH-PROVIDER] Active user: ${_user!.email}');
+        final token = await _authRepository.getToken();
+        if (token != null) {
+          onLogin?.call(_user!, token);
+        }
       }
+    } catch (e, stack) {
+      debugPrint('❌ [AUTH-PROVIDER] Error in checkAuthStatus: $e');
+      debugPrint('❌ [AUTH-PROVIDER] Stacktrace: $stack');
     }
     
     _isLoading = false;
@@ -155,10 +167,11 @@ class AuthProvider extends ChangeNotifier {
       _user = await _authRepository.login(email, password);
       _isLoggedIn = _user != null;
       debugPrint('Provider Login Success: $_isLoggedIn');
+      
       if (_user != null) {
-        if (saveAccount) {
-          await saveCurrentAccount();
-        }
+        // ALWAYS reload saved accounts after successful login
+        await loadSavedAccounts();
+        debugPrint('Saved accounts reloaded. Count: ${_savedAccounts.length}');
 
         if (_rememberMe) {
           _savedEmail = email;
@@ -227,9 +240,15 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    debugPrint('🚀 [AUTH-PROVIDER] Logout starting...');
     await _authRepository.logout();
     _isLoggedIn = false;
     _user = null;
+    
+    // RELOAD saved accounts after logout to ensure UI has latest list for switcher
+    await loadSavedAccounts();
+    debugPrint('🚀 [AUTH-PROVIDER] Logout complete. Saved accounts: ${_savedAccounts.length}');
+
     onLogout?.call();
     notifyListeners();
   }

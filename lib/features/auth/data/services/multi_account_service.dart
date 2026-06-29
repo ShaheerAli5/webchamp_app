@@ -33,8 +33,10 @@ class MultiAccountService {
 
   /// Saves or updates an account in the saved accounts list.
   Future<void> saveAccount(SavedAccountModel account) async {
+    debugPrint('💾 [MULTI-ACCOUNT] saveAccount called for: ${account.email}');
     await _synchronized(() async {
       final accounts = await getSavedAccounts();
+      debugPrint('💾 [MULTI-ACCOUNT] Current saved accounts count: ${accounts.length}');
       
       final existingIndex = accounts.indexWhere(
         (a) => a.userId == account.userId || a.email == account.email
@@ -47,8 +49,10 @@ class MultiAccountService {
       );
 
       if (existingIndex != -1) {
+        debugPrint('💾 [MULTI-ACCOUNT] Updating existing account at index: $existingIndex');
         accounts[existingIndex] = updatedAccount;
       } else {
+        debugPrint('💾 [MULTI-ACCOUNT] Adding new account to list');
         accounts.add(updatedAccount);
       }
 
@@ -66,29 +70,38 @@ class MultiAccountService {
       await _storageService.saveToken(updatedAccount.accessToken);
       await _storageService.saveUserData(jsonEncode(updatedAccount.userData));
       await _setActiveAccountId(updatedAccount.userId);
+      debugPrint('💾 [MULTI-ACCOUNT] Account selection state updated in storage. Total accounts: ${accounts.length}');
     });
   }
 
   /// Retrieves the list of all saved accounts.
   Future<List<SavedAccountModel>> getSavedAccounts() async {
+    debugPrint('🔍 [MULTI-ACCOUNT] getSavedAccounts starting...');
     try {
       final String? accountsJson = await _storageService.getTokenByKey(_keySavedAccounts);
+      debugPrint('🔍 [MULTI-ACCOUNT] Raw JSON from storage: ${accountsJson != null ? "FOUND" : "NULL/EMPTY"}');
       
-      // Perform migration if list is empty but old keys exist
       if (accountsJson == null || accountsJson.isEmpty) {
+        debugPrint('🔍 [MULTI-ACCOUNT] No accounts found in main key. Checking migration...');
         final migrated = await _performMigration();
-        if (migrated.isNotEmpty) return migrated;
+        if (migrated.isNotEmpty) {
+          debugPrint('🔍 [MULTI-ACCOUNT] Migrated ${migrated.length} accounts.');
+          return migrated;
+        }
         return [];
       }
 
       final List<dynamic> decoded = jsonDecode(accountsJson);
       final list = decoded.map((item) => SavedAccountModel.fromMap(item)).toList();
       
+      debugPrint('🔍 [MULTI-ACCOUNT] Successfully loaded ${list.length} accounts.');
+      
       // Sort by lastUsedAt
       list.sort((a, b) => b.lastUsedAt.compareTo(a.lastUsedAt));
       return list;
-    } catch (e) {
-      debugPrint('Error loading saved accounts: $e. Returning empty list.');
+    } catch (e, stack) {
+      debugPrint('❌ [MULTI-ACCOUNT] Error loading saved accounts: $e');
+      debugPrint('❌ [MULTI-ACCOUNT] Stacktrace: $stack');
       // Graceful corruption handling
       return [];
     }

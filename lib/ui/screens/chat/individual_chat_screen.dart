@@ -504,7 +504,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE9EDEF),
+      backgroundColor: Colors.transparent,
       appBar: PreferredSize(
         preferredSize: Size.fromHeight(60.h),
         child: Consumer<ContactProvider>(
@@ -541,14 +541,25 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
           },
           child: Stack(
             children: [
-              Opacity(
-                opacity: 0.08,
-                child: CachedNetworkImage(
-                  imageUrl: 'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png',
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  useOldImageOnUrlChange: true,
+              // WhatsApp-style Doodle Background
+              Positioned.fill(
+                child: Container(
+                  color: const Color(0xFFE9EDEF), // Light WhatsApp beige
+                  child: Opacity(
+                    opacity: 0.4, // Increased opacity to make it visible
+                    child: Image.asset(
+                      'assets/images/whatsapp_bg.png',
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        // Fallback if the local asset is missing
+                        return Image.network(
+                          'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png',
+                          fit: BoxFit.cover,
+                          opacity: const AlwaysStoppedAnimation(0.2),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
               SafeArea(
@@ -2448,7 +2459,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             width: 50.w,
             margin: EdgeInsets.only(bottom: isRecording ? _dragOffset.clamp(0, 10).h : 0),
             decoration: BoxDecoration(
-              color: widget.isSending ? Colors.grey : const Color(0xFF00A884), 
+              color: widget.isSending ? Colors.grey : const Color(0xFF111B21),
               shape: BoxShape.circle
             ),
             alignment: Alignment.center,
