@@ -93,8 +93,8 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 250.w,
-      padding: EdgeInsets.fromLTRB(10.w, 6.h, 12.w, 4.h),
+      width: 220.w,
+      padding: EdgeInsets.fromLTRB(12.w, 8.h, 14.w, 8.h),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

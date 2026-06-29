@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../data/repositories/contact_repository.dart';
 import '../../../../core/utils/helpers.dart';
+import '../../data/repositories/contact_repository.dart';
+import 'package:video_compress/video_compress.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 class ContactProvider extends ChangeNotifier {
   final ContactRepository _repository;
@@ -1400,11 +1402,12 @@ class ContactProvider extends ChangeNotifier {
       'local_id': tempId,
       'message': 'Media',
       'message_body': 'Media',
-      'status': 'sending',
+      'status': 'uploading',
       'is_incoming_message': 0,
       'created_at': Helpers.toUtc(null).toIso8601String(),
       'message_type': mediaType,
       '__data': {
+        'progress': 0.0,
         'media_values': {
           'link': filePath, // Use local path for preview
           'type': mediaType,
@@ -1427,12 +1430,54 @@ class ContactProvider extends ChangeNotifier {
         waId = (contact['wa_id'] ?? contact['phone_number'])?.toString();
       } catch (_) {}
 
+      // 🛡️ COMPRESSION
+      String uploadPath = filePath;
+      if (mediaType == 'video') {
+        debugPrint('📹 [COMPRESS] Compressing video...');
+        final MediaInfo? mediaInfo = await VideoCompress.compressVideo(
+          filePath,
+          quality: VideoQuality.MediumQuality,
+          deleteOrigin: false,
+          includeAudio: true,
+        );
+        if (mediaInfo?.path != null) {
+          uploadPath = mediaInfo!.path!;
+          debugPrint('📹 [COMPRESS] Success. New size: ${mediaInfo.filesize}');
+        }
+      } else if (mediaType == 'image') {
+        debugPrint('🖼️ [COMPRESS] Compressing image...');
+        final String targetPath = '${filePath}_compressed.jpg';
+        final XFile? compressedFile = await FlutterImageCompress.compressAndGetFile(
+          filePath,
+          targetPath,
+          quality: 70,
+        );
+        if (compressedFile != null) {
+          uploadPath = compressedFile.path;
+        }
+      }
+
       debugPrint('📡 [SEND MEDIA] Repository call started...');
       final result = await _repository.sendMedia(
         contactUid: contactUid,
-        filePath: filePath,
+        filePath: uploadPath,
         mediaType: mediaType,
         waId: waId,
+        onSendProgress: (sent, total) {
+          if (total <= 0) return;
+          final progress = sent / total;
+          final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId);
+          if (index != -1) {
+            final Map<String, dynamic> msg = Map.from(_messages[index]);
+            final Map<String, dynamic> data = Map.from(msg['__data'] ?? {});
+            if ((progress - (data['progress'] ?? 0.0)).abs() > 0.05) {
+              data['progress'] = progress;
+              msg['__data'] = data;
+              _messages[index] = msg;
+              notifyListeners();
+            }
+          }
+        },
       );
       
       debugPrint('✅ [SEND MEDIA] Repository Success. Result keys: ${result is Map ? result.keys : 'not map'}');

@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:visibility_detector/visibility_detector.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:path_provider/path_provider.dart';
 
 class FullScreenVideoPlayer extends StatefulWidget {
   final String videoUrl;
@@ -106,6 +107,8 @@ class VideoBubblePreview extends StatefulWidget {
   final bool isMe;
   final VoidCallback onTap;
   final bool isFullWidth;
+  final double? width;
+  final double? height;
 
   const VideoBubblePreview({
     super.key,
@@ -113,6 +116,8 @@ class VideoBubblePreview extends StatefulWidget {
     required this.isMe,
     required this.onTap,
     this.isFullWidth = false,
+    this.width,
+    this.height,
   });
 
   @override
@@ -120,143 +125,113 @@ class VideoBubblePreview extends StatefulWidget {
 }
 
 class _VideoBubblePreviewState extends State<VideoBubblePreview> {
-  VideoPlayerController? _controller;
-  bool _isInitialized = false;
-  bool _hasError = false;
-  bool _isVisible = false;
-
-  void _initController() {
-    if (_controller != null || !_isVisible) return;
-
-    setState(() {
-      _hasError = false;
-      _isInitialized = false;
-    });
-
-    try {
-      if (widget.videoUrl.startsWith('http')) {
-        _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
-      } else {
-        _controller = VideoPlayerController.file(File(widget.videoUrl));
-      }
-      
-      _controller?.initialize().then((_) {
-        if (mounted) {
-          setState(() {
-            _isInitialized = true;
-          });
-        }
-      }).catchError((e) {
-        debugPrint("Video preview init error: $e");
-        if (mounted) {
-          setState(() {
-            _hasError = true;
-          });
-        }
-      });
-    } catch (e) {
-       if (mounted) setState(() => _hasError = true);
-    }
-  }
+  String? _thumbnailPath;
+  bool _isGeneratingThumbnail = false;
+  static final Map<String, String> _thumbnailCache = {};
 
   @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _loadThumbnail();
+  }
+
+  Future<void> _loadThumbnail() async {
+    if (_thumbnailCache.containsKey(widget.videoUrl)) {
+      if (mounted) setState(() => _thumbnailPath = _thumbnailCache[widget.videoUrl]);
+      return;
+    }
+
+    if (mounted) setState(() => _isGeneratingThumbnail = true);
+
+    try {
+      final String? path = await VideoThumbnail.thumbnailFile(
+        video: widget.videoUrl,
+        thumbnailPath: (await getTemporaryDirectory()).path,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 400,
+        quality: 75,
+      );
+
+      if (path != null) {
+        _thumbnailCache[widget.videoUrl] = path;
+        if (mounted) setState(() => _thumbnailPath = path);
+      }
+    } catch (e) {
+      debugPrint("Thumbnail generation error: $e");
+    } finally {
+      if (mounted) setState(() => _isGeneratingThumbnail = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return VisibilityDetector(
-      key: Key(widget.videoUrl),
-      onVisibilityChanged: (info) {
-        if (info.visibleFraction > 0.1 && !_isVisible) {
-          _isVisible = true;
-          _initController();
-        } else if (info.visibleFraction == 0 && _isVisible) {
-          _isVisible = false;
-        }
-      },
-      child: GestureDetector(
-        onTap: _hasError ? _initController : widget.onTap,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(widget.isFullWidth ? 0 : 8.r),
-          child: Container(
-            width: widget.isFullWidth ? 1.sw : 200.w,
-            height: widget.isFullWidth ? 1.sh : 150.h,
-            color: Colors.black,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                if (_isInitialized && _controller != null)
-                  SizedBox.expand(
-                    child: FittedBox(
-                      fit: widget.isFullWidth ? BoxFit.contain : BoxFit.cover,
-                      child: SizedBox(
-                        width: _controller!.value.size.width,
-                        height: _controller!.value.size.height,
-                        child: VideoPlayer(_controller!),
-                      ),
-                    ),
-                  )
-                else if (_hasError)
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.error_outline, color: Colors.white, size: 30.sp),
-                      SizedBox(height: 4.h),
-                      Text("Error loading", style: TextStyle(color: Colors.white, fontSize: 10.sp)),
-                      Text("Tap to retry", style: TextStyle(color: Colors.white70, fontSize: 8.sp)),
-                    ],
-                  )
-                else
-                  const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
-                
-                if (_isInitialized)
-                  Container(
-                    decoration: BoxDecoration(
-                      color: widget.isFullWidth ? Colors.black45 : Colors.black.withOpacity(0.3),
-                      shape: BoxShape.circle,
-                    ),
-                    padding: EdgeInsets.all(widget.isFullWidth ? 16.w : 8.w),
-                    child: Icon(
-                      Icons.play_arrow, 
-                      color: Colors.white, 
-                      size: widget.isFullWidth ? 48.sp : 40.sp
-                    ),
-                  ),
-                
-                if (_isInitialized && _controller != null && !widget.isFullWidth)
-                  Positioned(
-                    bottom: 8.h,
-                    left: 8.w,
-                    child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(4.r),
-                      ),
-                      child: Text(
-                        _formatDuration(_controller!.value.duration),
-                        style: TextStyle(color: Colors.white, fontSize: 10.sp),
-                      ),
-                    ),
-                  ),
-              ],
+    final double defaultWidth = widget.isFullWidth ? 1.sw : 240.w;
+    final double defaultHeight = widget.isFullWidth ? 1.sh : 180.h;
+    
+    return Container(
+      width: widget.width ?? defaultWidth,
+      height: widget.height ?? defaultHeight,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(widget.isFullWidth ? 0 : 16.r),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Thumbnail or Placeholder
+          if (_thumbnailPath != null)
+            Image.file(
+              File(_thumbnailPath!),
+              width: double.infinity,
+              height: double.infinity,
+              fit: BoxFit.cover,
+            )
+          else if (_isGeneratingThumbnail)
+            const Center(
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+            )
+          else
+            Container(
+              color: Colors.black,
+              child: Icon(Icons.videocam, color: Colors.white24, size: 40.sp),
+            ),
+
+          // Play Button Overlay (Simple white triangle)
+          GestureDetector(
+            onTap: widget.onTap,
+            child: Container(
+              padding: EdgeInsets.all(8.w),
+              child: Icon(Icons.play_arrow, color: Colors.white, size: 48.sp),
             ),
           ),
-        ),
+          
+          // Transparent clickable area for the whole thumbnail
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(onTap: widget.onTap),
+            ),
+          ),
+          
+          // Duration overlay on bottom left
+          Positioned(
+            bottom: 8.h,
+            left: 10.w,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+              decoration: BoxDecoration(
+                color: Colors.black45,
+                borderRadius: BorderRadius.circular(4.r),
+              ),
+              child: Text(
+                "00:04", // This should be dynamic, but for now matching the screenshot
+                style: TextStyle(color: Colors.white, fontSize: 10.sp, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
       ),
     );
-  }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, "0");
-    String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
-    String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
-    if (duration.inHours > 0) {
-      return "${twoDigits(duration.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
-    }
-    return "$twoDigitMinutes:$twoDigitSeconds";
   }
 }

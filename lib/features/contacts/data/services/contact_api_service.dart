@@ -314,7 +314,7 @@ class ContactApiService {
     );
   }
 
-  Future<Response> uploadTempMedia(String filePath, String uploadItem) async {
+  Future<Response> uploadTempMedia(String filePath, String uploadItem, {ProgressCallback? onSendProgress}) async {
     final fileName = filePath.split(RegExp(r'[/\\]')).last;
     final bool isVideo = uploadItem.contains('video');
     final bool isAudio = uploadItem.contains('audio');
@@ -375,6 +375,7 @@ class ContactApiService {
     return await _apiClient.post(
       ApiConstants.uploadTempMedia(uploadItem),
       data: formData,
+      onSendProgress: onSendProgress,
       options: Options(
         contentType: null,
         headers: {

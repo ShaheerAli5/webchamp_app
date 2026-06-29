@@ -60,6 +60,7 @@ class ApiClient {
     Map<String, dynamic>? queryParameters,
     Options? options,
     CancelToken? cancelToken,
+    ProgressCallback? onSendProgress,
   }) async {
     return await _dio.post(
       path,
@@ -67,6 +68,7 @@ class ApiClient {
       queryParameters: queryParameters,
       options: options,
       cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
     );
   }
 

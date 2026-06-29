@@ -334,6 +334,7 @@ class ContactRepository {
     required String mediaType,
     String? waId,
     String? caption,
+    ProgressCallback? onSendProgress,
   }) async {
     debugPrint('🚀 [REPO] sendMedia called for $mediaType');
     try {
@@ -355,7 +356,11 @@ class ContactRepository {
       }
 
       debugPrint('📤 [REPO] Step 1: Uploading temp media ($uploadItem)...');
-      final uploadResponse = await _apiService.uploadTempMedia(filePath, uploadItem);
+      final uploadResponse = await _apiService.uploadTempMedia(
+        filePath, 
+        uploadItem, 
+        onSendProgress: onSendProgress
+      );
       
       debugPrint('📥 [REPO] Step 1 Response: ${uploadResponse.statusCode}');
 

@@ -398,28 +398,36 @@ class _StatusEditScreenState extends State<StatusEditScreen>
         child: Row(
           children: [
             _circleBtn(Icons.close_rounded, () => Navigator.pop(context)),
-            const Spacer(),
-            if (widget.type == 'image')
-              _topPill(
-                _sendAsDocument ? Icons.description : Icons.image,
-                _sendAsDocument ? 'Send as PDF' : 'Send as Image',
-                () => setState(() => _sendAsDocument = !_sendAsDocument),
-                active: _sendAsDocument,
-              ),
             SizedBox(width: 8.w),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _circleBtn(Icons.download_rounded, () => _snack('Saved to gallery')),
-                SizedBox(width: 8.w),
-                _circleBtn(Icons.hd_outlined, () => _snack('HD quality enabled')),
-                SizedBox(width: 8.w),
-                _circleBtn(Icons.emoji_emotions_outlined, () => _snack('Emoji')),
-                SizedBox(width: 8.w),
-                _circleBtn(Icons.title_rounded, () => _captionFocusNode.requestFocus()),
-                SizedBox(width: 8.w),
-                _circleBtn(Icons.edit_outlined, () => _snack('Draw mode enabled')),
-              ],
+            _circleBtn(Icons.refresh_rounded, () => Navigator.pop(context, 'retake')),
+            const Spacer(),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                reverse: true,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.type == 'image')
+                      _topPill(
+                        _sendAsDocument ? Icons.description : Icons.image,
+                        _sendAsDocument ? 'PDF' : 'Image',
+                        () => setState(() => _sendAsDocument = !_sendAsDocument),
+                        active: _sendAsDocument,
+                      ),
+                    SizedBox(width: 6.w),
+                    _circleBtn(Icons.download_rounded, () => _snack('Saved to gallery')),
+                    SizedBox(width: 6.w),
+                    _circleBtn(Icons.hd_outlined, () => _snack('HD quality enabled')),
+                    SizedBox(width: 6.w),
+                    _circleBtn(Icons.emoji_emotions_outlined, () => _snack('Emoji')),
+                    SizedBox(width: 6.w),
+                    _circleBtn(Icons.title_rounded, () => _captionFocusNode.requestFocus()),
+                    SizedBox(width: 6.w),
+                    _circleBtn(Icons.edit_outlined, () => _snack('Draw mode enabled')),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
