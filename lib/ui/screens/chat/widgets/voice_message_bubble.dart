@@ -37,6 +37,11 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
     _manager = VoicePlaybackManager();
     _manager.addListener(_onManagerUpdate);
     
+    // 🚀 PRELOAD: Buffer audio as soon as it's visible
+    if (widget.audioUrl.isNotEmpty) {
+      _manager.preload(widget.audioUrl);
+    }
+
     // 🛡️ If duration is missing or 0, try to auto-detect it from the source
     if (widget.duration == null || widget.duration == 0) {
       _detectDuration();
@@ -48,21 +53,12 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
     
     setState(() => _isDetecting = true);
     try {
-      final player = AudioPlayer();
-      Duration? d;
-      if (widget.audioUrl.startsWith('http')) {
-        d = await player.setUrl(widget.audioUrl);
-      } else {
-        d = await player.setFilePath(widget.audioUrl);
-      }
-      
-      if (mounted && d != null && d.inSeconds > 0) {
+      final duration = await _manager.getOrDetectDuration(widget.audioUrl);
+      if (mounted && duration != null && duration > 0) {
         setState(() {
-          _autoDetectedDuration = d!.inSeconds;
+          _autoDetectedDuration = duration;
         });
-        debugPrint('📊 [VOICE] Auto-detected duration for ${widget.audioUrl.split('/').last}: $_autoDetectedDuration sec');
       }
-      await player.dispose();
     } catch (e) {
       debugPrint('⚠️ [VOICE] Could not auto-detect duration: $e');
     } finally {
@@ -169,16 +165,37 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   }
 
   Widget _buildPlayButton() {
-    final bool isPlaying = _isThisPlaying && _manager.isPlaying;
-    return IconButton(
-      onPressed: () => _manager.togglePlay(widget.audioUrl),
-      icon: Icon(
-        isPlaying ? Icons.pause : Icons.play_arrow,
-        color: const Color(0xFF54656F),
-        size: 32.sp,
+    final bool isThisPlaying = _isThisPlaying;
+    final bool isPlaying = isThisPlaying && _manager.isPlaying;
+    final bool isBuffering = isThisPlaying && _manager.isBuffering;
+
+    return Container(
+      width: 48.w,
+      alignment: Alignment.center,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (isBuffering)
+            SizedBox(
+              width: 30.r,
+              height: 30.r,
+              child: const CircularProgressIndicator(
+                strokeWidth: 2.5,
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF54656F)),
+              ),
+            ),
+          IconButton(
+            onPressed: () => _manager.togglePlay(widget.audioUrl),
+            icon: Icon(
+              isPlaying ? Icons.pause : Icons.play_arrow,
+              color: const Color(0xFF54656F),
+              size: 32.sp,
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ],
       ),
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(),
     );
   }
 

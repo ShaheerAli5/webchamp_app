@@ -20,6 +20,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'package:video_compress/video_compress.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import '../../../core/utils/helpers.dart';
@@ -326,7 +327,22 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                 _buildAttachmentOption(Icons.videocam, "Video", Colors.orange, () async {
                   final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
                   if (video != null && mounted) {
-                    Navigator.pop(context, 'video:${video.path}');
+                    // 🛡️ LIMIT: Gallery videos up to 6 minutes (360 seconds)
+                    try {
+                      final info = await VideoCompress.getMediaInfo(video.path);
+                      final durationMs = info.duration ?? 0;
+                      if (durationMs > 360000) {
+                        if (mounted) {
+                          Navigator.pop(context);
+                          _showErrorDialog("Videos longer than 6 minutes cannot be sent. Please select a shorter video.");
+                        }
+                        return;
+                      }
+                    } catch (e) {
+                      debugPrint("⚠️ [VIDEO] Could not get duration: $e");
+                    }
+                    
+                    if (mounted) Navigator.pop(context, 'video:${video.path}');
                   }
                 }),
                 _buildAttachmentOption(Icons.insert_drive_file, "Document", Colors.blue, () async {
@@ -567,6 +583,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                 bottom: !_showEmoji,
                 child: Column(
                   children: [
+                    const ChatCountdownTimer(),
                     Expanded(
                       child: Consumer<ContactProvider>(
                         builder: (context, provider, child) {
@@ -837,6 +854,22 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   void _copyMessage(String text) {
     Clipboard.setData(ClipboardData(text: text)).then((_) => Fluttertoast.showToast(msg: "Message copied"));
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Limit Exceeded"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK", style: TextStyle(color: Color(0xFF008069))),
+          ),
+        ],
+      ),
+    );
   }
 
   void _forwardMessage(Map<String, dynamic> messageData) async {
@@ -1459,18 +1492,7 @@ class ChatBubble extends StatelessWidget {
                     if (replyToMessage != null) _buildReplyPreview(replyToMessage),
                     _buildMessageContent(context),
                     if (messageData?['status'] == 'failed' && messageData?['error'] != null)
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(8.w, 2.h, 8.w, 4.h),
-                        child: Text(
-                          messageData['error'].toString(),
-                          style: TextStyle(
-                            color: Colors.red[700], 
-                            fontSize: 10.sp, 
-                            fontWeight: FontWeight.w400,
-                            fontStyle: FontStyle.italic
-                          ),
-                        ),
-                      ),
+                      _buildErrorMessage(context),
                   ],
                 ),
               ),
@@ -1542,6 +1564,83 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
+  Widget _buildErrorMessage(BuildContext context) {
+    final errorText = messageData['error']?.toString() ?? '';
+    final is24hError = errorText == '24_hour_policy_error';
+    
+    return GestureDetector(
+      onTap: is24hError ? () => _show24hErrorDialog(context) : null,
+      child: Container(
+        margin: EdgeInsets.fromLTRB(8.w, 4.h, 8.w, 4.h),
+        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEBEE), // Light red/pink
+          borderRadius: BorderRadius.circular(8.r),
+          border: Border.all(color: Colors.red.withOpacity(0.1)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              is24hError ? "Failed. Due to 24 hour policy." : "❗ $errorText",
+              style: TextStyle(
+                color: Colors.red[700], 
+                fontSize: 12.sp, 
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            if (is24hError) ...[
+              SizedBox(height: 4.h),
+              Text(
+                "Message failed to send because more than 24 hours have passed since the customer last replied to this number.",
+                style: TextStyle(
+                  color: Colors.red[900], 
+                  fontSize: 11.sp, 
+                  fontStyle: FontStyle.italic,
+                  height: 1.2
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _show24hErrorDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+        title: Row(
+          children: [
+            Icon(Icons.error, color: Colors.red, size: 24.sp),
+            SizedBox(width: 10.w),
+            const Text("Message Failed"),
+          ],
+        ),
+        content: Text(
+          "Message failed to send because more than 24 hours have passed since the customer last replied to this number.",
+          style: TextStyle(fontSize: 14.sp),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK", style: TextStyle(color: Color(0xFF008069), fontWeight: FontWeight.bold)),
+          ),
+          if (onRetry != null)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                onRetry!();
+              },
+              child: const Text("RETRY", style: TextStyle(color: Color(0xFF008069), fontWeight: FontWeight.bold)),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMessageContent(BuildContext context) {
     if (type == 'voice') {
       return VoiceMessageBubble(
@@ -1550,7 +1649,7 @@ class ChatBubble extends StatelessWidget {
         duration: _extractDuration(messageData),
         senderImageUrl: imageUrl,
         time: time,
-        statusIcon: isMe ? _buildStatusIcon(messageData) : null,
+        statusIcon: isMe ? _buildStatusIcon(context, messageData) : null,
       );
     }
 
@@ -1574,7 +1673,7 @@ class ChatBubble extends StatelessWidget {
               ),
               if (isMe) ...[
                 SizedBox(width: 4.w), 
-                _buildStatusIcon(messageData)
+                _buildStatusIcon(context, messageData)
               ],
             ],
           ),
@@ -1645,7 +1744,7 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusIcon(dynamic messageData, {bool isOverlay = false}) {
+  Widget _buildStatusIcon(BuildContext context, dynamic messageData, {bool isOverlay = false}) {
     final status = (messageData?['status'] ?? '').toString().toLowerCase();
     final double? progress = (messageData is Map && messageData['__data'] != null)
         ? (messageData['__data']['progress'] is num ? (messageData['__data']['progress'] as num).toDouble() : null)
@@ -1678,15 +1777,18 @@ class ChatBubble extends StatelessWidget {
     }
     
     if (status == 'failed') {
+      final errorText = messageData?['error']?.toString();
+      final is24hError = errorText == '24_hour_policy_error';
+      
       return GestureDetector(
-        onTap: onRetry,
+        onTap: is24hError ? () => _show24hErrorDialog(context) : onRetry,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, size: 14.sp, color: Colors.red),
+            Icon(is24hError ? Icons.error : Icons.error_outline, size: 14.sp, color: Colors.red),
             SizedBox(width: 4.w),
             Text(
-              'Retry', 
+              is24hError ? 'Failed' : 'Retry', 
               style: TextStyle(color: Colors.red, fontSize: 11.sp, fontWeight: FontWeight.w500)
             ),
           ],
@@ -2050,6 +2152,93 @@ class _ImageGalleryViewerState extends State<_ImageGalleryViewer> {
               ],
             ),
           )
+        ],
+      ),
+    );
+  }
+}
+
+class ChatCountdownTimer extends StatefulWidget {
+  const ChatCountdownTimer({super.key});
+
+  @override
+  State<ChatCountdownTimer> createState() => _ChatCountdownTimerState();
+}
+
+class _ChatCountdownTimerState extends State<ChatCountdownTimer> {
+  Timer? _timer;
+  Duration _remaining = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      
+      final provider = context.read<ContactProvider>();
+      final lastIncoming = provider.getLastIncomingMessageTime();
+      if (lastIncoming != null) {
+        final expiry = lastIncoming.add(const Duration(hours: 24));
+        final now = Helpers.toUtc(null);
+        final diff = expiry.difference(now);
+        
+        if (diff.inSeconds != _remaining.inSeconds) {
+          setState(() {
+            _remaining = diff;
+          });
+        }
+      } else if (_remaining != Duration.zero) {
+        setState(() {
+          _remaining = Duration.zero;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isExpired = _remaining.isNegative || _remaining == Duration.zero;
+    final String formattedTime = Helpers.format24hCountdown(_remaining);
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 16.w),
+      decoration: BoxDecoration(
+        color: isExpired ? const Color(0xFFFFEBEE) : const Color(0xFFD9FDD3), 
+        border: Border(bottom: BorderSide(color: Colors.black.withOpacity(0.05))),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isExpired ? Icons.error_outline : Icons.history, 
+            size: 14.sp, 
+            color: isExpired ? Colors.red[700] : const Color(0xFF008069)
+          ),
+          SizedBox(width: 8.w),
+          RichText(
+            text: TextSpan(
+              style: TextStyle(fontSize: 12.sp, color: const Color(0xFF111B21)),
+              children: [
+                TextSpan(text: isExpired ? "24-hour window " : "24-hour window ends in "),
+                TextSpan(
+                  text: isExpired ? "expired" : "$formattedTime left",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

@@ -165,6 +165,29 @@ class Helpers {
     return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
+  static String format24hCountdown(Duration duration) {
+    if (duration.isNegative || duration.inSeconds == 0) return "expired";
+    
+    if (duration.inHours == 24 && duration.inMinutes.remainder(60) == 0 && duration.inSeconds.remainder(60) == 0) {
+      return "24 hours";
+    }
+    
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+    
+    List<String> parts = [];
+    if (hours > 0) {
+      parts.add("${hours}h");
+      parts.add("${minutes.toString().padLeft(2, '0')}m");
+    } else if (minutes > 0) {
+      parts.add("${minutes}m");
+    }
+    parts.add("${seconds.toString().padLeft(2, '0')}s");
+    
+    return parts.join(' ');
+  }
+
   static String formatFileSize(int bytes) {
     if (bytes <= 0) return "0 B";
     const suffixes = ["B", "KB", "MB", "GB", "TB"];

@@ -155,13 +155,23 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
       if (mounted && _isRecording && !_isPaused) {
         setState(() {
           _recordDuration++;
-          // 🛡️ LIMIT: Stop recording at 2 minutes
-          if (_recordDuration >= 120) {
+          // 🛡️ LIMIT: Stop recording at 4 minutes (240 seconds)
+          if (_recordDuration >= 240) {
             _stopRecording();
+            _showLimitReachedMessage();
           }
         });
       }
     });
+  }
+
+  void _showLimitReachedMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Maximum recording time is 4 minutes."),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   Future<void> _pauseRecording() async {
@@ -328,6 +338,14 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
                             _formatDuration(_recordDuration),
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                           ),
+                          Text(
+                            " / 04:00",
+                            style: TextStyle(color: Colors.white70, fontSize: 12.sp),
+                          ),
+                          Text(
+                            " / 04:00",
+                            style: TextStyle(color: Colors.white70, fontSize: 12.sp),
+                          ),
                         ],
                       ),
                     ),
@@ -360,6 +378,14 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Mode Switcher (PHOTO / VIDEO)
+                  if (!_isRecording)
+                    Padding(
+                      padding: EdgeInsets.only(bottom: 12.h),
+                      child: Text(
+                        _mode == CameraMode.video ? "Max Recording: 4:00" : "",
+                        style: TextStyle(color: Colors.white70, fontSize: 12.sp, fontWeight: FontWeight.w500),
+                      ),
+                    ),
                   if (!_isRecording)
                     Padding(
                       padding: EdgeInsets.only(bottom: 20.h),

@@ -1035,36 +1035,12 @@ class ContactProvider extends ChangeNotifier {
           _updateContactLatestMessage(contactUid, _messages.first);
         }
       }
-      
-      // Re-extracting with safety for comparison
-      final extractedLabels = _extractLargestList([result['labels'], data?['labels'], safeClientModels?['labels']]);
-      if (!listEquals(_labels, extractedLabels)) {
-        _labels = extractedLabels;
-        hasNewData = true;
-      }
-
-      final extractedTeam = _extractLargestList([result['teamMembers'], result['vendorMessagingUsers'], data?['teamMembers']]);
-      if (!listEquals(_teamMembers, extractedTeam)) {
-        _teamMembers = extractedTeam;
-        hasNewData = true;
-      }
 
       _isFetchingChat = false;
       _isLoading = false;
       _chatBoxRetryCount = 0; // Reset retry count on success
-
-      if (hasNewData || showLoading || force) {
-        notifyListeners();
-        debugPrint('✅ [CHAT] UI notified of changes (Forced: $force, NewData: $hasNewData)');
-        
-        // 🛡️ Automatically mark as read if we have messages and it's a selected contact
-        if (_messages.isNotEmpty) {
-          markContactAsRead(contactUid);
-        }
-      } else {
-        debugPrint('ℹ️ [CHAT] No changes detected, skipping notifyListeners');
-      }
-
+      
+      notifyListeners(); // Always notify after data fetch to update timer/state
       return true;
     } catch (e) {
       debugPrint('❌ [CHAT] getContactChatBoxData Error: $e');
@@ -1231,6 +1207,20 @@ class ContactProvider extends ChangeNotifier {
            value.containsKey('wamid') || value.containsKey('uid');
   }
 
+  DateTime? getLastIncomingMessageTime() {
+    for (var msg in _messages) {
+      if (msg is Map) {
+        final isIncoming = msg['is_incoming_message'] == 1 || 
+                           msg['is_incoming_message'] == true || 
+                           msg['is_incoming_message'] == '1';
+        if (isIncoming) {
+          return _getDateTime(msg);
+        }
+      }
+    }
+    return null;
+  }
+
   Future<bool> sendMessage({
     required String contactUid, 
     required String message,
@@ -1238,6 +1228,35 @@ class ContactProvider extends ChangeNotifier {
   }) async {
     _errorMessage = null;
     debugPrint('🚀 [SEND] Starting sendMessage. UID: $contactUid');
+    
+    // 🛡️ 24-HOUR POLICY CHECK (Client-side)
+    final lastIncoming = getLastIncomingMessageTime();
+    bool isExpired = false;
+    if (lastIncoming != null) {
+      final now = Helpers.toUtc(null);
+      if (now.difference(lastIncoming).inHours >= 24) {
+        isExpired = true;
+      }
+    }
+
+    if (isExpired) {
+      debugPrint('🛑 [SEND] Blocked by 24h policy locally');
+      final tempId = 'temp_policy_${DateTime.now().millisecondsSinceEpoch}';
+      final failedMessage = {
+        'whatsapp_message_id': tempId,
+        'local_id': tempId,
+        'message': message,
+        'message_body': message,
+        'status': 'failed',
+        'error': '24_hour_policy_error',
+        'is_incoming_message': 0,
+        'created_at': Helpers.toUtc(null).toIso8601String(),
+        if (replyToMessageId != null) 'reply_to_message_id': replyToMessageId,
+      };
+      _messages = [failedMessage, ..._messages];
+      notifyListeners();
+      return false;
+    }
     
     // 🛡️ OPTIMISTIC UPDATE: Add message to UI immediately
     final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
@@ -1321,15 +1340,24 @@ class ContactProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('❌ [SEND] Error: $e');
+      
+      String displayError = e.toString().replaceAll('Exception: ', '');
+      if (displayError.toLowerCase().contains('24 hour') || displayError.toLowerCase().contains('24hour')) {
+        displayError = "24_hour_policy_error";
+      }
+
       final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId || m['local_id'] == tempId);
       if (index != -1) {
         _messages[index] = {
           ..._messages[index],
           'status': 'failed',
+          'error': displayError,
         };
         _messages = List.from(_messages);
       }
-      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _errorMessage = displayError == "24_hour_policy_error" 
+          ? "Failed due to 24 hour policy" 
+          : displayError;
       notifyListeners();
       return false;
     }
@@ -1455,6 +1483,35 @@ class ContactProvider extends ChangeNotifier {
     int? duration,
   }) async {
     _errorMessage = null;
+    
+    // 🛡️ 24-HOUR POLICY CHECK (Client-side)
+    final lastIncoming = getLastIncomingMessageTime();
+    if (lastIncoming != null && Helpers.toUtc(null).difference(lastIncoming).inHours >= 24) {
+       debugPrint('🛑 [SEND MEDIA] Blocked by 24h policy locally');
+       final tempId = 'temp_media_policy_${DateTime.now().millisecondsSinceEpoch}';
+       final failedMessage = {
+          'whatsapp_message_id': tempId,
+          'local_id': tempId,
+          'message': 'Media',
+          'message_body': 'Media',
+          'status': 'failed',
+          'error': '24_hour_policy_error',
+          'is_incoming_message': 0,
+          'created_at': Helpers.toUtc(null).toIso8601String(),
+          'message_type': mediaType,
+          '__data': {
+            'media_values': {
+              'link': filePath,
+              'type': mediaType,
+              if (duration != null) 'duration': duration,
+            }
+          }
+       };
+       _messages = [failedMessage, ..._messages];
+       notifyListeners();
+       return false;
+    }
+
     final file = File(filePath);
     final originalSize = await file.length();
     debugPrint('🚀 [SEND MEDIA] Starting flow: $mediaType');
@@ -1509,13 +1566,13 @@ class ContactProvider extends ChangeNotifier {
           
           debugPrint('📹 [COMPRESS] Video Info: ${durationSec}s, ${info.width}x${info.height}, ${Helpers.formatFileSize(info.filesize ?? 0)}');
           
-          if (durationSec > 125) { // 120s limit + 5s buffer
+          if (durationSec > 365) { // 6 minute limit + 5s buffer
             debugPrint('🛑 [SEND MEDIA] Video too long: ${durationSec}s');
-            throw Exception('Video is too long. Maximum duration allowed is 2 minutes.');
+            throw Exception('Video is too long. Maximum duration allowed is 6 minutes.');
           }
         } catch (e) {
           debugPrint('⚠️ [COMPRESS] Could not get media info or limit exceeded: $e');
-          if (e.toString().contains('2 minutes')) rethrow;
+          if (e.toString().contains('6 minutes')) rethrow;
         }
 
         // Clear cache to avoid storage issues
@@ -1653,23 +1710,33 @@ class ContactProvider extends ChangeNotifier {
       String displayError = e.toString().replaceAll('Exception: ', '');
       if (e is DioException) {
         if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.sendTimeout || e.type == DioExceptionType.receiveTimeout) {
-          displayError = "Upload timed out. Check your connection.";
+          displayError = "Upload timed out. Your video might be too large for your internet connection.";
         } else if (e.response != null) {
-          debugPrint('📥 [SEND MEDIA] Server Error Response (${e.response?.statusCode}): ${e.response?.data}');
+          final status = e.response?.statusCode;
+          debugPrint('📥 [SEND MEDIA] Server Error Response ($status): ${e.response?.data}');
           
-          final serverData = e.response?.data;
-          if (e.response?.statusCode == 406) {
-            displayError = "Server Error: Not Acceptable.";
-          } else if (serverData is Map) {
-            displayError = (serverData['message'] ?? serverData['error'] ?? "Server Error (${e.response?.statusCode})").toString();
+          if (status == 413) {
+            displayError = "Video file size exceeds server limit. Try a shorter video.";
+          } else if (status == 406) {
+            displayError = "Server Error: Format not acceptable.";
           } else {
-            displayError = "Server Error (${e.response?.statusCode})";
+            final serverData = e.response?.data;
+            if (serverData is Map) {
+              displayError = (serverData['message'] ?? serverData['error'] ?? "Server Error ($status)").toString();
+            } else {
+              displayError = "Server Error ($status)";
+            }
           }
         }
       }
       
-      if (displayError.contains('24 hours')) {
-        displayError = "Cannot send: 24h window closed. Use a template.";
+      // Override misleading server-side duration messages if possible
+      if ((displayError.contains('2 minute') || displayError.contains('2-minute')) && mediaType == 'video') {
+         displayError = "Server Error: Video exceeds backend limit (2 mins). Please upload a shorter video.";
+      }
+
+      if (displayError.toLowerCase().contains('24 hour') || displayError.toLowerCase().contains('24hour')) {
+        displayError = "24_hour_policy_error";
       }
 
       final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId || m['local_id'] == tempId);

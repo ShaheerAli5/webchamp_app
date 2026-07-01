@@ -653,14 +653,15 @@ class ContactRepository {
       final status = e.response!.statusCode;
       if (status == 403) return "Too many requests. Please wait a moment.";
       if (status == 404) return "currently not working.";
+      if (status == 413) return "Video file is too large for the server. Please try a shorter or lower quality video.";
       if (status != null && status >= 500) return "Server error. Please try again later.";
 
       final data = e.response!.data;
       if (data is Map) {
-        return data['message'] ??
-            data['incident'] ??
-            data['error'] ??
-            'An error occurred';
+        String msg = (data['message'] ?? data['incident'] ?? data['error'] ?? 'An error occurred').toString();
+        // 🛡️ WhatsApp specific error conversion
+        if (msg.contains('24 hours')) return "24_hour_policy_error";
+        return msg;
       }
       if (data is String && data.isNotEmpty) {
         if (data.contains('<!DOCTYPE html>')) {
