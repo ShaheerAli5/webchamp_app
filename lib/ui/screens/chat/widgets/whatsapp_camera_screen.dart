@@ -153,7 +153,13 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted && _isRecording && !_isPaused) {
-        setState(() => _recordDuration++);
+        setState(() {
+          _recordDuration++;
+          // 🛡️ LIMIT: Stop recording at 2 minutes
+          if (_recordDuration >= 120) {
+            _stopRecording();
+          }
+        });
       }
     });
   }

@@ -1501,6 +1501,23 @@ class ContactProvider extends ChangeNotifier {
         debugPrint('📹 [COMPRESS] Video compression started...');
         final startTime = DateTime.now();
         
+        // Check duration and info before proceeding
+        try {
+          final info = await VideoCompress.getMediaInfo(filePath);
+          final durationMs = info.duration ?? 0;
+          final durationSec = durationMs / 1000;
+          
+          debugPrint('📹 [COMPRESS] Video Info: ${durationSec}s, ${info.width}x${info.height}, ${Helpers.formatFileSize(info.filesize ?? 0)}');
+          
+          if (durationSec > 125) { // 120s limit + 5s buffer
+            debugPrint('🛑 [SEND MEDIA] Video too long: ${durationSec}s');
+            throw Exception('Video is too long. Maximum duration allowed is 2 minutes.');
+          }
+        } catch (e) {
+          debugPrint('⚠️ [COMPRESS] Could not get media info or limit exceeded: $e');
+          if (e.toString().contains('2 minutes')) rethrow;
+        }
+
         // Clear cache to avoid storage issues
         try {
           await VideoCompress.deleteAllCache();
@@ -1513,17 +1530,9 @@ class ContactProvider extends ChangeNotifier {
         if (originalSize < 1 * 1024 * 1024) {
           debugPrint('📹 [COMPRESS] File is very small (${Helpers.formatFileSize(originalSize)}), skipping compression.');
         } else {
-          // Check duration and info
-          try {
-            final info = await VideoCompress.getMediaInfo(filePath);
-            debugPrint('📹 [COMPRESS] Video Info: ${info.duration}ms, ${info.width}x${info.height}, ${Helpers.formatFileSize(info.filesize ?? 0)}');
-          } catch (e) {
-            debugPrint('⚠️ [COMPRESS] Could not get media info: $e');
-          }
-
           final MediaInfo? mediaInfo = await VideoCompress.compressVideo(
             filePath,
-            quality: VideoQuality.MediumQuality,
+            quality: VideoQuality.LowQuality, // Switched to LowQuality for maximum compatibility
             deleteOrigin: false,
             includeAudio: true,
           );
