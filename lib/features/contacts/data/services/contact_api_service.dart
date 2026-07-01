@@ -201,6 +201,16 @@ class ContactApiService {
     return await _apiClient.get(ApiConstants.unreadCount);
   }
 
+  Future<Response> markAsRead({required String contactUid, String? messageId}) async {
+    return await _apiClient.post(
+      ApiConstants.markRead,
+      data: {
+        'contact_uid': contactUid,
+        if (messageId != null) 'message_id': messageId,
+      },
+    );
+  }
+
   Future<Response> sendMessage({
     required String contactUid,
     required String message,

@@ -19,6 +19,7 @@ import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import '../../../core/utils/helpers.dart';
@@ -701,33 +702,43 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
             if (showDateSeparator && dateStr != null) DateSeparator(date: dateStr),
             Padding(
               padding: EdgeInsets.only(bottom: showTail ? 8.h : 2.h),
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedMessageId = (_selectedMessageId == messageId) ? null : messageId;
-                  });
+              child: VisibilityDetector(
+                key: Key('msg_$messageId'),
+                onVisibilityChanged: (info) {
+                  if (info.visibleFraction > 0.5 && !isMe && 
+                      (messageData is Map && messageData['status'] != 'read') && 
+                      mounted) {
+                    context.read<ContactProvider>().markContactAsRead(widget.uid, messageId: messageId);
+                  }
                 },
-                child: ChatBubble(
-                  content: content,
-                  time: time,
-                  isMe: isMe,
-                  type: type,
-                  messageData: messageData,
-                  imageUrl: contactImageUrl,
-                  showTail: showTail,
-                  isSelected: _selectedMessageId == messageId,
-                  onReply: () { setState(() { _replyingTo = messageData; _focusNode.requestFocus(); }); },
-                  onCopy: type == 'text' ? () => _copyMessage(content.toString()) : null,
-                  onForward: () => _forwardMessage(messageData),
-                  onShare: () => _shareMessage(content.toString(), type),
-                  onDelete: () => _showDeleteDialog(messageData),
-                  onRetry: () => _retryMessage(messageData),
-                  onTapReply: (id) {
-                    final targetIndex = messages.indexWhere((m) => (m['whatsapp_message_id'] ?? m['wamid'] ?? m['_uid'])?.toString() == id);
-                    if (targetIndex != -1) {
-                      _scrollController.animateTo(targetIndex * 60.0, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
-                    }
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedMessageId = (_selectedMessageId == messageId) ? null : messageId;
+                    });
                   },
+                  child: ChatBubble(
+                    content: content,
+                    time: time,
+                    isMe: isMe,
+                    type: type,
+                    messageData: messageData,
+                    imageUrl: contactImageUrl,
+                    showTail: showTail,
+                    isSelected: _selectedMessageId == messageId,
+                    onReply: () { setState(() { _replyingTo = messageData; _focusNode.requestFocus(); }); },
+                    onCopy: type == 'text' ? () => _copyMessage(content.toString()) : null,
+                    onForward: () => _forwardMessage(messageData),
+                    onShare: () => _shareMessage(content.toString(), type),
+                    onDelete: () => _showDeleteDialog(messageData),
+                    onRetry: () => _retryMessage(messageData),
+                    onTapReply: (id) {
+                      final targetIndex = messages.indexWhere((m) => (m['whatsapp_message_id'] ?? m['wamid'] ?? m['_uid'])?.toString() == id);
+                      if (targetIndex != -1) {
+                        _scrollController.animateTo(targetIndex * 60.0, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+                      }
+                    },
+                  ),
                 ),
               ),
             ),

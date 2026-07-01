@@ -328,6 +328,17 @@ class ContactRepository {
     }
   }
 
+  Future<dynamic> markAsRead({required String contactUid, String? messageId}) async {
+    try {
+      final response = await _apiService.markAsRead(contactUid: contactUid, messageId: messageId);
+      return Helpers.sanitizeData(response.data);
+    } on DioException catch (e) {
+      // 🛡️ Special handling: if mark-as-read fails, we don't want to break the whole flow
+      debugPrint('⚠️ [REPO] markAsRead failed: ${e.message}');
+      return {'result': 'failed', 'message': e.message};
+    }
+  }
+
   Future<dynamic> sendMedia({
     required String contactUid,
     required String filePath,

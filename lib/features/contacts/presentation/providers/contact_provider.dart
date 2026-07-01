@@ -760,33 +760,93 @@ class ContactProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> markContactAsRead(String contactUid) async {
+  Future<void> markContactAsRead(String contactUid, {String? messageId}) async {
     // 🛡️ Guard: Only mark as read if it actually has unread messages locally
-    bool hasUnread = false;
-    for (var contact in _contacts) {
+    int previousCount = 0;
+    int contactIndex = -1;
+    for (int i = 0; i < _contacts.length; i++) {
+      final contact = _contacts[i];
       if (contact is Map && (contact['_uid'] ?? contact['uid']) == contactUid) {
-        hasUnread = (contact['unread_messages_count'] ?? 0) > 0;
+        previousCount = Helpers.toInt(contact['unread_messages_count'] ?? contact['unread_count']) ?? 0;
+        contactIndex = i;
         break;
       }
     }
     
-    if (!hasUnread) return;
+    if (messageId == null && previousCount <= 0) {
+      debugPrint('ℹ️ [MARK READ] Contact $contactUid already has 0 unread. Skipping.');
+      return;
+    }
 
-    debugPrint('📩 [MARK READ] Local clear for Contact: $contactUid');
+    final int previousGlobalCount = _globalUnreadCount;
+    debugPrint('📩 [MARK READ] START - Contact: $contactUid, MessageID: $messageId, Prev Contact Unread: $previousCount, Prev Global: $previousGlobalCount');
     
     // 1. Update local state immediately for UI responsiveness
-    for (var contact in _contacts) {
-      if (contact is Map && (contact['_uid'] ?? contact['uid']) == contactUid) {
-        contact['unread_messages_count'] = 0;
+    if (contactIndex != -1) {
+      final updatedContact = Map<String, dynamic>.from(_contacts[contactIndex]);
+      if (messageId == null) {
+        updatedContact['unread_messages_count'] = 0;
+        updatedContact['unread_count'] = 0;
+        _globalUnreadCount = (_globalUnreadCount - previousCount).clamp(0, 999999);
+      } else {
+        int currentUnread = Helpers.toInt(updatedContact['unread_messages_count'] ?? updatedContact['unread_count']) ?? 0;
+        if (currentUnread > 0) {
+          updatedContact['unread_messages_count'] = currentUnread - 1;
+          updatedContact['unread_count'] = currentUnread - 1;
+          _globalUnreadCount = (_globalUnreadCount - 1).clamp(0, 999999);
+        }
       }
+      _contacts[contactIndex] = updatedContact;
     }
-    notifyListeners();
-
-    // 2. Refresh global unread count
-    await getGlobalUnreadCount();
     
-    // Note: Removed mark-as-read API call as it returned 404.
-    // Backend likely handles this automatically or via a different endpoint.
+    // Update individual message status in current chat if active
+    if (_activeChatUid == contactUid) {
+      bool changed = false;
+      for (int i = 0; i < _messages.length; i++) {
+        final msg = _messages[i];
+        if (msg is Map) {
+          final id = (msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid']).toString();
+          final isIncoming = msg['is_incoming_message'] == 1 || msg['is_incoming_message'] == true || msg['is_incoming_message'] == '1';
+          
+          if (messageId != null) {
+            if (id == messageId && msg['status'] != 'read') {
+              debugPrint('📝 [MARK READ] Updating Message $id: ${msg['status']} -> read');
+              final updatedMsg = Map<String, dynamic>.from(msg);
+              updatedMsg['status'] = 'read';
+              _messages[i] = updatedMsg;
+              changed = true;
+              break;
+            }
+          } else if (isIncoming) {
+            if (msg['status'] != 'read') {
+              debugPrint('📝 [MARK READ] Updating Incoming Message $id: ${msg['status']} -> read');
+              final updatedMsg = Map<String, dynamic>.from(msg);
+              updatedMsg['status'] = 'read';
+              _messages[i] = updatedMsg;
+              changed = true;
+            }
+          }
+        }
+      }
+      if (changed) _messages = List.from(_messages);
+    }
+    
+    debugPrint('🔔 [MARK READ] Local state updated. New Global: $_globalUnreadCount');
+    notifyListeners();
+    _saveToPersistentCache();
+
+    // 2. Call API to notify backend
+    try {
+      debugPrint('📡 [MARK READ] API Request: contact_uid=$contactUid, message_id=$messageId');
+      final response = await _repository.markAsRead(contactUid: contactUid, messageId: messageId);
+      debugPrint('📥 [MARK READ] API Response: $response');
+      
+      // Refresh global unread count from server to ensure final sync
+      await getGlobalUnreadCount();
+      debugPrint('✅ [MARK READ] Completed. Final Global: $_globalUnreadCount');
+    } catch (e) {
+      debugPrint('⚠️ [MARK READ] API Error: $e');
+    }
   }
 
   Future<bool> getContactChatBoxData(String contactUid, {bool showLoading = true, bool refresh = false, bool force = false}) async {

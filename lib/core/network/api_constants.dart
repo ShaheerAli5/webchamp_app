@@ -30,6 +30,7 @@ class ApiConstants {
 
   // Unread count — from API doc
   static const String unreadCount = '/vendor/whatsapp/chat/unread-count';
+  static const String markRead = '/vendor/whatsapp/contact/chat/mark-read';
 
   // Clear chat history — from API doc
   static String clearChatHistory(String contactUid) =>
