@@ -20,8 +20,10 @@ class DioInterceptor extends Interceptor {
       options.headers['Authorization'] = 'Bearer $token';
     }
 
-    // 3. Set-up Accept header to ensure server knows we expect JSON
-    options.headers['Accept'] = 'application/json';
+    // 3. Set-up Accept header if not already specified
+    if (!options.headers.containsKey('Accept')) {
+      options.headers['Accept'] = 'application/json';
+    }
 
     // 🛡️ Option to force stateless (no cookies) for specific API requests
     final bool forceStateless = options.extra['stateless'] == true;

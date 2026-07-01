@@ -109,6 +109,7 @@ class VideoBubblePreview extends StatefulWidget {
   final bool isFullWidth;
   final double? width;
   final double? height;
+  final int? duration;
 
   const VideoBubblePreview({
     super.key,
@@ -118,6 +119,7 @@ class VideoBubblePreview extends StatefulWidget {
     this.isFullWidth = false,
     this.width,
     this.height,
+    this.duration,
   });
 
   @override
@@ -127,17 +129,20 @@ class VideoBubblePreview extends StatefulWidget {
 class _VideoBubblePreviewState extends State<VideoBubblePreview> {
   String? _thumbnailPath;
   bool _isGeneratingThumbnail = false;
+  int? _duration;
   static final Map<String, String> _thumbnailCache = {};
 
   @override
   void initState() {
     super.initState();
+    _duration = widget.duration;
     _loadThumbnail();
   }
 
   Future<void> _loadThumbnail() async {
     if (_thumbnailCache.containsKey(widget.videoUrl)) {
       if (mounted) setState(() => _thumbnailPath = _thumbnailCache[widget.videoUrl]);
+      if (_duration == null) _extractDuration();
       return;
     }
 
@@ -156,11 +161,38 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
         _thumbnailCache[widget.videoUrl] = path;
         if (mounted) setState(() => _thumbnailPath = path);
       }
+      
+      if (_duration == null) _extractDuration();
     } catch (e) {
       debugPrint("Thumbnail generation error: $e");
     } finally {
       if (mounted) setState(() => _isGeneratingThumbnail = false);
     }
+  }
+
+  Future<void> _extractDuration() async {
+    try {
+      final controller = widget.videoUrl.startsWith('http')
+          ? VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+          : VideoPlayerController.file(File(widget.videoUrl));
+      
+      await controller.initialize();
+      if (mounted) {
+        setState(() {
+          _duration = controller.value.duration.inSeconds;
+        });
+      }
+      await controller.dispose();
+    } catch (e) {
+      debugPrint("Duration extraction error: $e");
+    }
+  }
+
+  String _formatDuration(int? seconds) {
+    if (seconds == null || seconds <= 0) return "00:00";
+    final mins = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -225,7 +257,7 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
                 borderRadius: BorderRadius.circular(4.r),
               ),
               child: Text(
-                "00:04", // This should be dynamic, but for now matching the screenshot
+                _formatDuration(_duration),
                 style: TextStyle(color: Colors.white, fontSize: 10.sp, fontWeight: FontWeight.bold),
               ),
             ),

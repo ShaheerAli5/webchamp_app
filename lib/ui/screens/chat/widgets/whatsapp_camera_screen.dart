@@ -60,7 +60,7 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
 
     _controller = CameraController(
       cameraDescription,
-      ResolutionPreset.max, // Use Max for full screen quality
+      ResolutionPreset.high, // Use High instead of Max to avoid excessively large files
       enableAudio: true,
       imageFormatGroup: ImageFormatGroup.jpeg,
     );

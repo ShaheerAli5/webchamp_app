@@ -1458,6 +1458,19 @@ class ChatBubble extends StatelessWidget {
                   children: [
                     if (replyToMessage != null) _buildReplyPreview(replyToMessage),
                     _buildMessageContent(context),
+                    if (messageData?['status'] == 'failed' && messageData?['error'] != null)
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(8.w, 2.h, 8.w, 4.h),
+                        child: Text(
+                          messageData['error'].toString(),
+                          style: TextStyle(
+                            color: Colors.red[700], 
+                            fontSize: 10.sp, 
+                            fontWeight: FontWeight.w400,
+                            fontStyle: FontStyle.italic
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1643,20 +1656,20 @@ class ChatBubble extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           SizedBox(
-            width: 14.sp,
-            height: 14.sp,
+            width: 18.sp,
+            height: 18.sp,
             child: CircularProgressIndicator(
-              value: (progress != null && progress > 0) ? progress : null,
-              strokeWidth: 1.5,
-              color: isOverlay ? Colors.white70 : Colors.grey,
+              value: (progress != null && progress > 0.01) ? progress : null,
+              strokeWidth: 2.0,
+              color: isOverlay ? Colors.white70 : const Color(0xFF00A884),
             ),
           ),
           if (progress != null && progress > 0.01)
             Text(
               "${(progress * 100).toInt()}",
               style: TextStyle(
-                fontSize: 6.sp,
-                color: isOverlay ? Colors.white : Colors.black54,
+                fontSize: 7.sp,
+                color: isOverlay ? Colors.white : Colors.black87,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -1841,6 +1854,8 @@ class ChatBubble extends StatelessWidget {
 
   Widget _buildVideoContent(BuildContext context) {
     final String url = content.toString();
+    final int? duration = _extractDuration(messageData);
+    
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: isMe ? const Color(0xFFC3E7B2) : Colors.black12, width: 1),
@@ -1852,6 +1867,7 @@ class ChatBubble extends StatelessWidget {
         isMe: isMe,
         width: 210.w,
         height: 160.h,
+        duration: duration,
         onTap: () => _openFullscreenMedia(context, url, 'video'),
       ),
     );

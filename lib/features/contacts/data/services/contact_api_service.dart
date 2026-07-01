@@ -389,9 +389,10 @@ class ContactApiService {
       options: Options(
         contentType: null,
         headers: {
-          'Accept': 'application/json',
+          'Accept': '*/*', // Permissive Accept header for Filepond
           'X-Requested-With': 'XMLHttpRequest',
           'Api-Request-Signature': 'mobile-app-request',
+          if (_csrfToken != null && _csrfToken!.isNotEmpty) 'X-CSRF-TOKEN': _csrfToken,
         },
       ),
     );

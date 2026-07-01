@@ -367,13 +367,16 @@ class ContactRepository {
       }
 
       debugPrint('📤 [REPO] Step 1: Uploading temp media ($uploadItem)...');
+      final startTime = DateTime.now();
       final uploadResponse = await _apiService.uploadTempMedia(
         filePath, 
         uploadItem, 
         onSendProgress: onSendProgress
       );
+      final uploadDuration = DateTime.now().difference(startTime).inMilliseconds;
       
-      debugPrint('📥 [REPO] Step 1 Response: ${uploadResponse.statusCode}');
+      debugPrint('📥 [REPO] Step 1 Response: ${uploadResponse.statusCode} in ${uploadDuration}ms');
+      debugPrint('📥 [REPO] Step 1 Data: ${uploadResponse.data}');
 
       // Extract uploaded file name from response
       String? uploadedFileName;

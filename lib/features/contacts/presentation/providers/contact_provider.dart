@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
@@ -1454,7 +1455,11 @@ class ContactProvider extends ChangeNotifier {
     int? duration,
   }) async {
     _errorMessage = null;
-    debugPrint('🚀 [SEND MEDIA] Starting flow: $mediaType. File: $filePath');
+    final file = File(filePath);
+    final originalSize = await file.length();
+    debugPrint('🚀 [SEND MEDIA] Starting flow: $mediaType');
+    debugPrint('📁 [SEND MEDIA] File: $filePath');
+    debugPrint('📊 [SEND MEDIA] Original Size: ${Helpers.formatFileSize(originalSize)}');
     
     final tempId = 'temp_media_${DateTime.now().millisecondsSinceEpoch}';
     final optimisticMessage = {
@@ -1493,16 +1498,47 @@ class ContactProvider extends ChangeNotifier {
       // 🛡️ COMPRESSION
       String uploadPath = filePath;
       if (mediaType == 'video') {
-        debugPrint('📹 [COMPRESS] Compressing video...');
-        final MediaInfo? mediaInfo = await VideoCompress.compressVideo(
-          filePath,
-          quality: VideoQuality.MediumQuality,
-          deleteOrigin: false,
-          includeAudio: true,
-        );
-        if (mediaInfo?.path != null) {
-          uploadPath = mediaInfo!.path!;
-          debugPrint('📹 [COMPRESS] Success. New size: ${mediaInfo.filesize}');
+        debugPrint('📹 [COMPRESS] Video compression started...');
+        final startTime = DateTime.now();
+        
+        // Clear cache to avoid storage issues
+        try {
+          await VideoCompress.deleteAllCache();
+        } catch (e) {
+          debugPrint('⚠️ [COMPRESS] Could not clear cache: $e');
+        }
+
+        // Always compress videos to stay under server limits (often 5-10MB)
+        // Skip compression only if file is extremely small (< 1MB)
+        if (originalSize < 1 * 1024 * 1024) {
+          debugPrint('📹 [COMPRESS] File is very small (${Helpers.formatFileSize(originalSize)}), skipping compression.');
+        } else {
+          // Check duration and info
+          try {
+            final info = await VideoCompress.getMediaInfo(filePath);
+            debugPrint('📹 [COMPRESS] Video Info: ${info.duration}ms, ${info.width}x${info.height}, ${Helpers.formatFileSize(info.filesize ?? 0)}');
+          } catch (e) {
+            debugPrint('⚠️ [COMPRESS] Could not get media info: $e');
+          }
+
+          final MediaInfo? mediaInfo = await VideoCompress.compressVideo(
+            filePath,
+            quality: VideoQuality.MediumQuality,
+            deleteOrigin: false,
+            includeAudio: true,
+          );
+          
+          final endTime = DateTime.now();
+          final compressionDuration = endTime.difference(startTime).inSeconds;
+          
+          if (mediaInfo?.path != null) {
+            uploadPath = mediaInfo!.path!;
+            final compressedSize = await File(uploadPath).length();
+            debugPrint('📹 [COMPRESS] Success in ${compressionDuration}s');
+            debugPrint('📹 [COMPRESS] New Size: ${Helpers.formatFileSize(compressedSize)} (${((1 - compressedSize / originalSize) * 100).toStringAsFixed(1)}% reduction)');
+          } else {
+            debugPrint('⚠️ [COMPRESS] Compression returned null path, using original file');
+          }
         }
       } else if (mediaType == 'image') {
         debugPrint('🖼️ [COMPRESS] Compressing image...');
@@ -1530,10 +1566,12 @@ class ContactProvider extends ChangeNotifier {
           if (index != -1) {
             final Map<String, dynamic> msg = Map.from(_messages[index]);
             final Map<String, dynamic> data = Map.from(msg['__data'] ?? {});
-            if ((progress - (data['progress'] ?? 0.0)).abs() > 0.05) {
+            // Only notify if progress changed significantly (> 2%)
+            if ((progress - (data['progress'] ?? 0.0)).abs() > 0.02) {
               data['progress'] = progress;
               msg['__data'] = data;
               _messages[index] = msg;
+              _messages = List.from(_messages); // Ensure list reference changes for UI
               notifyListeners();
             }
           }
@@ -1602,20 +1640,40 @@ class ContactProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('❌ [SEND MEDIA] Error: $e');
+      
+      String displayError = e.toString().replaceAll('Exception: ', '');
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.sendTimeout || e.type == DioExceptionType.receiveTimeout) {
+          displayError = "Upload timed out. Check your connection.";
+        } else if (e.response != null) {
+          debugPrint('📥 [SEND MEDIA] Server Error Response (${e.response?.statusCode}): ${e.response?.data}');
+          
+          final serverData = e.response?.data;
+          if (e.response?.statusCode == 406) {
+            displayError = "Server Error: Not Acceptable.";
+          } else if (serverData is Map) {
+            displayError = (serverData['message'] ?? serverData['error'] ?? "Server Error (${e.response?.statusCode})").toString();
+          } else {
+            displayError = "Server Error (${e.response?.statusCode})";
+          }
+        }
+      }
+      
+      if (displayError.contains('24 hours')) {
+        displayError = "Cannot send: 24h window closed. Use a template.";
+      }
+
       final index = _messages.indexWhere((m) => m['whatsapp_message_id'] == tempId || m['local_id'] == tempId);
       if (index != -1) {
         _messages[index] = {
           ..._messages[index],
           'status': 'failed',
+          'error': displayError,
         };
         _messages = List.from(_messages);
       }
       
-      String errorMsg = e.toString().replaceAll('Exception: ', '');
-      if (errorMsg.contains('24 hours')) {
-        errorMsg = "Cannot send: 24h window closed. Use a template.";
-      }
-      _errorMessage = errorMsg;
+      _errorMessage = displayError;
       notifyListeners();
       return false;
     }

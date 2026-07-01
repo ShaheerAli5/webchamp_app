@@ -12,8 +12,9 @@ class ApiClient {
   ApiClient(SecureStorageService storageService)
       : _dio = Dio(BaseOptions(
     baseUrl: ApiConstants.baseUrl,
-    connectTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(seconds: 30),
+    connectTimeout: const Duration(seconds: 60),
+    receiveTimeout: const Duration(seconds: 60),
+    sendTimeout: const Duration(seconds: 120), // Added send timeout for large uploads
     contentType: null,
     headers: {
       'Accept': 'application/json',
