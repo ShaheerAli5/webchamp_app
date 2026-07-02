@@ -169,9 +169,9 @@ class ContactApiService {
     );
   }
 
-  Future<Response> getChatHistory(String contactUid, {bool refresh = false, CancelToken? cancelToken}) async {
+  Future<Response> getChatHistory(String contactUid, {int page = 1, bool refresh = false, CancelToken? cancelToken}) async {
     return await _apiClient.get(
-      ApiConstants.chatHistory(contactUid),
+      '${ApiConstants.chatHistory(contactUid)}?page=$page',
       cancelToken: cancelToken,
       options: Options(
         extra: {

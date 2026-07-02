@@ -345,10 +345,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final country = Helpers.sanitizeString((contact['country'] ?? '').toString());
     final optOut = contact['whatsapp_opt_out'] == true || contact['opt_out'] == 1 || contact['opt_out'] == true;
     
-    // Extract unread count and latest message
+    // Extract unread count and latest message preview
     final unreadCount = Helpers.toInt(contact['unread_messages_count'] ?? contact['unread_count']);
-    final latestMessage = contact['latest_message_text'] ?? contact['message'] ?? contact['last_message'];
-    final latestTime = contact['formatted_message_time'] ?? contact['messaged_at'];
+    final latestPreview = Helpers.getMessagePreview(contact is Map ? Map<String, dynamic>.from(contact) : {});
+    final latestTime = contact['latest_message'] ?? (contact['last_message'] is Map ? contact['last_message']['created_at'] : null) ?? contact['updated_at'] ?? contact['messaged_at'];
 
     return InkWell(
       onTap: () => _handleContactAction('view', contact),
@@ -428,12 +428,12 @@ class _ContactsScreenState extends State<ContactsScreen> {
                 ),
               ],
             ),
-            if (latestMessage != null) ...[
+            if (latestPreview.isNotEmpty) ...[
               SizedBox(height: 8.h),
               Padding(
                 padding: EdgeInsets.only(left: 60.w),
                 child: Text(
-                  latestMessage.toString(),
+                  latestPreview,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 13.sp, color: AppColors.textSecondary, fontStyle: FontStyle.italic),

@@ -70,6 +70,12 @@ class ContactProvider extends ChangeNotifier {
   String? _activeChatUid;
   String? get activeChatUid => _activeChatUid;
 
+  int _chatPage = 1;
+  bool _hasMoreChat = true;
+  bool get hasMoreChat => _hasMoreChat;
+  bool _isLoadingMoreChat = false;
+  bool get isLoadingMoreChat => _isLoadingMoreChat;
+
   String? _selectedLabel;
   String? get selectedLabel => _selectedLabel;
 
@@ -864,6 +870,9 @@ class ContactProvider extends ChangeNotifier {
       _chatCancelToken = CancelToken();
       _messages = []; // Clear for new contact
       _activeChatUid = contactUid;
+      _chatPage = 1;
+      _hasMoreChat = true;
+      _isLoadingMoreChat = false;
       // Notify immediately to show empty/loading state for the new contact
       notifyListeners();
     } else if (refresh || force) {
@@ -925,7 +934,36 @@ class ContactProvider extends ChangeNotifier {
 
       // 3. Extract and Merge Messages
       final List<dynamic> rawNewMessages = _extractMessagesFromResponse([result, chatResult]);
-      debugPrint('✅ [CHAT] Parsed messages: ${rawNewMessages.length}');
+      
+      // 🛡️ [PAGINATION LOGGING]
+      _logChatPagination(contactUid, _chatPage, rawNewMessages, chatResult);
+
+      // 🛡️ Update Chat Pagination State
+      if (chatResult is Map) {
+        final clientModels = chatResult['client_models'];
+        final paginate = clientModels?['whatsappMessageLogsPaginatePage'] ?? 
+                          chatResult['pagination'] ?? 
+                          chatResult['data']?['pagination'] ??
+                          chatResult['meta']?['pagination'];
+        
+        if (paginate is Map) {
+          final lastPage = Helpers.toInt(paginate['last_page']);
+          final current = Helpers.toInt(paginate['current_page']);
+          if (lastPage != null) {
+            _hasMoreChat = _chatPage < lastPage;
+          } else {
+            _hasMoreChat = rawNewMessages.isNotEmpty; 
+          }
+          if (current != null) _chatPage = current;
+        } else {
+          // 🛡️ FIX: Do not assume beginning if metadata is missing. 
+          // If we got messages, there might be more. The "Load More" button 
+          // will handle fetching page 2 to confirm if history exists.
+          _hasMoreChat = rawNewMessages.isNotEmpty;
+        }
+      } else {
+        _hasMoreChat = rawNewMessages.length >= 15;
+      }
       
       // 🛡️ Log incoming message status for debugging read/unread
       if (rawNewMessages.isNotEmpty) {
@@ -1066,6 +1104,122 @@ class ContactProvider extends ChangeNotifier {
       }
       return false;
     }
+  }
+
+  Future<void> loadMoreChatMessages(String contactUid) async {
+    if (_isLoadingMoreChat || !_hasMoreChat) {
+      debugPrint('⏳ [CHAT] Skipping load more: loading=$_isLoadingMoreChat, hasMore=$_hasMoreChat');
+      return;
+    }
+
+    _isLoadingMoreChat = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final nextPage = _chatPage + 1;
+      final chatResult = await _repository.getChatHistory(contactUid, page: nextPage);
+      final List<dynamic> newMessages = _extractMessagesFromResponse([chatResult]);
+      
+      // 🛡️ [PAGINATION LOGGING]
+      _logChatPagination(contactUid, nextPage, newMessages, chatResult);
+
+      if (newMessages.isEmpty) {
+        _hasMoreChat = false;
+      } else {
+        _chatPage = nextPage;
+        
+        // 🛡️ DEDUPLICATE & MERGE
+        final Map<String, dynamic> uniqueMap = {};
+        for (var msg in _messages) {
+          final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['local_id'] ?? msg['timestamp'] ?? msg['created_at'] ?? msg.hashCode;
+          if (id != null) uniqueMap[id.toString()] = msg;
+        }
+
+        bool addedAny = false;
+        for (var msg in newMessages) {
+          final id = msg['whatsapp_message_id'] ?? msg['wamid'] ?? msg['_uid'] ?? msg['uid'] ?? msg['id'];
+          if (id != null) {
+            final idStr = id.toString();
+            if (!uniqueMap.containsKey(idStr)) {
+              _messages.add(msg);
+              uniqueMap[idStr] = msg;
+              addedAny = true;
+            }
+          } else {
+            final hash = msg.hashCode.toString();
+            if (!uniqueMap.containsKey(hash)) {
+              _messages.add(msg);
+              uniqueMap[hash] = msg;
+              addedAny = true;
+            }
+          }
+        }
+
+        if (!addedAny && newMessages.isNotEmpty) {
+           // We got messages but all were duplicates. Try one more page?
+           // For now, let's just mark hasMore if the page was full.
+           _hasMoreChat = newMessages.length >= 15;
+        }
+
+        // Sort messages by time (Latest first)
+        _messages.sort((a, b) => _getDateTime(b).compareTo(_getDateTime(a)));
+        
+        // Update pagination info if available in response
+        if (chatResult is Map) {
+          final clientModels = chatResult['client_models'];
+          final paginate = clientModels?['whatsappMessageLogsPaginatePage'] ?? 
+                            chatResult['pagination'] ?? 
+                            chatResult['data']?['pagination'] ??
+                            chatResult['meta']?['pagination'];
+          if (paginate is Map) {
+            final lastPage = Helpers.toInt(paginate['last_page']);
+            if (lastPage != null) {
+              _hasMoreChat = _chatPage < lastPage;
+            } else {
+              _hasMoreChat = newMessages.isNotEmpty;
+            }
+          } else {
+            _hasMoreChat = newMessages.isNotEmpty;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ [CHAT] loadMoreChatMessages Error: $e');
+      _errorMessage = "Failed to load previous messages. Tap to retry.";
+    } finally {
+      _isLoadingMoreChat = false;
+      notifyListeners();
+    }
+  }
+
+  void _logChatPagination(String contactUid, int page, List<dynamic> messages, dynamic rawResponse) {
+    String oldest = 'N/A';
+    String newest = 'N/A';
+    
+    if (messages.isNotEmpty) {
+      final sorted = List.from(messages)..sort((a, b) => _getDateTime(a).compareTo(_getDateTime(b)));
+      oldest = _getDateTime(sorted.first).toIso8601String();
+      newest = _getDateTime(sorted.last).toIso8601String();
+    }
+
+    debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    debugPrint('🔍 [CHAT PAGINATION DEBUG]');
+    debugPrint('📱 Conversation ID: $contactUid');
+    debugPrint('📄 Current Page: $page');
+    debugPrint('📥 Messages Received: ${messages.length}');
+    debugPrint('🔄 Has More (calculated): $_hasMoreChat');
+    debugPrint('🕒 Oldest Msg: $oldest');
+    debugPrint('🕒 Newest Msg: $newest');
+    
+    if (rawResponse is Map) {
+      final paginate = rawResponse['client_models']?['whatsappMessageLogsPaginatePage'] ?? 
+                        rawResponse['pagination'] ?? 
+                        rawResponse['data']?['pagination'] ??
+                        rawResponse['meta']?['pagination'];
+      debugPrint('📦 Raw Pagination Meta: $paginate');
+    }
+    debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   }
 
   DateTime _getDateTime(dynamic msg) {

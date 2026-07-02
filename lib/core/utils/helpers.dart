@@ -237,7 +237,7 @@ class Helpers {
       // 1. Handle Permissions (Required for Android)
       if (Platform.isAndroid) {
         final sdkInt = await _getAndroidSdkInt();
-        if (sdkInt >= 33) {
+        if (sdkInt != null && sdkInt >= 33) {
           // Android 13+ specific permissions
           await [
             Permission.photos,
@@ -291,12 +291,112 @@ class Helpers {
     }
   }
 
-  static Future<int> _getAndroidSdkInt() async {
+  /// Formats a message object into a WhatsApp-style preview string.
+  static String getMessagePreview(Map<String, dynamic> contact) {
+    final lastMessage = contact['last_message'];
+    if (lastMessage is! Map) {
+      // Check fallback fields in contact directly
+      final text = contact['latest_message_text'] ?? contact['message'];
+      if (text != null && text.toString().isNotEmpty) return text.toString();
+      return '';
+    }
+
+    // 1. Determine Sender Name for Groups
+    String prefix = '';
+    final bool isGroup = contact['is_group_chat'] == true || 
+                        contact['is_group'] == true || 
+                        contact['type'] == 'group';
+    
+    if (isGroup) {
+      final sender = lastMessage['sender_name'] ?? 
+                     lastMessage['vendor_messaging_user']?['name'] ?? 
+                     lastMessage['vendor_messaging_user']?['first_name'];
+      if (sender != null && sender.toString().isNotEmpty) {
+        prefix = '${sender.toString()}: ';
+      }
+    }
+
+    // 2. Check for Deleted Status
+    if (lastMessage['is_deleted'] == true || lastMessage['status'] == 'deleted') {
+      return '${prefix}🚫 This message was deleted';
+    }
+
+    // 3. Identify Type
+    String type = (lastMessage['message_type'] ?? lastMessage['type'] ?? '').toString().toLowerCase();
+    
+    // Deep extraction for type if it's "text" but might be media (e.g. from webhooks)
+    if (type == 'text' || type.isEmpty) {
+      final data = lastMessage['__data'];
+      if (data is Map) {
+        try {
+          final msg = data['webhook_responses']?['incoming']?[0]?['changes']?[0]?['value']?['messages']?[0];
+          final wType = msg?['type']?.toString().toLowerCase();
+          if (wType != null) type = wType;
+        } catch (_) {}
+      }
+    }
+
+    // Fallback detection by content if type is still ambiguous
+    if (type == 'text' || type.isEmpty) {
+      final content = (lastMessage['message'] ?? lastMessage['text'] ?? '').toString().toLowerCase();
+      if (content.endsWith('.webp')) type = 'sticker';
+      else if (content.endsWith('.mp4') || content.endsWith('.mov')) type = 'video';
+      else if (content.endsWith('.jpg') || content.endsWith('.png') || content.endsWith('.jpeg')) type = 'image';
+      else if (content.startsWith('http')) {
+        if (content.contains('/stickers/')) type = 'sticker';
+        else if (content.contains('/images/')) type = 'image';
+        else if (content.contains('/videos/')) type = 'video';
+        else if (content.contains('/audio/')) type = 'voice';
+      }
+    }
+
+    switch (type) {
+      case 'image':
+        return '${prefix}🖼️ Photo';
+      case 'video':
+        return '${prefix}🎥 Video';
+      case 'voice':
+      case 'ptt':
+        return '${prefix}🎤 Voice message';
+      case 'audio':
+        return '${prefix}🎵 Audio';
+      case 'sticker':
+        return '${prefix}😊 Sticker';
+      case 'document':
+      case 'file':
+        final fileName = lastMessage['file_name'] ?? lastMessage['attachment_name'] ?? lastMessage['uploaded_media_file_name'];
+        if (fileName != null && fileName.toString().isNotEmpty) {
+          return '${prefix}📄 ${fileName.toString()}';
+        }
+        return '${prefix}📄 Document';
+      case 'contact':
+        return '${prefix}👤 Contact';
+      case 'location':
+        return '${prefix}📍 Location';
+      case 'gif':
+        return '${prefix}GIF';
+      default:
+        final text = lastMessage['message'] ??
+                    lastMessage['text'] ??
+                    lastMessage['body'] ??
+                    lastMessage['message_body'] ??
+                    lastMessage['caption'];
+        
+        if (text != null && text.toString().trim().isNotEmpty && text.toString() != 'Media') {
+          return '${prefix}${htmlToPlainText(text.toString())}';
+        } else if (lastMessage['wamid'] != null || type.isNotEmpty) {
+          return '${prefix}📎 Media message';
+        }
+        return '';
+    }
+  }
+
+  static Future<int?> _getAndroidSdkInt() async {
     if (Platform.isAndroid) {
       final deviceInfo = DeviceInfoPlugin();
       final androidInfo = await deviceInfo.androidInfo;
       return androidInfo.version.sdkInt;
     }
-    return 0;
+    return null;
   }
 }

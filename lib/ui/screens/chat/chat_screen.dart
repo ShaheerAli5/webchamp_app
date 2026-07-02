@@ -252,49 +252,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String _contactLatestMessage(dynamic contact) {
-    if (contact is! Map) return '';
-
-    final lastMessage = contact['last_message'];
-    if (lastMessage is Map) {
-      // 1. Check for explicit text content
-      final text = lastMessage['message'] ??
-          lastMessage['text'] ??
-          lastMessage['body'] ??
-          lastMessage['message_body'] ??
-          lastMessage['caption'];
-
-      if (text != null && text.toString().trim().isNotEmpty) {
-        return text.toString();
-      }
-
-      // 2. Check for type based identification
-      final type = (lastMessage['message_type'] ?? lastMessage['type'] ?? '').toString().toLowerCase();
-      if (type == 'audio' || type == 'voice' || type == 'ptt') return 'voice';
-      if (type == 'image') return '📷 Image';
-      if (type == 'video') return '🎥 Video';
-      if (type == 'document') return '📄 Document';
-
-      // 3. Check webhook deep extraction
-      final data = lastMessage['__data'];
-      if (data is Map) {
-        try {
-          final msg = data['webhook_responses']?['incoming']?[0]?['changes']?[0]?['value']?['messages']?[0];
-          final wType = msg?['type']?.toString().toLowerCase();
-          if (wType == 'audio' || wType == 'voice' || wType == 'ptt') return 'voice';
-          if (wType == 'image') return '📷 Image';
-          if (wType == 'video') return '🎥 Video';
-          if (wType == 'document') return '📄 Document';
-        } catch (_) {}
-      }
-
-      // Fallback based on wamid existence
-      if (lastMessage['wamid'] != null) return '📎 Media message';
-
-      final agoTime = lastMessage['formatted_message_ago_time'];
-      if (agoTime != null) return '🕐 $agoTime';
-    }
-
-    return '';
+    if (contact is! Map<String, dynamic>) return '';
+    return Helpers.getMessagePreview(contact);
   }
 
   String _contactLatestMessageTime(dynamic contact) {

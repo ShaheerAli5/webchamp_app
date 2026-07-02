@@ -202,9 +202,9 @@ class ContactRepository {
     }
   }
 
-  Future<dynamic> getChatHistory(String contactUid, {bool refresh = false, CancelToken? cancelToken}) async {
+  Future<dynamic> getChatHistory(String contactUid, {int page = 1, bool refresh = false, CancelToken? cancelToken}) async {
     try {
-      final response = await _apiService.getChatHistory(contactUid, refresh: refresh, cancelToken: cancelToken);
+      final response = await _apiService.getChatHistory(contactUid, page: page, refresh: refresh, cancelToken: cancelToken);
 
       // 1. If response is already a Map (Dio auto-parsed JSON)
       if (response.data is Map) {

@@ -704,8 +704,12 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 12.h),
       reverse: true,
       cacheExtent: 1000,
-      itemCount: messages.length,
+      itemCount: messages.length + 1,
       itemBuilder: (context, index) {
+        if (index == messages.length) {
+          return _buildLoadMoreButton();
+        }
+
         final messageData = messages[index];
         final isMe = _isOutgoingMessage(messageData);
         final time = _messageTime(messageData);
@@ -783,6 +787,78 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLoadMoreButton() {
+    return Consumer<ContactProvider>(
+      builder: (context, provider, child) {
+        // 🛡️ GUARD: Don't show anything if still loading initial messages
+        if (provider.isLoading && provider.messages.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        if (!provider.hasMoreChat) {
+          // 🛡️ Only show "Beginning of conversation" if we have messages and explicitly reached the end
+          if (provider.messages.isEmpty) return const SizedBox.shrink();
+          
+          return Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 20.h),
+              child: Text(
+                "Beginning of conversation",
+                style: TextStyle(color: const Color(0xFF667781), fontSize: 12.sp, fontStyle: FontStyle.italic),
+              ),
+            ),
+          );
+        }
+
+        if (provider.isLoadingMoreChat) {
+          return Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 20.h),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: 20.w,
+                    height: 20.w,
+                    child: const CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00A884)),
+                  ),
+                  SizedBox(height: 8.h),
+                  Text("Loading previous messages...", style: TextStyle(color: const Color(0xFF667781), fontSize: 12.sp)),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final bool hasError = provider.errorMessage != null && provider.errorMessage!.contains("previous");
+
+        return Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 16.h),
+            child: TextButton(
+              onPressed: () => provider.loadMoreChatMessages(widget.uid),
+              style: TextButton.styleFrom(
+                backgroundColor: const Color(0xFFF0F2F5),
+                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.r)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(hasError ? Icons.refresh : Icons.arrow_upward, size: 14.sp, color: hasError ? Colors.red : const Color(0xFF008069)),
+                  SizedBox(width: 8.w),
+                  Text(
+                    hasError ? "Failed to load. Retry?" : "Load Previous Messages",
+                    style: TextStyle(color: hasError ? Colors.red : const Color(0xFF008069), fontSize: 13.sp, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
         );
       },
     );
