@@ -359,6 +359,7 @@ class ContactRepository {
       String uploadItem;
       switch (mediaType.toLowerCase()) {
         case 'image': uploadItem = 'whatsapp_image'; break;
+        case 'sticker': uploadItem = 'whatsapp_sticker'; break;
         case 'audio':
         case 'voice': uploadItem = 'whatsapp_audio'; break;
         case 'video': uploadItem = 'whatsapp_video'; break;

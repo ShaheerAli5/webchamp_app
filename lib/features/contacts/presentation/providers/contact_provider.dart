@@ -1476,6 +1476,14 @@ class ContactProvider extends ChangeNotifier {
     );
   }
 
+  Future<bool> sendStickerMessage({required String contactUid, required String filePath}) async {
+    return _sendMediaOptimistic(
+      contactUid: contactUid,
+      filePath: filePath,
+      mediaType: 'sticker',
+    );
+  }
+
   Future<bool> _sendMediaOptimistic({
     required String contactUid,
     required String filePath,

@@ -355,6 +355,8 @@ class ContactApiService {
       contentType = 'image/jpeg';
       if (ext == 'png') contentType = 'image/png';
       else if (ext == 'gif') contentType = 'image/gif';
+    } else if (uploadItem.contains('sticker')) {
+      contentType = 'image/webp';
     } else if (uploadItem.contains('document')) {
       // 🛡️ Document MIME types
       switch (ext) {

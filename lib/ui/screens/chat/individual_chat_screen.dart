@@ -299,6 +299,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       if (type == 'image') _sendImage(path);
       else if (type == 'video') _sendVideo(path);
       else if (type == 'document') _sendDocument(path);
+      else if (type == 'sticker') _sendSticker(path);
     }
     return result;
   }
@@ -354,6 +355,15 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                     Navigator.pop(context, 'file:${res.files.single.path}');
                   }
                 }),
+                _buildAttachmentOption(Icons.sticky_note_2, "Sticker", Colors.teal, () async {
+                  FilePickerResult? res = await FilePicker.platform.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: ['webp'],
+                  );
+                  if (res != null && mounted) {
+                    Navigator.pop(context, 'sticker:${res.files.single.path}');
+                  }
+                }),
               ],
             ),
           ],
@@ -368,6 +378,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         _showMediaPreview(result.substring(6), 'video');
       } else if (result.startsWith('file:')) {
         _showMediaPreview(result.substring(5), 'document');
+      } else if (result.startsWith('sticker:')) {
+        _showMediaPreview(result.substring(8), 'sticker');
       }
     }
   }
@@ -411,6 +423,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     if (_isSending) return;
     setState(() => _isSending = true);
     context.read<ContactProvider>().sendDocumentMessage(contactUid: widget.uid, filePath: path).then((_) {
+      if (mounted) setState(() => _isSending = false);
+    }).catchError((_) {
+      if (mounted) setState(() => _isSending = false);
+    });
+    _scrollToBottom();
+  }
+
+  void _sendSticker(String path) {
+    if (_isSending) return;
+    setState(() => _isSending = true);
+    context.read<ContactProvider>().sendStickerMessage(contactUid: widget.uid, filePath: path).then((_) {
       if (mounted) setState(() => _isSending = false);
     }).catchError((_) {
       if (mounted) setState(() => _isSending = false);
@@ -952,6 +975,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         return 'text';
       }
 
+      if (type.contains('sticker')) return 'sticker';
       if (type.contains('audio') || type.contains('voice') || type.contains('ptt')) return 'voice';
       if (type.contains('image')) return 'image';
       if (type.contains('video')) return 'video';
@@ -969,6 +993,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
        }
     }
 
+    if (type.contains('sticker')) return 'sticker';
     if (type.contains('audio') || type.contains('voice') || type.contains('ptt')) return 'voice';
     if (type.contains('image')) return 'image';
     if (type.contains('video')) return 'video';
@@ -976,8 +1001,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     
     // Check by extension if type is ambiguous
     final contentLower = content.toLowerCase();
+    if (contentLower.endsWith('.webp')) return 'sticker';
     if (contentLower.endsWith('.mp4') || contentLower.endsWith('.mov') || contentLower.endsWith('.mpeg') || contentLower.endsWith('.webm') || contentLower.endsWith('.mkv')) return 'video';
-    if (contentLower.endsWith('.jpg') || contentLower.endsWith('.jpeg') || contentLower.endsWith('.png') || contentLower.endsWith('.gif') || contentLower.endsWith('.webp')) return 'image';
+    if (contentLower.endsWith('.jpg') || contentLower.endsWith('.jpeg') || contentLower.endsWith('.png') || contentLower.endsWith('.gif')) return 'image';
     if (contentLower.endsWith('.aac') || contentLower.endsWith('.m4a') || contentLower.endsWith('.mp3') || contentLower.endsWith('.ogg') || contentLower.endsWith('.wav') || contentLower.endsWith('.amr')) return 'voice';
 
     return 'text';
@@ -1456,13 +1482,14 @@ class ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final replyToMessage = messageData?['reply_to_message'];
+    final bool isSticker = type == 'sticker';
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          if (showTail)
+          if (showTail && !isSticker)
             Positioned(
               top: 0, 
               left: isMe ? null : -7.w, 
@@ -1472,7 +1499,7 @@ class ChatBubble extends StatelessWidget {
           Container(
             margin: EdgeInsets.only(left: isMe ? 48.w : 0, right: isMe ? 0 : 48.w),
             constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-            decoration: BoxDecoration(
+            decoration: isSticker ? null : BoxDecoration(
               color: isMe ? const Color(0xFFE2FFC7) : Colors.white,
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(showTail && !isMe ? 2.r : 18.r), 
@@ -1484,7 +1511,7 @@ class ChatBubble extends StatelessWidget {
             ),
             child: IntrinsicWidth(
               child: Padding(
-                padding: EdgeInsets.all(4.w),
+                padding: EdgeInsets.all(isSticker ? 0 : 4.w),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -1653,18 +1680,18 @@ class ChatBubble extends StatelessWidget {
       );
     }
 
-    final bool isMedia = type == 'image' || type == 'video';
+    final bool isMedia = type == 'image' || type == 'video' || type == 'sticker';
 
     return Padding(
-      padding: isMedia ? EdgeInsets.zero : EdgeInsets.fromLTRB(10.w, 4.h, 10.w, 4.h),
+      padding: (isMedia && type != 'sticker') ? EdgeInsets.zero : EdgeInsets.fromLTRB(10.w, 4.h, 10.w, 4.h),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: type == 'sticker' ? (isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start) : CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildContent(context),
           SizedBox(height: 2.h),
           Row(
-            mainAxisAlignment: isMedia ? MainAxisAlignment.start : MainAxisAlignment.end,
+            mainAxisAlignment: (isMedia && type != 'sticker') ? MainAxisAlignment.start : MainAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
@@ -1822,6 +1849,7 @@ class ChatBubble extends StatelessWidget {
     switch (type) {
       case 'image': return _buildImageContent(context);
       case 'video': return _buildVideoContent(context);
+      case 'sticker': return _buildStickerContent(context);
       case 'document': case 'file': return _buildFileContent();
       default:
         final rawText = content.toString();
@@ -1971,6 +1999,57 @@ class ChatBubble extends StatelessWidget {
         height: 160.h,
         duration: duration,
         onTap: () => _openFullscreenMedia(context, url, 'video'),
+      ),
+    );
+  }
+
+  Widget _buildStickerContent(BuildContext context) {
+    final String url = content.toString();
+    final bool isLocal = url.startsWith('/') || url.contains('cache/');
+    
+    return Container(
+      width: 160.w,
+      height: 160.w,
+      constraints: BoxConstraints(
+        maxWidth: 180.w,
+        maxHeight: 180.w,
+      ),
+      child: isLocal
+          ? Image.file(
+              File(url), 
+              fit: BoxFit.contain, 
+              width: double.infinity, 
+              height: double.infinity,
+              errorBuilder: (context, error, stackTrace) => _buildStickerError(),
+            )
+          : CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.contain,
+              width: double.infinity,
+              height: double.infinity,
+              placeholder: (context, url) => const Center(
+                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00A884)),
+              ),
+              errorWidget: (context, url, error) => _buildStickerError(),
+            ),
+    );
+  }
+
+  Widget _buildStickerError() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(8.r),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, color: Colors.grey, size: 24.sp),
+            SizedBox(height: 4.h),
+            Text("Retry", style: TextStyle(color: Colors.grey, fontSize: 10.sp)),
+          ],
+        ),
       ),
     );
   }

@@ -306,7 +306,7 @@ class _StatusEditScreenState extends State<StatusEditScreen>
                           aspectRatio: _controller.value.aspectRatio,
                           child: VideoPlayer(_controller),
                         )
-                      : (widget.type == 'image'
+                      : (widget.type == 'image' || widget.type == 'sticker'
                           ? Image.file(
                               File(widget.path),
                               fit: BoxFit.contain,
