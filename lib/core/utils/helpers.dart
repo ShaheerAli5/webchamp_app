@@ -357,9 +357,9 @@ class Helpers {
         return '${prefix}🎥 Video';
       case 'voice':
       case 'ptt':
-        return '${prefix}🎤 Voice message';
+        return '${prefix} Voice message';
       case 'audio':
-        return '${prefix}🎵 Audio';
+        return '${prefix} Voice message';
       case 'sticker':
         return '${prefix}😊 Sticker';
       case 'document':

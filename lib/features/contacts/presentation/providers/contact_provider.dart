@@ -110,6 +110,7 @@ class ContactProvider extends ChangeNotifier {
   int get globalUnreadCount => _globalUnreadCount;
 
   Timer? _globalUnreadTimer;
+  Timer? _unreadSyncTimer;
 
   // Bug 3: Retry count for chat box data
   int _chatBoxRetryCount = 0;
@@ -124,6 +125,14 @@ class ContactProvider extends ChangeNotifier {
   void stopGlobalUnreadPolling() {
     _globalUnreadTimer?.cancel();
     _globalUnreadTimer = null;
+    _unreadSyncTimer?.cancel();
+  }
+
+  void _debouncedGlobalUnreadSync() {
+    _unreadSyncTimer?.cancel();
+    _unreadSyncTimer = Timer(const Duration(seconds: 2), () {
+      getGlobalUnreadCount();
+    });
   }
 
   @override
@@ -327,6 +336,14 @@ class ContactProvider extends ChangeNotifier {
         }
 
         final uid = _extractUid(contact);
+        if (uid != null && (contact is Map)) {
+          // 🛡️ Preserve local read status for active chat to prevent "jumping" counts
+          if (uid == _activeChatUid) {
+            contact['unread_messages_count'] = 0;
+            contact['unread_count'] = 0;
+          }
+        }
+
         if (uid != null && !existingUids.contains(uid)) {
           _contacts.add(contact);
           addedInThisPage++;
@@ -757,10 +774,17 @@ class ContactProvider extends ChangeNotifier {
   Future<void> getGlobalUnreadCount() async {
     try {
       final result = await _repository.getUnreadCount();
+      debugPrint('📥 [UNREAD] API Response: $result');
       if (result is Map) {
-        _globalUnreadCount = _toInt(result['unread_count'] ?? result['data']?['unread_count'] ?? result['client_models']?['unreadMessagesCount']) ?? 0;
-        _saveToPersistentCache();
-        notifyListeners();
+        final int newCount = _toInt(result['unread_count'] ?? result['data']?['unread_count'] ?? result['client_models']?['unreadMessagesCount']) ?? 0;
+        if (_globalUnreadCount != newCount) {
+          debugPrint('📊 [UNREAD] Syncing: $_globalUnreadCount -> $newCount');
+          _globalUnreadCount = newCount;
+          _saveToPersistentCache();
+          notifyListeners();
+        } else {
+          debugPrint('📊 [UNREAD] No change: $newCount');
+        }
       }
     } catch (e) {
       debugPrint('❌ Global unread count error: $e');
@@ -845,12 +869,24 @@ class ContactProvider extends ChangeNotifier {
     // 2. Call API to notify backend
     try {
       debugPrint('📡 [MARK READ] API Request: contact_uid=$contactUid, message_id=$messageId');
-      final response = await _repository.markAsRead(contactUid: contactUid, messageId: messageId);
-      debugPrint('📥 [MARK READ] API Response: $response');
+      final result = await _repository.markAsRead(contactUid: contactUid, messageId: messageId);
+      debugPrint('📥 [MARK READ] API Response: $result');
       
-      // Refresh global unread count from server to ensure final sync
-      await getGlobalUnreadCount();
-      debugPrint('✅ [MARK READ] Completed. Final Global: $_globalUnreadCount');
+      // 🛡️ [SYNC] Update global count from response if available, otherwise debounce a fresh fetch
+      // This prevents "count jumping" during multiple rapid read events
+      if (result is Map && (result['unread_count'] != null || result['data']?['unread_count'] != null)) {
+        final serverCount = Helpers.toInt(result['unread_count'] ?? result['data']?['unread_count']);
+        if (serverCount != null) {
+          debugPrint('🎯 [MARK READ] Syncing from API response: $serverCount');
+          _globalUnreadCount = serverCount;
+          notifyListeners();
+          _saveToPersistentCache();
+        }
+      } else {
+        _debouncedGlobalUnreadSync();
+      }
+      
+      debugPrint('✅ [MARK READ] Completed. Global: $_globalUnreadCount');
     } catch (e) {
       debugPrint('⚠️ [MARK READ] API Error: $e');
     }
@@ -1054,6 +1090,24 @@ class ContactProvider extends ChangeNotifier {
             uniqueMap[idStr] = msg;
           } else {
             uniqueMap[msg.hashCode.toString()] = msg;
+          }
+        }
+      }
+
+      // 🛡️ PRESERVE LOCAL READ STATUS
+      // If a message was marked as read locally, don't let a stale backend poll revert it.
+      for (var entry in uniqueMap.entries) {
+        final id = entry.key;
+        final msg = entry.value;
+        final existingMsg = _messages.firstWhere(
+          (m) => (m['whatsapp_message_id'] ?? m['wamid'] ?? m['_uid'] ?? m['uid'] ?? m['local_id'])?.toString() == id,
+          orElse: () => null,
+        );
+        
+        if (existingMsg != null && existingMsg['status'] == 'read' && msg['status'] != 'read') {
+          debugPrint('🛡️ [MERGE] Preserving local "read" status for message $id');
+          if (msg is Map) {
+            uniqueMap[id] = {...msg, 'status': 'read'};
           }
         }
       }

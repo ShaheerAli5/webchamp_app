@@ -994,6 +994,12 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   Future<void> _loadChatData() async {
     final provider = context.read<ContactProvider>();
     await provider.getContactChatBoxData(widget.uid);
+    
+    // 🛡️ Optimization: Mark contact as read immediately when entering the chat
+    if (mounted) {
+      provider.markContactAsRead(widget.uid);
+    }
+
     if (provider.messages.isNotEmpty && mounted) {
       provider.getContactChatBoxData(widget.uid, showLoading: false, refresh: true);
     }
