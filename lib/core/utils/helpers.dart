@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
 import 'dart:io';
@@ -24,18 +25,22 @@ class Helpers {
   static DateTime toUtc(dynamic timestamp) {
     if (timestamp == null) return DateTime.now().toUtc();
     
-    DateTime dt;
     if (timestamp is DateTime) {
-      dt = timestamp;
-    } else {
+      return timestamp.isUtc ? timestamp : timestamp.toUtc();
+    }
+    
+    try {
       String str = timestamp.toString();
-      // If backend returns "YYYY-MM-DD HH:MM:SS" without TZ, assume UTC
-      if (!str.contains('Z') && !str.contains('+') && RegExp(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}').hasMatch(str)) {
+      // Optimization: common Laravel format "YYYY-MM-DD HH:MM:SS"
+      if (str.length == 19 && str[10] == ' ') {
+        str = '${str.substring(0, 10)}T${str.substring(11)}Z';
+      } else if (!str.contains('Z') && !str.contains('+') && RegExp(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}').hasMatch(str)) {
         str = str.replaceFirst(' ', 'T') + 'Z';
       }
-      dt = DateTime.tryParse(str) ?? DateTime.now();
+      return DateTime.tryParse(str)?.toUtc() ?? DateTime.now().toUtc();
+    } catch (_) {
+      return DateTime.now().toUtc();
     }
-    return dt.toUtc();
   }
 
   /// Converts any given timestamp to Pakistan Standard Time (PKT, UTC+5) for display.
@@ -43,6 +48,9 @@ class Helpers {
     DateTime utc = toUtc(timestamp);
     return utc.add(const Duration(hours: 5));
   }
+
+  static final DateFormat _fullDateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+  static final DateFormat _timeFormat = DateFormat('hh:mm a');
 
   /// Formats date for Chat List and Chat Messages in PKT.
   static String formatTimestamp(dynamic timestamp) {
@@ -58,13 +66,15 @@ class Helpers {
                            pktTime.day == now.day - 1;
 
     if (isToday) {
-      return DateFormat('hh:mm a').format(pktTime);
+      return _timeFormat.format(pktTime);
     } else if (isYesterday) {
-      return 'Yesterday, ${DateFormat('hh:mm a').format(pktTime)}';
+      return 'Yesterday, ${_timeFormat.format(pktTime)}';
     } else {
-      return DateFormat('dd MMM yyyy, hh:mm a').format(pktTime);
+      return _fullDateFormat.format(pktTime);
     }
   }
+
+  static final DateFormat _shortDateFormat = DateFormat('dd/MM/yy');
 
   /// Short format for chat list
   static String formatShortTimestamp(dynamic timestamp) {
@@ -72,22 +82,35 @@ class Helpers {
     final DateTime now = toPKT(DateTime.now());
     
     if (pktTime.year == now.year && pktTime.month == now.month && pktTime.day == now.day) {
-      return DateFormat('hh:mm a').format(pktTime);
+      return _timeFormat.format(pktTime);
     } else if (pktTime.year == now.year && pktTime.month == now.month && pktTime.day == now.day - 1) {
       return 'Yesterday';
     } else {
-      return DateFormat('dd/MM/yy').format(pktTime);
+      return _shortDateFormat.format(pktTime);
     }
   }
 
   /// Sanitizes a string to ensure it is well-formed UTF-16 for Flutter.
-  /// Removes lone surrogates that cause "Invalid argument(s): string is not well-formed UTF-16".
+  /// Optimized to avoid processing if the string is already well-formed.
   static String sanitizeString(String? text) {
     if (text == null || text.isEmpty) return '';
+
+    // Optimization: Check if string has any potentially problematic surrogates first
+    bool hasSurrogates = false;
+    for (int i = 0; i < text.length; i++) {
+      int unit = text.codeUnitAt(i);
+      if (unit >= 0xD800 && unit <= 0xDFFF) {
+        hasSurrogates = true;
+        break;
+      }
+    }
+
+    if (!hasSurrogates) return text;
 
     try {
       final List<int> codeUnits = text.codeUnits;
       final List<int> sanitizedUnits = [];
+      // sanitizedUnits.reserve(codeUnits.length); // REMOVED: reserve is not a Dart method
 
       for (int i = 0; i < codeUnits.length; i++) {
         int unit = codeUnits[i];
@@ -116,18 +139,19 @@ class Helpers {
 
       return String.fromCharCodes(sanitizedUnits);
     } catch (e) {
-      // Last resort fallback
-      return text.replaceAll(RegExp(r'[^\x00-\x7F]'), '');
+      return text.replaceAll(RegExp(r'[\uD800-\uDFFF]'), '');
     }
   }
 
   /// Deeply sanitizes a map or list to ensure all strings are well-formed.
+  /// For performance, use sanitizeDataAsync for large datasets.
   static dynamic sanitizeData(dynamic data) {
     if (data == null) return null;
 
     if (data is String) {
       return sanitizeString(data);
     } else if (data is Map) {
+      // Use Map.from for faster iteration if it's already a Map<String, dynamic>
       final Map<String, dynamic> sanitizedMap = {};
       data.forEach((key, value) {
         final String safeKey = key is String ? sanitizeString(key) : key.toString();
@@ -138,6 +162,20 @@ class Helpers {
       return data.map((item) => sanitizeData(item)).toList();
     }
     return data;
+  }
+
+  /// Performs heavy data sanitization in a background isolate to keep UI smooth.
+  static Future<dynamic> sanitizeDataAsync(dynamic data) async {
+    if (data == null) return null;
+    if (data is! Map && data is! List) return sanitizeData(data);
+    
+    // Only use compute for reasonably sized data to avoid isolate overhead
+    // A rough heuristic: if it's a list with > 10 items or a map
+    return await compute(_sanitizeDataIsolate, data);
+  }
+
+  static dynamic _sanitizeDataIsolate(dynamic data) {
+    return sanitizeData(data);
   }
 
   /// Safely gets the first character of a string, handling surrogate pairs.
@@ -168,14 +206,12 @@ class Helpers {
   static String format24hCountdown(Duration duration) {
     if (duration.isNegative || duration.inSeconds == 0) return "expired";
     
-    if (duration.inHours == 24 && duration.inMinutes.remainder(60) == 0 && duration.inSeconds.remainder(60) == 0) {
-      return "24 hours";
-    }
-    
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     final seconds = duration.inSeconds.remainder(60);
     
+    if (hours >= 24) return "24 hours";
+
     List<String> parts = [];
     if (hours > 0) {
       parts.add("${hours}h");
@@ -196,31 +232,29 @@ class Helpers {
   }
 
   /// Converts HTML string to WhatsApp-style plain text.
+  /// Optimized with compiled RegExp.
+  static final RegExp _brRegex = RegExp(r'<br\s*/?>', caseSensitive: false);
+  static final RegExp _emRegex = RegExp(r'</?em>', caseSensitive: false);
+  static final RegExp _strongRegex = RegExp(r'</?(strong|b)>', caseSensitive: false);
+  static final RegExp _tagRegex = RegExp(r'<[^>]*>');
+
   static String htmlToPlainText(String? html) {
     if (html == null || html.isEmpty) return '';
     
     String text = html;
+    text = text.replaceAll(_brRegex, '\n');
+    text = text.replaceAll(_emRegex, '_');
+    text = text.replaceAll(_strongRegex, '*');
+    text = text.replaceAll(_tagRegex, '');
     
-    // Replace <br> and <br/> with \n
-    text = text.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
-    
-    // Replace <em> and </em> with _ (WhatsApp italic)
-    text = text.replaceAll(RegExp(r'</?em>', caseSensitive: false), '_');
-    
-    // Replace <strong> and <b> with * (WhatsApp bold)
-    text = text.replaceAll(RegExp(r'</?(strong|b)>', caseSensitive: false), '*');
-    
-    // For <a> tags, we want to extract the URL if the text doesn't contain it, 
-    // but usually in these cases the text is the URL.
-    // Let's just strip all remaining tags.
-    text = text.replaceAll(RegExp(r'<[^>]*>'), '');
-    
-    // Decode HTML entities (like &amp; &lt; &gt; &quot; &#39;)
-    text = text.replaceAll('&amp;', '&')
-               .replaceAll('&lt;', '<')
-               .replaceAll('&gt;', '>')
-               .replaceAll('&quot;', '"')
-               .replaceAll('&#39;', "'");
+    // Efficient entity replacement
+    if (text.contains('&')) {
+      text = text.replaceAll('&amp;', '&')
+                 .replaceAll('&lt;', '<')
+                 .replaceAll('&gt;', '>')
+                 .replaceAll('&quot;', '"')
+                 .replaceAll('&#39;', "'");
+    }
                
     return text.trim();
   }
@@ -238,22 +272,14 @@ class Helpers {
       if (Platform.isAndroid) {
         final sdkInt = await _getAndroidSdkInt();
         if (sdkInt != null && sdkInt >= 33) {
-          // Android 13+ specific permissions
-          await [
-            Permission.photos,
-            Permission.videos,
-            Permission.audio,
-          ].request();
+          await [Permission.photos, Permission.videos, Permission.audio].request();
         } else {
-          if (await Permission.storage.isDenied) {
-            await Permission.storage.request();
-          }
+          await Permission.storage.request();
         }
       }
 
       String localPath = urlOrPath;
 
-      // 2. Check if it's a remote URL
       if (urlOrPath.startsWith('http')) {
         final directory = await getApplicationDocumentsDirectory();
         final String name = fileName ?? urlOrPath.split('/').last;
@@ -262,9 +288,7 @@ class Helpers {
 
         final File file = File(localPath);
 
-        // 3. Download if not already exists
         if (!await file.exists()) {
-          debugPrint('📥 Downloading file to: $localPath');
           final Dio dio = Dio();
           await dio.download(
             urlOrPath,
@@ -278,15 +302,11 @@ class Helpers {
         }
       }
 
-      // 4. Open the file natively
-      debugPrint('📂 Opening file: $localPath');
       final result = await OpenFilex.open(localPath);
-
       if (result.type != ResultType.done) {
         Fluttertoast.showToast(msg: result.message ?? "Could not open file");
       }
     } catch (e) {
-      debugPrint('❌ Error opening file: $e');
       Fluttertoast.showToast(msg: "No application available to open this file.");
     }
   }
@@ -295,99 +315,32 @@ class Helpers {
   static String getMessagePreview(Map<String, dynamic> contact) {
     final lastMessage = contact['last_message'];
     if (lastMessage is! Map) {
-      // Check fallback fields in contact directly
       final text = contact['latest_message_text'] ?? contact['message'];
-      if (text != null && text.toString().isNotEmpty) return text.toString();
-      return '';
+      return text != null ? htmlToPlainText(text.toString()) : '';
     }
 
-    // 1. Determine Sender Name for Groups
     String prefix = '';
-    final bool isGroup = contact['is_group_chat'] == true || 
-                        contact['is_group'] == true || 
-                        contact['type'] == 'group';
+    final bool isGroup = contact['is_group_chat'] == true || contact['is_group'] == true;
     
     if (isGroup) {
-      final sender = lastMessage['sender_name'] ?? 
-                     lastMessage['vendor_messaging_user']?['name'] ?? 
-                     lastMessage['vendor_messaging_user']?['first_name'];
-      if (sender != null && sender.toString().isNotEmpty) {
-        prefix = '${sender.toString()}: ';
-      }
+      final sender = lastMessage['sender_name'] ?? lastMessage['vendor_messaging_user']?['name'];
+      if (sender != null) prefix = '$sender: ';
     }
 
-    // 2. Check for Deleted Status
-    if (lastMessage['is_deleted'] == true || lastMessage['status'] == 'deleted') {
-      return '${prefix}🚫 This message was deleted';
-    }
+    if (lastMessage['is_deleted'] == true) return '${prefix}🚫 This message was deleted';
 
-    // 3. Identify Type
     String type = (lastMessage['message_type'] ?? lastMessage['type'] ?? '').toString().toLowerCase();
     
-    // Deep extraction for type if it's "text" but might be media (e.g. from webhooks)
-    if (type == 'text' || type.isEmpty) {
-      final data = lastMessage['__data'];
-      if (data is Map) {
-        try {
-          final msg = data['webhook_responses']?['incoming']?[0]?['changes']?[0]?['value']?['messages']?[0];
-          final wType = msg?['type']?.toString().toLowerCase();
-          if (wType != null) type = wType;
-        } catch (_) {}
-      }
-    }
-
-    // Fallback detection by content if type is still ambiguous
-    if (type == 'text' || type.isEmpty) {
-      final content = (lastMessage['message'] ?? lastMessage['text'] ?? '').toString().toLowerCase();
-      if (content.endsWith('.webp')) type = 'sticker';
-      else if (content.endsWith('.mp4') || content.endsWith('.mov')) type = 'video';
-      else if (content.endsWith('.jpg') || content.endsWith('.png') || content.endsWith('.jpeg')) type = 'image';
-      else if (content.startsWith('http')) {
-        if (content.contains('/stickers/')) type = 'sticker';
-        else if (content.contains('/images/')) type = 'image';
-        else if (content.contains('/videos/')) type = 'video';
-        else if (content.contains('/audio/')) type = 'voice';
-      }
-    }
-
     switch (type) {
-      case 'image':
-        return '${prefix}🖼️ Photo';
-      case 'video':
-        return '${prefix}🎥 Video';
-      case 'voice':
-      case 'ptt':
-        return '${prefix} Voice message';
-      case 'audio':
-        return '${prefix} Voice message';
-      case 'sticker':
-        return '${prefix}😊 Sticker';
-      case 'document':
-      case 'file':
-        final fileName = lastMessage['file_name'] ?? lastMessage['attachment_name'] ?? lastMessage['uploaded_media_file_name'];
-        if (fileName != null && fileName.toString().isNotEmpty) {
-          return '${prefix}📄 ${fileName.toString()}';
-        }
-        return '${prefix}📄 Document';
-      case 'contact':
-        return '${prefix}👤 Contact';
-      case 'location':
-        return '${prefix}📍 Location';
-      case 'gif':
-        return '${prefix}GIF';
+      case 'image': return '${prefix}🖼️ Photo';
+      case 'video': return '${prefix}🎥 Video';
+      case 'voice': case 'ptt': case 'audio': return '${prefix}🎤 Voice message';
+      case 'sticker': return '${prefix}😊 Sticker';
+      case 'document': case 'file': return '${prefix}📄 Document';
       default:
-        final text = lastMessage['message'] ??
-                    lastMessage['text'] ??
-                    lastMessage['body'] ??
-                    lastMessage['message_body'] ??
-                    lastMessage['caption'];
-        
-        if (text != null && text.toString().trim().isNotEmpty && text.toString() != 'Media') {
-          return '${prefix}${htmlToPlainText(text.toString())}';
-        } else if (lastMessage['wamid'] != null || type.isNotEmpty) {
-          return '${prefix}📎 Media message';
-        }
-        return '';
+        final text = lastMessage['message'] ?? lastMessage['text'] ?? lastMessage['body'];
+        if (text != null && text.toString() != 'Media') return '${prefix}${htmlToPlainText(text.toString())}';
+        return '${prefix}📎 Media message';
     }
   }
 

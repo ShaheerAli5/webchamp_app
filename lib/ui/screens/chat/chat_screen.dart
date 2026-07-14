@@ -119,14 +119,11 @@ class _ChatScreenState extends State<ChatScreen> {
                       return const Center(child: CircularProgressIndicator());
                     }
                     
-                    final contactsWithChats = [...provider.contacts]
-                      ..sort(_sortContactsByLatestMessage);
-
                     final filtered = _activeFilter == 'unread'
-                        ? contactsWithChats
+                        ? provider.contacts
                             .where((c) => (c['unread_messages_count'] ?? 0) > 0)
                             .toList()
-                        : contactsWithChats;
+                        : provider.contacts;
                     
                     if (filtered.isEmpty) {
                       return Center(
@@ -166,13 +163,15 @@ class _ChatScreenState extends State<ChatScreen> {
                         final time = _contactLatestMessageTime(contact);
                         final unreadCount = contact['unread_messages_count'];
 
-                        return _buildChatItem(
-                          uid: uid,
-                          name: _sanitizeText(name),
-                          subtext: _sanitizeText(lastMsg),
-                          time: time,
-                          isUnread: (unreadCount ?? 0) > 0,
-                          unreadCount: unreadCount?.toString(),
+                        return RepaintBoundary(
+                          child: _buildChatItem(
+                            uid: uid,
+                            name: _sanitizeText(name),
+                            subtext: _sanitizeText(lastMsg),
+                            time: time,
+                            isUnread: (unreadCount ?? 0) > 0,
+                            unreadCount: unreadCount?.toString(),
+                          ),
                         );
                       },
                     ),

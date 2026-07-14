@@ -33,22 +33,10 @@ class ContactRepository {
         cancelToken: cancelToken,
       );
 
-      debugPrint('--- CONTACTS API DEBUG ---');
-      debugPrint('Status Code: ${response.statusCode}');
-      debugPrint('Base URL: ${ApiConstants.baseUrl}');
-      debugPrint('Final URL: ${response.realUri}');
-      
-      // 🛡️ Safe logging: catch potential UTF-16 errors during debug printing
-      try {
-        String dataStr = response.data.toString();
-        debugPrint('Response Data: ${dataStr.length > 2000 ? '${dataStr.substring(0, 2000)}...' : dataStr}');
-      } catch (e) {
-        debugPrint('Response Data: [Error stringifying data, likely malformed UTF-16]');
-      }
-      debugPrint('--------------------------');
-
-      return Helpers.sanitizeData(response.data);
+      return await Helpers.sanitizeDataAsync(response.data);
     } on DioException catch (e) {
+      // ...
+
       debugPrint('❌ CONTACTS API ERROR: ${e.message}');
       debugPrint('Error Type: ${e.type}');
       
@@ -214,12 +202,12 @@ class ContactRepository {
         if (token != null) {
           _apiService.setCsrfToken(token.toString());
         }
-        return Helpers.sanitizeData(data);
+        return await Helpers.sanitizeDataAsync(data);
       }
 
       // 2. If response is a List (Dio auto-parsed JSON)
       if (response.data is List) {
-        return Helpers.sanitizeData(response.data);
+        return await Helpers.sanitizeDataAsync(response.data);
       }
 
       // 3. Fallback: If response is a String (could be JSON string or legacy HTML)
@@ -234,9 +222,9 @@ class ContactRepository {
             if (token != null) {
               _apiService.setCsrfToken(token.toString());
             }
-            return Helpers.sanitizeData(decoded);
+            return await Helpers.sanitizeDataAsync(decoded);
           }
-          if (decoded is List) return Helpers.sanitizeData(decoded);
+          if (decoded is List) return await Helpers.sanitizeDataAsync(decoded);
         } catch (_) {
           // Not valid JSON, proceed to HTML extraction (legacy)
         }
@@ -246,7 +234,7 @@ class ContactRepository {
         if (result['csrf_token'] != null) {
           _apiService.setCsrfToken(result['csrf_token']);
         }
-        return Helpers.sanitizeData(result);
+        return await Helpers.sanitizeDataAsync(result);
       }
 
       return {};
@@ -313,7 +301,7 @@ class ContactRepository {
   Future<dynamic> getContactChatBoxData(String contactUid, {bool refresh = false, CancelToken? cancelToken}) async {
     try {
       final response = await _apiService.getContactChatBoxData(contactUid, refresh: refresh, cancelToken: cancelToken);
-      return Helpers.sanitizeData(response.data);
+      return await Helpers.sanitizeDataAsync(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }

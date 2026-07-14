@@ -181,8 +181,10 @@ class ContactProvider extends ChangeNotifier {
   Future<void> _saveToPersistentCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Cache all contacts for a truly "no restriction" experience
-      await prefs.setString('cached_contacts_${_activeUserId ?? 'anon'}', jsonEncode(_contacts));
+      // Optimization: jsonEncode can be heavy for large lists, but isolate overhead
+      // might be more for smaller ones. Contacts list can be huge.
+      final String encoded = await compute(jsonEncode, _contacts);
+      await prefs.setString('cached_contacts_${_activeUserId ?? 'anon'}', encoded);
       await prefs.setInt('cached_unread_${_activeUserId ?? 'anon'}', _globalUnreadCount);
     } catch (e) {
       debugPrint('⚠️ [CACHE] Failed to save persistent cache: $e');
@@ -364,21 +366,30 @@ class ContactProvider extends ChangeNotifier {
       if (newContacts.isEmpty) {
         debugPrint('🛑 [CONTACTS] Page is empty. Stopping recursion.');
         _hasMore = false;
-      } else if (autoLoadAll && _hasMore) {
-        debugPrint('⏳ [CONTACTS] Auto-loading next page ($_currentPage + 1)...');
-        await Future.delayed(const Duration(milliseconds: 2000));
-        return await getContacts(
-          search: search, 
-          loadMore: true, 
-          autoLoadAll: true,
-          perPage: effectivePerPage,
-          isRecursiveCall: true,
-        );
       } else {
-         if (addedInThisPage == 0 && loadMore) {
-           debugPrint('🛑 [CONTACTS] No new unique contacts added in this page, stopping recursion.');
-           _hasMore = false;
-         }
+        // Optimized Sort contacts by latest message time
+        final List<MapEntry<dynamic, DateTime>> timedContacts = _contacts
+            .map((c) => MapEntry(c, Helpers.toUtc(c['latest_message'] ?? c['updated_at'])))
+            .toList();
+        timedContacts.sort((a, b) => b.value.compareTo(a.value));
+        _contacts = timedContacts.map((e) => e.key).toList();
+        
+        if (autoLoadAll && _hasMore) {
+          debugPrint('⏳ [CONTACTS] Auto-loading next page ($_currentPage + 1)...');
+          await Future.delayed(const Duration(milliseconds: 2000));
+          return await getContacts(
+            search: search, 
+            loadMore: true, 
+            autoLoadAll: true,
+            perPage: effectivePerPage,
+            isRecursiveCall: true,
+          );
+        } else {
+           if (addedInThisPage == 0 && loadMore) {
+             debugPrint('🛑 [CONTACTS] No new unique contacts added in this page, stopping recursion.');
+             _hasMore = false;
+           }
+        }
       }
 
       _isFetchingContacts = false;
@@ -430,7 +441,7 @@ class ContactProvider extends ChangeNotifier {
             refresh: refresh || (page == 1),
             cancelToken: _contactsCancelToken,
           ).catchError((e) {
-            debugPrint('⚠️ [BATCH] Page $page failed: $e');
+            debugPrint('⚠ [BATCH] Page $page failed: $e');
             return null;
           }));
         }
@@ -474,8 +485,16 @@ class ContactProvider extends ChangeNotifier {
 
         // Fix 2: Batch UI Updates - avoid rebuilding 242 times
         if (buffer.length >= 120 || endReached || pagesFetchedInCurrentBatch >= uiUpdateBatch) {
-          debugPrint('🔔 [UI] Batch Update: Adding ${buffer.length} contacts (Total: ${_contacts.length + buffer.length})');
+          debugPrint(' [UI] Batch Update: Adding ${buffer.length} contacts (Total: ${_contacts.length + buffer.length})');
           _contacts.addAll(buffer);
+          
+          // Optimization: Sort only when batch is added
+          final List<MapEntry<dynamic, DateTime>> timedContacts = _contacts
+              .map((c) => MapEntry(c, Helpers.toUtc(c['latest_message'] ?? c['updated_at'])))
+              .toList();
+          timedContacts.sort((a, b) => b.value.compareTo(a.value));
+          _contacts = timedContacts.map((e) => e.key).toList();
+
           buffer.clear();
           pagesFetchedInCurrentBatch = 0;
           _saveToPersistentCache(); // Fix 4: Save progress to local storage
@@ -531,7 +550,7 @@ class ContactProvider extends ChangeNotifier {
     }
 
     // 🛡️ Debug Verification
-    debugPrint('📊 [PAGINATION DEBUG]');
+    debugPrint('[PAGINATION DEBUG]');
     debugPrint('   - Backend Total: ${_total == 0 ? "Unknown" : _total}');
     debugPrint('   - Parsed Count (This page): $newCount');
     debugPrint('   - Total in List: ${_contacts.length}');
@@ -1184,8 +1203,14 @@ class ContactProvider extends ChangeNotifier {
       }
 
       // 3. Sort by time (newest first for reversed ListView)
-      dedupedList = uniqueMap.values.toList();
-      dedupedList.sort((a, b) => _getDateTime(b).compareTo(_getDateTime(a)));
+      // Optimization: Pre-calculate date times for sorting to avoid repeated parsing
+      final List<MapEntry<dynamic, DateTime>> timedMessages = uniqueMap.values
+          .map((m) => MapEntry(m, _getDateTime(m)))
+          .toList();
+      
+      timedMessages.sort((a, b) => b.value.compareTo(a.value));
+      dedupedList = timedMessages.map((e) => e.key).toList();
+
       debugPrint('📊 [MERGE] Final list size: ${dedupedList.length}');
 
       if (!_isSameMessageList(_messages, dedupedList)) {
@@ -1287,8 +1312,12 @@ class ContactProvider extends ChangeNotifier {
            _hasMoreChat = newMessages.length >= 15;
         }
 
-        // Sort messages by time (Latest first)
-        _messages.sort((a, b) => _getDateTime(b).compareTo(_getDateTime(a)));
+        // Optimized Sort messages by time (Latest first)
+        final List<MapEntry<dynamic, DateTime>> timedMessages = _messages
+            .map((m) => MapEntry(m, _getDateTime(m)))
+            .toList();
+        timedMessages.sort((a, b) => b.value.compareTo(a.value));
+        _messages = timedMessages.map((e) => e.key).toList();
         
         // Update pagination info if available in response
         if (chatResult is Map) {
@@ -1692,12 +1721,12 @@ class ContactProvider extends ChangeNotifier {
       contact['latest_message'] = message['created_at'];
       _contacts[contactIndex] = contact;
       
-      // Sort contacts by latest message
-      _contacts.sort((a, b) {
-        final timeA = Helpers.toPKT(a['latest_message']);
-        final timeB = Helpers.toPKT(b['latest_message']);
-        return timeB.compareTo(timeA);
-      });
+      // Optimized Sort contacts by latest message
+      final List<MapEntry<dynamic, DateTime>> timedContacts = _contacts
+          .map((c) => MapEntry(c, Helpers.toPKT(c['latest_message'] ?? c['updated_at'])))
+          .toList();
+      timedContacts.sort((a, b) => b.value.compareTo(a.value));
+      _contacts = timedContacts.map((e) => e.key).toList();
     }
   }
 

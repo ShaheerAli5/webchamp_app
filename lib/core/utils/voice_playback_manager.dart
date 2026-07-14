@@ -30,8 +30,10 @@ class VoicePlaybackManager extends ChangeNotifier {
       }
     });
 
-    _player.positionStream.listen((_) => notifyListeners());
-    _player.durationStream.listen((_) => notifyListeners());
+    // 🛡️ PERFORMANCE: Do NOT call notifyListeners() on every position update.
+    // This was causing massive jank as all bubbles were rebuilding.
+    // _player.positionStream.listen((_) => notifyListeners()); 
+    // _player.durationStream.listen((_) => notifyListeners());
   }
 
   late final AudioPlayer _player;
@@ -47,6 +49,10 @@ class VoicePlaybackManager extends ChangeNotifier {
   bool get isPlaying => _player.playing;
   bool get isBuffering => _isBuffering;
   double get currentSpeed => _currentSpeed;
+  
+  // 🚀 Added streams for granular UI updates
+  Stream<Duration> get positionStream => _player.positionStream;
+  Stream<Duration?> get durationStream => _player.durationStream;
 
   void setSpeed(double speed) {
     _currentSpeed = speed;

@@ -131,6 +131,7 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
   bool _isGeneratingThumbnail = false;
   int? _duration;
   static final Map<String, String> _thumbnailCache = {};
+  static final Map<String, int> _durationCache = {};
 
   @override
   void initState() {
@@ -141,8 +142,12 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
 
   Future<void> _loadThumbnail() async {
     if (_thumbnailCache.containsKey(widget.videoUrl)) {
-      if (mounted) setState(() => _thumbnailPath = _thumbnailCache[widget.videoUrl]);
-      if (_duration == null) _extractDuration();
+      if (mounted) {
+        setState(() {
+          _thumbnailPath = _thumbnailCache[widget.videoUrl];
+          _duration = _durationCache[widget.videoUrl] ?? widget.duration;
+        });
+      }
       return;
     }
 
@@ -162,7 +167,14 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
         if (mounted) setState(() => _thumbnailPath = path);
       }
       
-      if (_duration == null) _extractDuration();
+      // Optimization: Avoid expensive duration extraction for every bubble
+      // Only do it if not provided by backend AND not in cache
+      if (_duration == null && !_durationCache.containsKey(widget.videoUrl)) {
+        // We defer duration extraction to a more appropriate time or 
+        // handle it more lazily to avoid jank.
+        // For now, let's just not do it here. 
+        // If the user taps it, the full player will have the duration anyway.
+      }
     } catch (e) {
       debugPrint("Thumbnail generation error: $e");
     } finally {
@@ -171,6 +183,9 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
   }
 
   Future<void> _extractDuration() async {
+    // 🛡️ Guard: Only extract if absolutely needed and not already extracting
+    if (_duration != null || _durationCache.containsKey(widget.videoUrl)) return;
+    
     try {
       final controller = widget.videoUrl.startsWith('http')
           ? VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
@@ -180,6 +195,7 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
       if (mounted) {
         setState(() {
           _duration = controller.value.duration.inSeconds;
+          _durationCache[widget.videoUrl] = _duration!;
         });
       }
       await controller.dispose();

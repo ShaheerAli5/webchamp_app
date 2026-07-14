@@ -81,7 +81,18 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   }
 
   void _onManagerUpdate() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      // 🛡️ PERFORMANCE OPTIMIZATION: Only rebuild if:
+      // 1. This bubble is the one currently playing (needs to update progress/speed)
+      // 2. This bubble WAS playing but stopped (needs to reset UI)
+      // 3. This bubble is now being buffered
+      final bool isThisPlaying = _manager.currentAudioUrl == widget.audioUrl;
+      final bool wasThisPlaying = _isThisPlaying;
+      
+      if (isThisPlaying || wasThisPlaying) {
+        setState(() {});
+      }
+    }
   }
 
   bool get _isThisPlaying => _manager.currentAudioUrl == widget.audioUrl;
@@ -201,72 +212,79 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
 
   Widget _buildSlider() {
     final bool active = _isThisPlaying;
-    final Duration position = active ? _manager.player.position : Duration.zero;
     
     // 🛡️ Priority: 1. Active Player 2. Auto-detected 3. Widget Prop
     final int effectiveSeconds = (active && _manager.player.duration != null) 
         ? _manager.player.duration!.inSeconds 
         : (_autoDetectedDuration ?? widget.duration ?? 0);
 
-    final Duration duration = Duration(seconds: effectiveSeconds);
+    final double max = effectiveSeconds * 1000.0;
     
-    final double max = duration.inMilliseconds.toDouble();
-    final double value = position.inMilliseconds.toDouble().clamp(0, max > 0 ? max : 1.0);
-    
-    return SliderTheme(
-      data: SliderTheme.of(context).copyWith(
-        trackHeight: 2.h,
-        thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6.r),
-        overlayShape: RoundSliderOverlayShape(overlayRadius: 12.r),
-        activeTrackColor: const Color(0xFF34B7F1),
-        inactiveTrackColor: Colors.grey[300],
-        thumbColor: const Color(0xFF34B7F1),
-      ),
-      child: Slider(
-        value: value,
-        max: max > 0 ? max : 1.0,
-        onChanged: (v) {
-          if (active) {
-            _manager.player.seek(Duration(milliseconds: v.toInt()));
-          } else {
-             // If not playing, start it and seek
-             _manager.togglePlay(widget.audioUrl).then((_) {
-               _manager.player.seek(Duration(milliseconds: v.toInt()));
-             });
-          }
-        },
-      ),
+    return StreamBuilder<Duration>(
+      stream: active ? _manager.positionStream : Stream.value(Duration.zero),
+      initialData: Duration.zero,
+      builder: (context, snapshot) {
+        final double value = snapshot.data!.inMilliseconds.toDouble().clamp(0, max > 0 ? max : 1.0);
+        
+        return SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 2.h,
+            thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6.r),
+            overlayShape: RoundSliderOverlayShape(overlayRadius: 12.r),
+            activeTrackColor: const Color(0xFF34B7F1),
+            inactiveTrackColor: Colors.grey[300],
+            thumbColor: const Color(0xFF34B7F1),
+          ),
+          child: Slider(
+            value: value,
+            max: max > 0 ? max : 1.0,
+            onChanged: (v) {
+              if (active) {
+                _manager.player.seek(Duration(milliseconds: v.toInt()));
+              } else {
+                 _manager.togglePlay(widget.audioUrl).then((_) {
+                   _manager.player.seek(Duration(milliseconds: v.toInt()));
+                 });
+              }
+            },
+          ),
+        );
+      }
     );
   }
 
   Widget _buildInfoRow() {
     final bool active = _isThisPlaying;
-    final Duration position = active ? _manager.player.position : Duration.zero;
     
     final int effectiveSeconds = (active && _manager.player.duration != null) 
         ? _manager.player.duration!.inSeconds 
         : (_autoDetectedDuration ?? widget.duration ?? 0);
 
-    final Duration duration = Duration(seconds: effectiveSeconds);
-
-    // 🛡️ WhatsApp behavior: If playing, show current position. If stopped, show total duration.
-    final displayDuration = (active && _manager.isPlaying) 
-        ? position 
-        : duration;
-        
     return Padding(
       padding: EdgeInsets.only(left: 44.w),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            Helpers.formatDuration(displayDuration.inSeconds),
-            style: TextStyle(fontSize: 11.sp, color: const Color(0xFF667781), fontWeight: FontWeight.w500)
+          StreamBuilder<Duration>(
+            stream: active ? _manager.positionStream : Stream.value(Duration.zero),
+            initialData: Duration.zero,
+            builder: (context, snapshot) {
+              // 🛡️ WhatsApp behavior: If playing, show current position. If stopped, show total duration.
+              final int seconds = (active && _manager.isPlaying) 
+                  ? snapshot.data!.inSeconds 
+                  : effectiveSeconds;
+                  
+              return Text(
+                Helpers.formatDuration(seconds),
+                style: TextStyle(fontSize: 11.sp, color: const Color(0xFF667781), fontWeight: FontWeight.w500)
+              );
+            }
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (_isDetecting && (widget.duration == null || widget.duration == 0))
+// ...
                 Padding(
                   padding: EdgeInsets.only(right: 4.w),
                   child: SizedBox(

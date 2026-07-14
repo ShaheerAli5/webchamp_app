@@ -738,7 +738,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
             Container(
               padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 12.h),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
+                color: Colors.white.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(12.r),
                 boxShadow: [
                   BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))
@@ -930,18 +930,6 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     );
   }
 
-  String _messageDate(dynamic messageData) {
-    if (messageData is! Map) return '';
-    final rawTime = messageData['created_at'] ?? messageData['updated_at'] ?? messageData['messaged_at'] ?? messageData['timestamp'];
-    if (rawTime == null) return '';
-    final dateTime = Helpers.toPKT(rawTime);
-    final now = DateTime.now();
-    if (dateTime.day == now.day && dateTime.month == now.month && dateTime.year == now.year) return 'today';
-    final yesterday = now.subtract(const Duration(days: 1));
-    if (dateTime.day == yesterday.day && dateTime.month == yesterday.month && dateTime.year == yesterday.year) return 'yesterday';
-    return DateFormat('dd MMMM yyyy').format(dateTime).toLowerCase();
-  }
-
   void _showDeleteDialog(dynamic messageData) {
     showDialog(
       context: context,
@@ -1100,10 +1088,6 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       if (mounted) {
         provider.markContactAsRead(widget.uid);
       }
-
-      if (provider.messages.isNotEmpty && mounted) {
-        provider.getContactChatBoxData(widget.uid, showLoading: false, refresh: true);
-      }
     } else if (mounted) {
       debugPrint('❌ [CHAT] Failed to load chat history for ${widget.uid}');
       if (provider.errorMessage != null) {
@@ -1242,6 +1226,21 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     return (messageData['message'] ?? messageData['message_body'] ?? messageData['body'] ?? messageData['text'] ?? '').toString();
   }
 
+  static final DateFormat _bubbleTimeFormat = DateFormat('hh:mm a');
+  static final DateFormat _dayMonthYearFormat = DateFormat('dd MMMM yyyy');
+
+  String _messageDate(dynamic messageData) {
+    if (messageData is! Map) return '';
+    final rawTime = messageData['created_at'] ?? messageData['updated_at'] ?? messageData['messaged_at'] ?? messageData['timestamp'];
+    if (rawTime == null) return '';
+    final dateTime = Helpers.toPKT(rawTime);
+    final now = DateTime.now();
+    if (dateTime.day == now.day && dateTime.month == now.month && dateTime.year == now.year) return 'today';
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (dateTime.day == yesterday.day && dateTime.month == yesterday.month && dateTime.year == yesterday.year) return 'yesterday';
+    return _dayMonthYearFormat.format(dateTime).toLowerCase();
+  }
+
   String _messageTime(dynamic messageData) {
     if (messageData is! Map) return '';
     final rawTime = messageData['created_at'] ?? messageData['updated_at'] ?? messageData['messaged_at'] ?? messageData['timestamp'];
@@ -1249,7 +1248,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     
     // Always return only time (hh:mm a) for the message bubble
     final dateTime = Helpers.toPKT(rawTime);
-    return DateFormat('hh:mm a').format(dateTime);
+    return _bubbleTimeFormat.format(dateTime);
   }
 }
 
@@ -1673,54 +1672,56 @@ class ChatBubble extends StatelessWidget {
     final replyToMessage = messageData?['reply_to_message'];
     final bool isSticker = type == 'sticker';
 
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          if (showTail && !isSticker)
-            Positioned(
-              top: 0, 
-              left: isMe ? null : -7.w, 
-              right: isMe ? -7.w : null, 
-              child: CustomPaint(painter: BubbleTailPainter(isMe: isMe), size: Size(12.w, 12.h))
-            ),
-          Container(
-            margin: EdgeInsets.only(left: isMe ? 48.w : 0, right: isMe ? 0 : 48.w),
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-            decoration: isSticker ? null : BoxDecoration(
-              color: isMe ? const Color(0xFFE2FFC7) : Colors.white,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(showTail && !isMe ? 2.r : 18.r), 
-                topRight: Radius.circular(showTail && isMe ? 2.r : 18.r), 
-                bottomLeft: Radius.circular(18.r), 
-                bottomRight: Radius.circular(18.r)
+    return RepaintBoundary(
+      child: Align(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (showTail && !isSticker)
+              Positioned(
+                top: 0, 
+                left: isMe ? null : -7.w, 
+                right: isMe ? -7.w : null, 
+                child: CustomPaint(painter: BubbleTailPainter(isMe: isMe), size: Size(12.w, 12.h))
               ),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 1, offset: const Offset(0, 1))],
-            ),
-            child: IntrinsicWidth(
-              child: Padding(
-                padding: EdgeInsets.all(isSticker ? 0 : 4.w),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (replyToMessage != null) _buildReplyPreview(replyToMessage),
-                    _buildMessageContent(context),
-                    if (messageData?['status'] == 'failed' && messageData?['error'] != null)
-                      _buildErrorMessage(context),
-                  ],
+            Container(
+              margin: EdgeInsets.only(left: isMe ? 48.w : 0, right: isMe ? 0 : 48.w),
+              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+              decoration: isSticker ? null : BoxDecoration(
+                color: isMe ? const Color(0xFFE2FFC7) : Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(showTail && !isMe ? 2.r : 18.r), 
+                  topRight: Radius.circular(showTail && isMe ? 2.r : 18.r), 
+                  bottomLeft: Radius.circular(18.r), 
+                  bottomRight: Radius.circular(18.r)
+                ),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 1, offset: const Offset(0, 1))],
+              ),
+              child: IntrinsicWidth(
+                child: Padding(
+                  padding: EdgeInsets.all(isSticker ? 0 : 4.w),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (replyToMessage != null) _buildReplyPreview(replyToMessage),
+                      _buildMessageContent(context),
+                      if (messageData?['status'] == 'failed' && messageData?['error'] != null)
+                        _buildErrorMessage(context),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          if (isSelected)
-            Positioned(
-              right: 8.w,
-              top: 8.h,
-              child: _buildUniqueDropdown(context),
-            ),
-        ],
+            if (isSelected)
+              Positioned(
+                right: 8.w,
+                top: 8.h,
+                child: _buildUniqueDropdown(context),
+              ),
+          ],
+        ),
       ),
     );
   }
