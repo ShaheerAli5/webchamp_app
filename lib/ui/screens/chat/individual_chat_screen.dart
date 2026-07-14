@@ -49,6 +49,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   final FocusNode _focusNode = FocusNode();
   bool _showEmoji = false;
   bool _isSending = false;
+  String _loadingMessage = 'Loading conversation...';
   
   Timer? _pollingTimer;
   bool _isPolling = false;
@@ -613,7 +614,19 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                           debugPrint('🎨 [UI] Rebuilding chat list. Total messages: ${provider.messages.length}');
                           
                           if (provider.isLoading && provider.messages.isEmpty) {
-                            return const Center(child: CircularProgressIndicator());
+                            return Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const CircularProgressIndicator(color: Color(0xFF00A884)),
+                                  SizedBox(height: 16.h),
+                                  Text(
+                                    _loadingMessage,
+                                    style: TextStyle(color: const Color(0xFF667781), fontSize: 14.sp),
+                                  ),
+                                ],
+                              ),
+                            );
                           }
 
                           if (provider.errorMessage != null && provider.messages.isEmpty) {
@@ -719,10 +732,35 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   Widget _buildMessagesList(List<dynamic> messages, String? contactImageUrl) {
     if (messages.isEmpty) {
       return Center(
-        child: Container(
-          padding: EdgeInsets.all(16.w),
-          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.8), borderRadius: BorderRadius.circular(12.r)),
-          child: const Text("No messages yet. Say hi!"),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 12.h),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.9),
+                borderRadius: BorderRadius.circular(12.r),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))
+                ],
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.chat_bubble_outline, size: 40.sp, color: const Color(0xFF00A884)),
+                  SizedBox(height: 12.h),
+                  Text(
+                    "No previous messages",
+                    style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: const Color(0xFF111B21)),
+                  ),
+                  SizedBox(height: 4.h),
+                  Text(
+                    "Start conversation",
+                    style: TextStyle(fontSize: 14.sp, color: const Color(0xFF667781)),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -1021,26 +1059,56 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   Future<void> _loadChatData() async {
     final provider = context.read<ContactProvider>();
+    debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    debugPrint('🚀 [CHAT] NAVIGATION PATH: /chat-detail/${widget.uid}');
+    debugPrint('📱 [CHAT] NEW MESSAGE FROM: ${widget.name}');
+    debugPrint('🆔 [CHAT] CONTACT UID: ${widget.uid}');
     
-    // 🛡️ Ensure we have contact details if not in main list
+    // 🛡️ 1. Handle Contact Details
     final bool isInList = provider.contacts.any((c) => (c['_uid'] ?? c['uid']) == widget.uid);
+    debugPrint('🔍 [CHAT] CONTACT EXISTS LOCALLY: $isInList');
+    
     if (!isInList) {
-      debugPrint('ℹ️ [CHAT] Contact not in list, fetching details for ${widget.uid}');
-      // Try to fetch by phone number if UID looks like one
+      setState(() => _loadingMessage = 'Loading contact...');
+      debugPrint('📡 [CHAT] FETCH CONTACT API: Calling loadContactByUid for ${widget.uid}');
+      
+      // If UID looks like a phone number, try fetching by phone too
+      bool fetched = false;
       if (RegExp(r'^\d+$').hasMatch(widget.uid)) {
-        await provider.getContact(phoneNumber: widget.uid);
+        fetched = await provider.getContact(phoneNumber: widget.uid);
+      } else {
+        fetched = await provider.loadContactByUid(widget.uid);
+      }
+      
+      if (!fetched && mounted) {
+        debugPrint('⚠️ [CHAT] Could not fetch contact details for ${widget.uid}');
+        // We continue anyway as getContactChatBoxData might still work
       }
     }
 
-    await provider.getContactChatBoxData(widget.uid);
+    // 🛡️ 2. Load Chat History
+    setState(() => _loadingMessage = 'Loading messages...');
+    debugPrint('📡 [CHAT] CHAT HISTORY API: Calling getContactChatBoxData for ${widget.uid}');
     
-    // 🛡️ Optimization: Mark contact as read immediately when entering the chat
-    if (mounted) {
-      provider.markContactAsRead(widget.uid);
-    }
+    final success = await provider.getContactChatBoxData(widget.uid);
+    debugPrint('🏁 [CHAT] CHAT HISTORY API RESULT: $success');
+    debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
+    if (success) {
+      debugPrint('✅ [CHAT] Chat data loaded successfully for ${widget.uid}');
+      // 🛡️ Optimization: Mark contact as read immediately when entering the chat
+      if (mounted) {
+        provider.markContactAsRead(widget.uid);
+      }
 
-    if (provider.messages.isNotEmpty && mounted) {
-      provider.getContactChatBoxData(widget.uid, showLoading: false, refresh: true);
+      if (provider.messages.isNotEmpty && mounted) {
+        provider.getContactChatBoxData(widget.uid, showLoading: false, refresh: true);
+      }
+    } else if (mounted) {
+      debugPrint('❌ [CHAT] Failed to load chat history for ${widget.uid}');
+      if (provider.errorMessage != null) {
+        debugPrint('❌ [CHAT] Error Message: ${provider.errorMessage}');
+      }
     }
   }
 

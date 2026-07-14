@@ -43,7 +43,7 @@ class ChatErrorScreen extends StatelessWidget {
               ),
               SizedBox(height: 12.h),
               Text(
-                message ?? 'This chat is not ready yet or the link is invalid.',
+                message ?? 'This chat is not ready yet Please wait.',
                 style: TextStyle(
                   fontSize: 16.sp,
                   color: const Color(0xFF667781),

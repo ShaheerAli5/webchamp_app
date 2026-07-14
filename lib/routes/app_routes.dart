@@ -325,6 +325,8 @@ class AppRoutes {
             final uid = state.pathParameters['uid'] ?? '';
             final name = state.pathParameters['name'] ?? 'Chat';
             
+            debugPrint('🧭 [NAV] NAVIGATION PATH: ${state.uri}');
+            
             if (uid.isEmpty) {
               return const ChatErrorScreen(message: "Invalid Chat ID");
             }

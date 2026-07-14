@@ -627,17 +627,88 @@ class ContactProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> loadContactByUid(String uid) async {
+    debugPrint('🔍 [CONTACT] loadContactByUid starting for: $uid');
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      // 1. Check if already in local list
+      final existingIndex = _contacts.indexWhere((c) => _extractUid(c) == uid);
+      if (existingIndex != -1) {
+        debugPrint('✅ [CONTACT] Found $uid in local list');
+        _selectedContact = _contacts[existingIndex];
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      }
+
+      // 2. Fetch from backend via chat box data (which often contains the contact object)
+      debugPrint('📡 [CONTACT] Fetching $uid from backend...');
+      final result = await _repository.getContactChatBoxData(uid);
+      
+      if (result != null && result is Map) {
+        final clientModels = result['client_models'];
+        final data = result['data'];
+        
+        // Try various common paths for the contact object
+        final contactData = (clientModels is Map ? clientModels['contact'] : null) ?? 
+                           (data is Map ? data['contact'] : null) ?? 
+                           result['contact'];
+
+        if (contactData != null && contactData is Map) {
+          debugPrint('✅ [CONTACT] Successfully fetched details for $uid');
+          _selectedContact = Helpers.sanitizeData(contactData);
+          
+          // 3. Add to local list so it appears in the chat list immediately
+          _contacts.insert(0, _selectedContact);
+          _saveToPersistentCache();
+        } else {
+          debugPrint('⚠️ [CONTACT] Fetched chat box data but no contact object found for $uid');
+        }
+      }
+      
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('❌ [CONTACT] loadContactByUid Error: $e');
+      _errorMessage = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> getContact({String? phoneNumber, String? email}) async {
+    debugPrint('🔍 [CONTACT] getContact: phone=$phoneNumber, email=$email');
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
       final result = await _repository.getContact(phoneNumber: phoneNumber, email: email);
-      _selectedContact = result;
+      if (result != null) {
+        _selectedContact = Helpers.sanitizeData(result);
+        
+        // Add to main list if not present
+        final fetchedUid = _extractUid(_selectedContact);
+        if (fetchedUid != null) {
+          final index = _contacts.indexWhere((c) => _extractUid(c) == fetchedUid);
+          if (index == -1) {
+            _contacts.insert(0, _selectedContact);
+            debugPrint('📥 [CONTACT] Added new contact to list: $fetchedUid');
+          } else {
+            _contacts[index] = _selectedContact;
+            debugPrint('🔄 [CONTACT] Updated existing contact: $fetchedUid');
+          }
+          _saveToPersistentCache();
+        }
+      }
       _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
+      debugPrint('❌ [CONTACT] getContact Error: $e');
       _errorMessage = e.toString();
       _isLoading = false;
       notifyListeners();
@@ -893,7 +964,7 @@ class ContactProvider extends ChangeNotifier {
   }
 
   Future<bool> getContactChatBoxData(String contactUid, {bool showLoading = true, bool refresh = false, bool force = false}) async {
-    // 🛡️ GUARD: If this is a background polling request for an INACTIVE chat, discard it early
+    debugPrint('🚀 [CHAT] getContactChatBoxData START: $contactUid (Force: $force, Refresh: $refresh)');
     if (!showLoading && !refresh && !force && _activeChatUid != null && _activeChatUid != contactUid) {
       debugPrint('⏳ [CHAT] Ignoring background polling for inactive chat: $contactUid (Active: $_activeChatUid)');
       return false;
