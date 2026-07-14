@@ -38,6 +38,8 @@ import '../ui/screens/more/message_log_detail_screen.dart';
 import '../ui/screens/settings/general_settings_screen.dart';
 import '../ui/screens/settings/bot_settings_screen.dart';
 
+import '../ui/screens/chat/chat_error_screen.dart';
+
 import '../ui/screens/chat/create_new_list_screen.dart';
 import '../ui/screens/chat/select_contacts_screen.dart';
 
@@ -63,6 +65,7 @@ class AppRoutes {
   static const String contactGroups = '/contact-groups';
   static const String groupDetails = '/group-details/:uid';
   static const String individualChat = '/chat-detail/:uid/:name';
+  static const String individualChatNoParams = '/chat-detail';
   static const String createNewList = '/create-new-list';
   static const String selectContacts = '/select-contacts';
   static const String templates = '/templates';
@@ -89,6 +92,10 @@ class AppRoutes {
       initialLocation: home,
       navigatorKey: _rootNavigatorKey,
       refreshListenable: authProvider,
+      errorBuilder: (context, state) => ChatErrorScreen(
+        message: state.error?.message,
+        location: state.uri.toString(),
+      ),
       redirect: (context, state) {
         final isLoggedIn = authProvider.isLoggedIn;
         final hasSavedAccounts = authProvider.savedAccounts.isNotEmpty;
@@ -317,8 +324,19 @@ class AppRoutes {
           builder: (context, state) {
             final uid = state.pathParameters['uid'] ?? '';
             final name = state.pathParameters['name'] ?? 'Chat';
+            
+            if (uid.isEmpty) {
+              return const ChatErrorScreen(message: "Invalid Chat ID");
+            }
+            
             return IndividualChatScreen(uid: uid, name: name);
           },
+        ),
+        GoRoute(
+          path: individualChatNoParams,
+          builder: (context, state) => const ChatErrorScreen(
+            message: "This chat is not ready yet. Missing required parameters.",
+          ),
         ),
       ],
     );

@@ -403,7 +403,20 @@ class _ChatScreenState extends State<ChatScreen> {
     bool isGroup = false,
   }) {
     return ListTile(
-      onTap: () => context.push('/chat-detail/$uid/$name'),
+      onTap: () {
+        if (uid.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Unable to open chat: Missing contact ID"),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+        final encodedUid = Uri.encodeComponent(uid);
+        final encodedName = Uri.encodeComponent(name.isEmpty ? 'Chat' : name);
+        context.push('/chat-detail/$encodedUid/$encodedName');
+      },
       leading: CircleAvatar(
         radius: 26.r,
         backgroundColor: const Color(0xFFF0F2F5),

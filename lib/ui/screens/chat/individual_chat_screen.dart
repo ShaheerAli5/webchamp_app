@@ -126,7 +126,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         context.read<ContactProvider>().clearChat();
       }
     } catch (e) {
-      debugPrint('ℹ️ [CHAT] Could not clear chat on dispose: $e');
+      debugPrint(' [CHAT] Could not clear chat on dispose: $e');
     }
 
     super.dispose();
@@ -134,7 +134,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   Future<void> _startRecording() async {
     try {
-      // 🛡️ Request microphone permission explicitly using permission_handler
+      // ️ Request microphone permission explicitly using permission_handler
       final status = await Permission.microphone.request();
       if (status != PermissionStatus.granted) {
         Fluttertoast.showToast(msg: "Microphone permission denied");
@@ -153,7 +153,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       );
       await _audioRecorder.start(config, path: path);
       
-      // 🛡️ Waveform recording can sometimes fail due to plugin linking issues
+      // 🛡 Waveform recording can sometimes fail due to plugin linking issues
       try {
         await _recorderController.record();
       } catch (e) {
@@ -171,7 +171,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         if (mounted) setState(() { _recordDuration++; });
       });
     } catch (e) {
-      debugPrint("❌ [RECORD] Start recording error: $e");
+      debugPrint(" [RECORD] Start recording error: $e");
       Fluttertoast.showToast(msg: "Failed to start recording");
       
       // Reset state on error
@@ -239,7 +239,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   void _sendVoiceMessage(String path) {
     if (_isSending) return;
     setState(() => _isSending = true);
-    debugPrint('🎤 [VOICE] Sending voice message. Path: $path');
+    debugPrint('[VOICE] Sending voice message. Path: $path');
     
     context.read<ContactProvider>().sendVoiceMessage(
       contactUid: widget.uid,
@@ -328,7 +328,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                 _buildAttachmentOption(Icons.videocam, "Video", Colors.orange, () async {
                   final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
                   if (video != null && mounted) {
-                    // 🛡️ LIMIT: Gallery videos up to 6 minutes (360 seconds)
+                    // 🛡 LIMIT: Gallery videos up to 6 minutes (360 seconds)
                     try {
                       final info = await VideoCompress.getMediaInfo(video.path);
                       final durationMs = info.duration ?? 0;
@@ -340,7 +340,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                         return;
                       }
                     } catch (e) {
-                      debugPrint("⚠️ [VIDEO] Could not get duration: $e");
+                      debugPrint("⚠ [VIDEO] Could not get duration: $e");
                     }
                     
                     if (mounted) Navigator.pop(context, 'video:${video.path}');
@@ -473,7 +473,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   void _handleSend() async {
     final text = _messageController.text.trim();
     if (text.isNotEmpty && !_isSending) {
-      debugPrint('🖱️ [UI] Send button tapped');
+      debugPrint('🖱 [UI] Send button tapped');
       setState(() => _isSending = true);
       
       final provider = context.read<ContactProvider>();
@@ -611,9 +611,37 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                       child: Consumer<ContactProvider>(
                         builder: (context, provider, child) {
                           debugPrint('🎨 [UI] Rebuilding chat list. Total messages: ${provider.messages.length}');
+                          
                           if (provider.isLoading && provider.messages.isEmpty) {
                             return const Center(child: CircularProgressIndicator());
                           }
+
+                          if (provider.errorMessage != null && provider.messages.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24.w),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.error_outline, size: 48.sp, color: Colors.red),
+                                    SizedBox(height: 16.h),
+                                    Text(
+                                      provider.errorMessage!,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(color: const Color(0xFF667781), fontSize: 14.sp),
+                                    ),
+                                    SizedBox(height: 16.h),
+                                    ElevatedButton(
+                                      onPressed: () => provider.getContactChatBoxData(widget.uid, refresh: true),
+                                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF008069), foregroundColor: Colors.white),
+                                      child: const Text('Retry'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
                           // Optimized: Pass message list to builder
                           return _buildMessagesList(provider.messages, null);
                         },
@@ -795,7 +823,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   Widget _buildLoadMoreButton() {
     return Consumer<ContactProvider>(
       builder: (context, provider, child) {
-        // 🛡️ GUARD: Don't show anything if still loading initial messages
+        // 🛡 GUARD: Don't show anything if still loading initial messages
         if (provider.isLoading && provider.messages.isEmpty) {
           return const SizedBox.shrink();
         }
@@ -993,6 +1021,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   Future<void> _loadChatData() async {
     final provider = context.read<ContactProvider>();
+    
+    // 🛡️ Ensure we have contact details if not in main list
+    final bool isInList = provider.contacts.any((c) => (c['_uid'] ?? c['uid']) == widget.uid);
+    if (!isInList) {
+      debugPrint('ℹ️ [CHAT] Contact not in list, fetching details for ${widget.uid}');
+      // Try to fetch by phone number if UID looks like one
+      if (RegExp(r'^\d+$').hasMatch(widget.uid)) {
+        await provider.getContact(phoneNumber: widget.uid);
+      }
+    }
+
     await provider.getContactChatBoxData(widget.uid);
     
     // 🛡️ Optimization: Mark contact as read immediately when entering the chat

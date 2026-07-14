@@ -482,9 +482,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   void _handleContactAction(String action, dynamic contact) {
-    final uid = (contact['_uid'] ?? contact['uid'] ?? contact['id']).toString();
+    final uid = (contact['_uid'] ?? contact['uid'] ?? contact['id'])?.toString() ?? '';
     final name = (contact['full_name'] ?? contact['first_name'] ?? 'Contact').toString();
+    
     if (action == 'view') {
+      if (uid.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Unable to open chat: Missing contact ID"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
       final encodedUid = Uri.encodeComponent(uid);
       final encodedName = Uri.encodeComponent(name);
       context.push('/chat-detail/$encodedUid/$encodedName');
