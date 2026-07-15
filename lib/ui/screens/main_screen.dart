@@ -17,10 +17,11 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ContactProvider>().startGlobalUnreadPolling();
       context.read<ContactProvider>().getGlobalUnreadCount();
@@ -28,7 +29,18 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      context.read<ContactProvider>().stopGlobalUnreadPolling();
+    } else if (state == AppLifecycleState.resumed) {
+      context.read<ContactProvider>().startGlobalUnreadPolling();
+      context.read<ContactProvider>().getGlobalUnreadCount();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Note: Provider is global, but we can stop polling if we want.
     // However, it's probably better to keep it running for the badge.
     // context.read<ContactProvider>().stopGlobalUnreadPolling();

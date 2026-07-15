@@ -42,7 +42,7 @@ class IndividualChatScreen extends StatefulWidget {
   State<IndividualChatScreen> createState() => _IndividualChatScreenState();
 }
 
-class _IndividualChatScreenState extends State<IndividualChatScreen> {
+class _IndividualChatScreenState extends State<IndividualChatScreen> with WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
@@ -54,6 +54,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   
   Timer? _pollingTimer;
   bool _isPolling = false;
+  bool _isAppInBackground = false;
   Map<String, dynamic>? _replyingTo;
   String? _selectedMessageId;
 
@@ -67,6 +68,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _recorderController = RecorderController()
       ..androidEncoder = AndroidEncoder.aac
       ..androidOutputFormat = AndroidOutputFormat.mpeg4
@@ -98,15 +100,29 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     return Helpers.htmlToPlainText(Helpers.sanitizeString(text)).trim();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _isAppInBackground = true;
+      _pollingTimer?.cancel();
+    } else if (state == AppLifecycleState.resumed) {
+      _isAppInBackground = false;
+      _startPolling();
+    }
+  }
+
   void _startPolling() {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+    if (_isAppInBackground) return;
+    
+    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
       final provider = context.read<ContactProvider>();
-      // 🛡️ Only poll if this screen's UID is the active one in the provider
-      if (mounted && !_isPolling && provider.activeChatUid == widget.uid) {
+      // 🛡️ Only poll if this screen's UID is the active one in the provider AND app is in foreground
+      if (mounted && !_isPolling && provider.activeChatUid == widget.uid && !_isAppInBackground) {
         _isPolling = true;
         try {
-          await provider.getContactChatBoxData(widget.uid, showLoading: false);
+          // 🚀 Pass refresh: true to bypass cache during active polling for real-time feel
+          await provider.getContactChatBoxData(widget.uid, showLoading: false, refresh: true);
         } catch (e) {
           debugPrint('❌ [CHAT] Polling error: $e');
         } finally {
@@ -118,6 +134,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollingTimer?.cancel();
     _recordTimer?.cancel();
     _audioRecorder.dispose();

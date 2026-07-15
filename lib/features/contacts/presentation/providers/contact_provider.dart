@@ -117,7 +117,7 @@ class ContactProvider extends ChangeNotifier {
 
   void startGlobalUnreadPolling() {
     _globalUnreadTimer?.cancel();
-    _globalUnreadTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    _globalUnreadTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
       getGlobalUnreadCount();
     });
   }
@@ -409,10 +409,10 @@ class ContactProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('❌ [CONTACTS] ERROR: $e');
       if (e.toString().contains("Too Many Attempts") || e.toString().contains("429")) {
-        debugPrint('🛑 [CONTACTS] Rate limit hit. Waiting 30s before retry...');
+        debugPrint('🛑 [CONTACTS] Rate limit hit. Waiting 45s before retry...');
         _isLoading = true;
         notifyListeners();
-        await Future.delayed(const Duration(seconds: 30));
+        await Future.delayed(const Duration(seconds: 45));
         _isFetchingContacts = false;
         if (!loadMore) _currentPage--; 
         return await getContacts(search: search, loadMore: loadMore, autoLoadAll: autoLoadAll, isRecursiveCall: true);
@@ -1254,15 +1254,16 @@ class ContactProvider extends ChangeNotifier {
       debugPrint('❌ [CHAT] getContactChatBoxData Error: $e');
       _isFetchingChat = false;
       
-      // Bug 3: Retry logic with backoff
+      // Improved retry logic with exponential backoff and max attempts
       final errStr = e.toString();
-      if ((errStr.contains("Too many requests") || errStr.contains("Too Many Attempts")) && _chatBoxRetryCount < 3) {
+      if ((errStr.contains("Too many requests") || errStr.contains("Too Many Attempts") || errStr.contains("429")) && _chatBoxRetryCount < 3) {
         _chatBoxRetryCount++;
+        // Exponential backoff: 5s, 15s, 45s
         int backoff = 5; 
-        if (_chatBoxRetryCount == 2) backoff = 10;
-        if (_chatBoxRetryCount == 3) backoff = 20;
+        if (_chatBoxRetryCount == 2) backoff = 15;
+        if (_chatBoxRetryCount == 3) backoff = 45;
         
-        debugPrint('🔄 [CHAT] Rate limited. Retry $_chatBoxRetryCount/3 in ${backoff}s...');
+        debugPrint('🔄 [CHAT] Rate limited (429). Retry $_chatBoxRetryCount/3 in ${backoff}s...');
         await Future.delayed(Duration(seconds: backoff));
         return await getContactChatBoxData(contactUid, showLoading: showLoading, force: force, refresh: refresh);
       }

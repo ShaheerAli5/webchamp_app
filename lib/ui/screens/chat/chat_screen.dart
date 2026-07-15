@@ -16,18 +16,20 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   Timer? _searchTimer;
   bool _isSetupCompleted = true;
   Timer? _pollingTimer;
   bool _isPolling = false;
+  bool _isAppInBackground = false;
   String _activeFilter = 'all';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _searchController.addListener(() {
       setState(() {}); // For clear button visibility
     });
@@ -54,10 +56,23 @@ class _ChatScreenState extends State<ChatScreen> {
     await provider.getContacts(loadMore: true, search: _searchController.text.isEmpty ? null : _searchController.text);
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _isAppInBackground = true;
+      _pollingTimer?.cancel();
+    } else if (state == AppLifecycleState.resumed) {
+      _isAppInBackground = false;
+      _startPolling();
+    }
+  }
+
   void _startPolling() {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (mounted && !_isPolling && _searchController.text.isEmpty) {
+    if (_isAppInBackground) return;
+
+    _pollingTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (mounted && !_isPolling && _searchController.text.isEmpty && !_isAppInBackground) {
         _fetchContacts(refresh: true);
       }
     });
@@ -95,6 +110,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     _scrollController.dispose();
     _searchTimer?.cancel();
