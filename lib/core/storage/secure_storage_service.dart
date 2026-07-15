@@ -13,14 +13,21 @@ class SecureStorageService {
   static const String _keySession = 'session_cookie';
   static const String _keyRememberMe = 'remember_me_creds';
 
+  // In-memory cache for frequently accessed values to improve performance
+  String? _cachedToken;
+  String? _cachedSession;
+
   // --- Core Session Methods ---
 
   Future<void> saveToken(String token) async {
+    _cachedToken = token;
     await _storage.write(key: _keyToken, value: token);
   }
 
   Future<String?> getToken() async {
-    return await _storage.read(key: _keyToken);
+    if (_cachedToken != null) return _cachedToken;
+    _cachedToken = await _storage.read(key: _keyToken);
+    return _cachedToken;
   }
 
   Future<void> saveUserData(String userDataJson) async {
@@ -32,14 +39,19 @@ class SecureStorageService {
   }
 
   Future<void> saveSession(String session) async {
+    _cachedSession = session;
     await _storage.write(key: _keySession, value: session);
   }
 
   Future<String?> getSession() async {
-    return await _storage.read(key: _keySession);
+    if (_cachedSession != null) return _cachedSession;
+    _cachedSession = await _storage.read(key: _keySession);
+    return _cachedSession;
   }
 
   Future<void> clearAuthData() async {
+    _cachedToken = null;
+    _cachedSession = null;
     await _storage.delete(key: _keyToken);
     await _storage.delete(key: _keyUser);
     await _storage.delete(key: _keySession);
@@ -67,6 +79,8 @@ class SecureStorageService {
   }
 
   Future<void> clearAll() async {
+    _cachedToken = null;
+    _cachedSession = null;
     await _storage.deleteAll();
   }
 

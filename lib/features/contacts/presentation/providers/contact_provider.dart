@@ -250,6 +250,13 @@ class ContactProvider extends ChangeNotifier {
   }) async {
     final bool isSearching = search != null && search.isNotEmpty;
 
+    // 🛡️ OPTIMIZATION: If already fully loaded and not a refresh/search, 
+    // just do a quick page 1 refresh instead of auto-loading thousands again.
+    if (autoLoadAll && _contactsFullyLoaded && !refresh && !isSearching && !loadMore) {
+      debugPrint('ℹ️ [CONTACTS] Already fully loaded. Switching to background page 1 sync.');
+      autoLoadAll = false; 
+    }
+
     // 🛡️ GUARD: Allow new searches to interrupt current ones, but prevent multiple 
     // loadMore requests from overlapping.
     if (_isFetchingContacts && loadMore && !isRecursiveCall) {
@@ -447,10 +454,17 @@ class ContactProvider extends ChangeNotifier {
         }
 
         final List<dynamic> batchResults = await Future.wait(batch);
+        int successfulInBatch = 0;
         
         for (var rawResult in batchResults) {
-          if (rawResult == null) continue;
+          if (rawResult == null) {
+            // Even if it failed, we must increment currentPage to avoid infinite loop
+            // on the same failing pages.
+            if (!endReached) _currentPage++;
+            continue;
+          }
           
+          successfulInBatch++;
           final result = Helpers.sanitizeData(rawResult);
           List<dynamic> newContacts = _parseContactsResponse(result);
           
@@ -481,6 +495,12 @@ class ContactProvider extends ChangeNotifier {
           
           pagesFetchedInCurrentBatch++;
           if (!endReached) _currentPage++;
+        }
+
+        // If the whole batch failed, we might want to stop or slow down
+        if (successfulInBatch == 0) {
+          debugPrint('🛑 [BATCH] Entire batch failed. Stopping parallel fetch.');
+          endReached = true;
         }
 
         // Fix 2: Batch UI Updates - avoid rebuilding 242 times
@@ -1269,6 +1289,13 @@ class ContactProvider extends ChangeNotifier {
     try {
       final nextPage = _chatPage + 1;
       final chatResult = await _repository.getChatHistory(contactUid, page: nextPage);
+
+      // 🛡️ UID CHECK: If the user switched chats while this request was in flight, discard it.
+      if (contactUid != _activeChatUid) {
+        debugPrint('🛑 [CHAT] UID mismatch in loadMore. Discarding results for $contactUid (Active: $_activeChatUid)');
+        return;
+      }
+
       final List<dynamic> newMessages = _extractMessagesFromResponse([chatResult]);
       
       // 🛡️ [PAGINATION LOGGING]

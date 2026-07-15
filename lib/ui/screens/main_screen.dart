@@ -62,14 +62,15 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ),
         padding: EdgeInsets.only(bottom: bottomPadding),
-        child: Consumer<ContactProvider>(
-          builder: (context, provider, child) {
+        child: Selector<ContactProvider, int>(
+          selector: (_, provider) => provider.globalUnreadCount,
+          builder: (context, globalUnreadCount, child) {
             return Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildNavItem(0, Icons.home_outlined, 'Home'),
                 _buildNavItem(1, Icons.campaign_outlined, 'Campaigns'),
-                _buildNavItem(2, Icons.chat_bubble_outline, 'Chat', badgeCount: provider.globalUnreadCount),
+                _buildNavItem(2, Icons.chat_bubble_outline, 'Chat', badgeCount: globalUnreadCount),
                 _buildNavItem(3, Icons.people_outline, 'Contacts'),
                 _buildNavItem(4, Icons.more_horiz, 'More'),
               ],

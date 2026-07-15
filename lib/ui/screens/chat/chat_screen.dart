@@ -33,7 +33,11 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _fetchContacts(refresh: true);
+      final provider = context.read<ContactProvider>();
+      // 🛡️ OPTIMIZATION: Only refresh if list is empty or explicitly requested.
+      // This prevents re-loading 2700+ contacts every time the tab is switched.
+      bool shouldRefresh = provider.contacts.isEmpty;
+      _fetchContacts(refresh: shouldRefresh);
       _startPolling();
     });
   }
@@ -63,13 +67,17 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_isPolling) return;
     _isPolling = true;
     
-    final provider = context.read<ContactProvider>();
-    await provider.getContacts(search: search, refresh: refresh);
-    
-    if (mounted) {
-      setState(() {
-        _isPolling = false;
-      });
+    try {
+      final provider = context.read<ContactProvider>();
+      await provider.getContacts(search: search, refresh: refresh);
+    } catch (e) {
+      debugPrint('❌ [CHAT] Fetch error: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPolling = false;
+        });
+      }
     }
   }
 
@@ -115,13 +123,14 @@ class _ChatScreenState extends State<ChatScreen> {
               Expanded(
                 child: Consumer<ContactProvider>(
                   builder: (context, provider, child) {
-                    if (provider.isLoading && provider.contacts.isEmpty) {
+                    final isInitialLoading = provider.isLoading && provider.contacts.isEmpty;
+                    if (isInitialLoading) {
                       return const Center(child: CircularProgressIndicator());
                     }
                     
                     final filtered = _activeFilter == 'unread'
                         ? provider.contacts
-                            .where((c) => (c['unread_messages_count'] ?? 0) > 0)
+                            .where((c) => (Helpers.toInt(c['unread_messages_count'] ?? c['unread_count']) ?? 0) > 0)
                             .toList()
                         : provider.contacts;
                     
@@ -149,6 +158,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         controller: _scrollController,
                         physics: const AlwaysScrollableScrollPhysics(),
                         itemCount: filtered.length + (provider.isFetchingContacts ? 1 : 0),
+                        addRepaintBoundaries: true,
+                        addAutomaticKeepAlives: true,
                         itemBuilder: (context, index) {
                           if (index == filtered.length) {
                             return const Padding(
@@ -161,7 +172,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         final uid = _contactUid(contact);
                         final lastMsg = _contactLatestMessage(contact);
                         final time = _contactLatestMessageTime(contact);
-                        final unreadCount = contact['unread_messages_count'];
+                        final unreadCount = Helpers.toInt(contact['unread_messages_count'] ?? contact['unread_count']);
 
                         return RepaintBoundary(
                           child: _buildChatItem(

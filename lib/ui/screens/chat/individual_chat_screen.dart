@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -104,8 +105,13 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       // 🛡️ Only poll if this screen's UID is the active one in the provider
       if (mounted && !_isPolling && provider.activeChatUid == widget.uid) {
         _isPolling = true;
-        await provider.getContactChatBoxData(widget.uid, showLoading: false);
-        if (mounted) _isPolling = false;
+        try {
+          await provider.getContactChatBoxData(widget.uid, showLoading: false);
+        } catch (e) {
+          debugPrint('❌ [CHAT] Polling error: $e');
+        } finally {
+          if (mounted) _isPolling = false;
+        }
       }
     });
   }
@@ -548,17 +554,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       backgroundColor: Colors.transparent,
       appBar: PreferredSize(
         preferredSize: Size.fromHeight(60.h),
-        child: Consumer<ContactProvider>(
-          builder: (context, provider, child) {
-            // OPTIMIZED: Cache the contact lookup
-            final contact = provider.selectedContact != null && 
+        child: Selector<ContactProvider, Map<String, dynamic>>(
+          selector: (_, provider) {
+            return provider.selectedContact != null && 
                            (provider.selectedContact!['_uid'] ?? provider.selectedContact!['uid']) == widget.uid
                 ? provider.selectedContact!
                 : provider.contacts.firstWhere(
                     (c) => (c['_uid'] ?? c['uid']) == widget.uid, 
                     orElse: () => <String, dynamic>{}
                   );
-
+          },
+          builder: (context, contact, child) {
             final name = contact['full_name'] ?? contact['first_name'] ?? widget.name;
             final imageUrl = contact['profile_image'] ?? contact['image_url'];
             return ChatAppBar(name: _sanitizeText(name), uid: widget.uid, imageUrl: imageUrl, onInfoTap: _showContactInfo);
@@ -609,11 +615,18 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                   children: [
                     const ChatCountdownTimer(),
                     Expanded(
-                      child: Consumer<ContactProvider>(
-                        builder: (context, provider, child) {
-                          debugPrint('🎨 [UI] Rebuilding chat list. Total messages: ${provider.messages.length}');
-                          
-                          if (provider.isLoading && provider.messages.isEmpty) {
+                      child: Selector<ContactProvider, _ChatStateData>(
+                        selector: (_, provider) => _ChatStateData(
+                          messages: provider.messages,
+                          isLoading: provider.isLoading,
+                          errorMessage: provider.errorMessage,
+                        ),
+                        builder: (context, data, child) {
+                          final messages = data.messages;
+                          final isLoading = data.isLoading;
+                          final errorMessage = data.errorMessage;
+
+                          if (isLoading && messages.isEmpty) {
                             return Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -629,7 +642,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                             );
                           }
 
-                          if (provider.errorMessage != null && provider.messages.isEmpty) {
+                          if (errorMessage != null && messages.isEmpty) {
                             return Center(
                               child: Padding(
                                 padding: EdgeInsets.all(24.w),
@@ -639,13 +652,13 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                                     Icon(Icons.error_outline, size: 48.sp, color: Colors.red),
                                     SizedBox(height: 16.h),
                                     Text(
-                                      provider.errorMessage!,
+                                      errorMessage,
                                       textAlign: TextAlign.center,
                                       style: TextStyle(color: const Color(0xFF667781), fontSize: 14.sp),
                                     ),
                                     SizedBox(height: 16.h),
                                     ElevatedButton(
-                                      onPressed: () => provider.getContactChatBoxData(widget.uid, refresh: true),
+                                      onPressed: () => context.read<ContactProvider>().getContactChatBoxData(widget.uid, refresh: true),
                                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF008069), foregroundColor: Colors.white),
                                       child: const Text('Retry'),
                                     ),
@@ -656,7 +669,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                           }
 
                           // Optimized: Pass message list to builder
-                          return _buildMessagesList(provider.messages, null);
+                          return _buildMessagesList(messages, null);
                         },
                       ),
                     ),
@@ -1252,6 +1265,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   }
 }
 
+
 class MediaSendPreview extends StatefulWidget {
   final String path;
   final String type;
@@ -1542,6 +1556,7 @@ class _MediaSendPreviewState extends State<MediaSendPreview> {
   }
 }
 
+
 class ChatAppBar extends StatelessWidget {
   final String name;
   final String uid;
@@ -1581,6 +1596,7 @@ class ChatAppBar extends StatelessWidget {
   }
 }
 
+
 class DateSeparator extends StatelessWidget {
   final String date;
   const DateSeparator({super.key, required this.date});
@@ -1606,6 +1622,7 @@ class DateSeparator extends StatelessWidget {
     );
   }
 }
+
 
 class _BlinkingDot extends StatefulWidget {
   const _BlinkingDot();
@@ -1634,6 +1651,7 @@ class _BlinkingDotState extends State<_BlinkingDot> with SingleTickerProviderSta
     return FadeTransition(opacity: _controller, child: Container(width: 8.w, height: 8.w, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)));
   }
 }
+
 
 class BubbleTailPainter extends CustomPainter {
   final bool isMe;
@@ -2352,6 +2370,7 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
+
 class _ImageGalleryViewer extends StatefulWidget {
   final String url;
   const _ImageGalleryViewer({required this.url});
@@ -2426,6 +2445,7 @@ class _ImageGalleryViewerState extends State<_ImageGalleryViewer> {
     );
   }
 }
+
 
 class ChatCountdownTimer extends StatefulWidget {
   const ChatCountdownTimer({super.key});
@@ -2514,6 +2534,7 @@ class _ChatCountdownTimerState extends State<ChatCountdownTimer> {
   }
 }
 
+
 class PhoneNumberLinkifier extends Linkifier {
   const PhoneNumberLinkifier();
 
@@ -2549,6 +2570,7 @@ class PhoneNumberLinkifier extends Linkifier {
     return list;
   }
 }
+
 
 class ChatInputBar extends StatefulWidget {
   final TextEditingController controller;
@@ -2999,3 +3021,29 @@ class _ChatInputBarState extends State<ChatInputBar> {
     );
   }
 }
+
+class _ChatStateData {
+  final List<dynamic> messages;
+  final bool isLoading;
+  final String? errorMessage;
+
+  _ChatStateData({
+    required this.messages,
+    required this.isLoading,
+    this.errorMessage,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _ChatStateData &&
+          runtimeType == other.runtimeType &&
+          isLoading == other.isLoading &&
+          errorMessage == other.errorMessage &&
+          listEquals(messages, other.messages);
+
+  @override
+  int get hashCode =>
+      Object.hash(messages, isLoading, errorMessage);
+}
+

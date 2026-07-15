@@ -640,8 +640,8 @@ class ContactRepository {
   String _extractError(DioException e) {
     if (e.response != null) {
       final status = e.response!.statusCode;
-      if (status == 403) return "Too many requests. Please wait a moment.";
-      if (status == 404) return "currently not working.";
+      if (status == 403) return "Access denied. You may not have permission for this action.";
+      if (status == 404) return "The requested resource was not found.";
       if (status == 413) return "Video file is too large for the server. Please try a shorter or lower quality video.";
       if (status != null && status >= 500) return "Server error. Please try again later.";
 

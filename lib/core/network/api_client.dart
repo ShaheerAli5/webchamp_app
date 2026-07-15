@@ -1,15 +1,19 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'api_constants.dart';
 import 'dio_interceptor.dart';
 import 'cache_interceptor.dart';
 import 'performance_interceptor.dart';
+import 'retry_interceptor.dart';
 import '../storage/secure_storage_service.dart';
 
 class ApiClient {
   final Dio _dio;
   final CacheInterceptor cacheInterceptor = CacheInterceptor();
+  late final DioInterceptor _dioInterceptor;
+  VoidCallback? onUnauthorized;
 
-  ApiClient(SecureStorageService storageService)
+  ApiClient(SecureStorageService storageService, {this.onUnauthorized})
       : _dio = Dio(BaseOptions(
     baseUrl: ApiConstants.baseUrl,
     connectTimeout: const Duration(seconds: 120), // Increased for long videos
@@ -22,10 +26,17 @@ class ApiClient {
       'Api-Request-Signature': 'mobile-app-request',
     },
   )) {
-    print('ApiClient Initialized with Base URL: ${ApiConstants.baseUrl}');
+    if (kDebugMode) {
+      print('ApiClient Initialized with Base URL: ${ApiConstants.baseUrl}');
+    }
+    _dioInterceptor = DioInterceptor(storageService, onUnauthorized: () {
+      onUnauthorized?.call();
+    });
+    
     _dio.interceptors.add(PerformanceInterceptor());
+    _dio.interceptors.add(RetryInterceptor(dio: _dio));
     _dio.interceptors.add(cacheInterceptor);
-    _dio.interceptors.add(DioInterceptor(storageService));
+    _dio.interceptors.add(_dioInterceptor);
     _dio.interceptors.add(LogInterceptor(
       requestBody: false, // Reduced log noise for performance
       requestHeader: true,
@@ -36,7 +47,9 @@ class ApiClient {
   }
 
   void printLog(String message) {
-    print(message);
+    if (kDebugMode) {
+      print(message);
+    }
   }
 
   /// Sets the current user to isolate cache and provide user-specific logging.
