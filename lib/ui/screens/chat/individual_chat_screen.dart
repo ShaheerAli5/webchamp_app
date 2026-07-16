@@ -115,14 +115,14 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
     _pollingTimer?.cancel();
     if (_isAppInBackground) return;
     
-    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 6), (timer) async {
       final provider = context.read<ContactProvider>();
       // 🛡️ Only poll if this screen's UID is the active one in the provider AND app is in foreground
       if (mounted && !_isPolling && provider.activeChatUid == widget.uid && !_isAppInBackground) {
         _isPolling = true;
         try {
-          // 🚀 Pass refresh: true to bypass cache during active polling for real-time feel
-          await provider.getContactChatBoxData(widget.uid, showLoading: false, refresh: true);
+          // 🚀 Pass pollOnly: true to skip metadata requests during frequent polls
+          await provider.getContactChatBoxData(widget.uid, showLoading: false, refresh: true, pollOnly: true);
         } catch (e) {
           debugPrint('❌ [CHAT] Polling error: $e');
         } finally {

@@ -1,8 +1,6 @@
-- `[x]` Instrument `ContactProvider` and `IndividualChatScreen` with debug logs
-- `[x]` Analyze code for duplicate key vulnerabilities
-- `[x]` Fix optimistic update logic in `ContactProvider.sendMessage`
-- `[x]` Fix optimistic update logic in `ContactProvider._sendMediaOptimistic`
-- `[x]` Refine deduplication logic in `ContactProvider.getContactChatBoxData`
-- `[x]` Update `IndividualChatScreen` to handle duplicate keys safely in the UI
-- `[x]` Verify the fix and remove extra logs
+- `[x]` Update `IndividualChatScreen` polling interval (2s -> 6s)
+- `[x]` Optimize `ContactProvider.getContactChatBoxData` to skip metadata during polls
+- `[x]` Update `ContactProvider` bulk sync delay (1.2s -> 2.5s)
+- `[x]` Update `ContactProvider` global unread polling (15s -> 45s)
+- `[x]` Verify request reduction and responsiveness
 - `[x]` Create walkthrough

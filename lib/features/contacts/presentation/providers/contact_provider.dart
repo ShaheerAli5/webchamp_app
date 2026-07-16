@@ -116,7 +116,7 @@ class ContactProvider extends ChangeNotifier {
 
   void startGlobalUnreadPolling() {
     _globalUnreadTimer?.cancel();
-    _globalUnreadTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+    _globalUnreadTimer = Timer.periodic(const Duration(seconds: 45), (timer) {
       getGlobalUnreadCount();
     });
   }
@@ -523,8 +523,8 @@ class ContactProvider extends ChangeNotifier {
         if (endReached || !_hasMore) {
           endReached = true;
         } else {
-          // Fix 1: Parallel batches with small delay to respect rate limits
-          await Future.delayed(const Duration(milliseconds: 1200));
+          // Fix 1: Parallel batches with delay to respect rate limits (Reduced frequency to fix 429)
+          await Future.delayed(const Duration(milliseconds: 2500));
         }
       }
 
@@ -1001,8 +1001,8 @@ class ContactProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> getContactChatBoxData(String contactUid, {bool showLoading = true, bool refresh = false, bool force = false}) async {
-    debugPrint('🚀 [CHAT] getContactChatBoxData START: $contactUid (Force: $force, Refresh: $refresh)');
+  Future<bool> getContactChatBoxData(String contactUid, {bool showLoading = true, bool refresh = false, bool force = false, bool pollOnly = false}) async {
+    debugPrint('🚀 [CHAT] getContactChatBoxData START: $contactUid (Force: $force, Refresh: $refresh, PollOnly: $pollOnly)');
     if (!showLoading && !refresh && !force && _activeChatUid != null && _activeChatUid != contactUid) {
       debugPrint('⏳ [CHAT] Ignoring background polling for inactive chat: $contactUid (Active: $_activeChatUid)');
       return false;
@@ -1039,14 +1039,21 @@ class ContactProvider extends ChangeNotifier {
     }
 
     try {
-      // 1. Fetch Sidebar and Chat History in parallel
-      final results = await Future.wait([
-        _repository.getContactChatBoxData(contactUid, refresh: refresh, cancelToken: _chatCancelToken),
-        _repository.getChatHistory(contactUid, refresh: refresh, cancelToken: _chatCancelToken).catchError((e) {
-          debugPrint('❌ [CHAT] History fetch failed: $e');
-          return <String, dynamic>{};
-        }),
-      ]);
+      // 1. Fetch Sidebar and Chat History (Optimized: Skip metadata during background polling)
+      final List<Future<dynamic>> requests = [];
+      if (!pollOnly) {
+        requests.add(_repository.getContactChatBoxData(contactUid, refresh: refresh, cancelToken: _chatCancelToken));
+      } else {
+        // Return empty map to keep results indexing consistent without firing API
+        requests.add(Future.value({})); 
+      }
+      
+      requests.add(_repository.getChatHistory(contactUid, refresh: refresh, cancelToken: _chatCancelToken).catchError((e) {
+        debugPrint('❌ [CHAT] History fetch failed: $e');
+        return <String, dynamic>{};
+      }));
+
+      final results = await Future.wait(requests);
 
       // 🛑 UID CHECK: If the user switched chats while this request was in flight, discard it.
       if (contactUid != _activeChatUid) {
@@ -1066,16 +1073,18 @@ class ContactProvider extends ChangeNotifier {
       // If clientModels is a List (e.g. []), skip it as per Bug 2
       final dynamic safeClientModels = (clientModels is Map) ? clientModels : null;
 
-      _labels = _extractLargestList([result['labels'], data?['labels'], safeClientModels?['labels']]);
-      _teamMembers = _extractLargestList([result['teamMembers'], result['vendorMessagingUsers'], data?['teamMembers']]);
-      
-      _allAvailableLabels = _extractLargestList([
-        result['listOfAllLabels'], 
-        data?['listOfAllLabels'], 
-        result['allLabels'],
-        safeClientModels?['listOfAllLabels'],
-        safeClientModels?['allLabels'],
-      ]);
+      if (!pollOnly) {
+        _labels = _extractLargestList([result['labels'], data?['labels'], safeClientModels?['labels']]);
+        _teamMembers = _extractLargestList([result['teamMembers'], result['vendorMessagingUsers'], data?['teamMembers']]);
+        
+        _allAvailableLabels = _extractLargestList([
+          result['listOfAllLabels'], 
+          data?['listOfAllLabels'], 
+          result['allLabels'],
+          safeClientModels?['listOfAllLabels'],
+          safeClientModels?['allLabels'],
+        ]);
+      }
 
       // 3. Extract and Merge Messages
       final List<dynamic> rawNewMessages = _extractMessagesFromResponse([result, chatResult]);
