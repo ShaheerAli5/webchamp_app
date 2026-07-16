@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
 import 'dart:io';
+import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:open_filex/open_filex.dart';
@@ -195,6 +196,41 @@ class Helpers {
     if (val is int) return val;
     if (val is double) return val.toInt();
     return int.tryParse(val.toString());
+  }
+
+  /// Safely extracts the __data map from a message object, handling JSON strings.
+  static Map<String, dynamic> getMessageData(dynamic message) {
+    if (message is! Map) return {};
+    final rawData = message['__data'];
+    if (rawData == null) return {};
+    if (rawData is Map) return Map<String, dynamic>.from(rawData);
+    if (rawData is String && rawData.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawData);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  /// Extracts a unique identifier for a message from various potential fields.
+  static String? getMessageId(dynamic message) {
+    if (message is! Map) return null;
+    final id = message['whatsapp_message_id'] ?? 
+               message['wamid'] ?? 
+               message['_uid'] ?? 
+               message['uid'] ?? 
+               message['id'] ??
+               message['local_id'];
+    return id?.toString();
+  }
+
+  /// Gets stripped and trimmed text content from a message object.
+  static String getNormalizedText(dynamic message) {
+    if (message is! Map) return '';
+    final String rawText = (message['message'] ?? message['message_body'] ?? message['text'] ?? '').toString();
+    if (rawText == 'Media') return 'Media'; // Special case for media placeholders
+    return htmlToPlainText(rawText).trim();
   }
 
   static String formatDuration(int seconds) {

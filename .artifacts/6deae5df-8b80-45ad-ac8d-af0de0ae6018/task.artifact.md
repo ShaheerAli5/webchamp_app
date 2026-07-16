@@ -1,0 +1,18 @@
+- [x] Update Android configuration
+    - [x] Update `android/app/build.gradle.kts`
+    - [x] Update `android/app/src/main/kotlin/com/example/webchamp_app/MainActivity.kt` package declaration
+    - [x] Move `MainActivity.kt` to `android/app/src/main/kotlin/com/wabchamp/app/`
+    - [x] Remove old Android package directories
+- [x] Update iOS configuration
+    - [x] Update `ios/Runner.xcodeproj/project.pbxproj`
+- [x] Update macOS configuration
+    - [x] Update `macos/Runner.xcodeproj/project.pbxproj`
+    - [x] Update `macos/Runner/Configs/AppInfo.xcconfig`
+- [x] Verification
+    - [x] Grep for `com.example.webchamp_app`
+    - [x] Grep for `com.example.webchampApp`
+    - [x] Run `flutter clean`
+    - [x] Run `flutter pub get`
+- [x] Finalize
+    - [x] Create walkthrough
+    - [x] List modified files and manual steps

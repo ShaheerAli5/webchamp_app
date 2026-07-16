@@ -795,6 +795,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
       );
     }
 
+    final Set<String> seenIds = {};
+    
     return ListView.builder(
       controller: _scrollController,
       padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 12.h),
@@ -811,7 +813,16 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
         final time = _messageTime(messageData);
         final type = _getMessageType(messageData);
         final content = _getMessageContent(messageData);
-        final messageId = (messageData['whatsapp_message_id'] ?? messageData['wamid'] ?? messageData['_uid'] ?? index).toString();
+        final String rawId = Helpers.getMessageId(messageData) ?? 'idx_$index';
+        
+        // 🛡️ Debug: Detect and log duplicate IDs being rendered
+        String messageId = rawId;
+        if (seenIds.contains(rawId)) {
+          final text = Helpers.getNormalizedText(messageData);
+          debugPrint('🚨 [UI CRITICAL] Duplicate Message ID detected in ListView: $rawId at index $index. Text: "$text". Applying safety suffix.');
+          messageId = '${rawId}_dup_$index';
+        }
+        seenIds.add(rawId);
 
         bool showDateSeparator = false;
         String? dateStr;
@@ -1015,7 +1026,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
       int? duration;
       if (messageData is Map) {
         duration = Helpers.toInt(messageData['duration']) ?? 
-                   Helpers.toInt(messageData['__data']?['media_values']?['duration']);
+                   Helpers.toInt(Helpers.getMessageData(messageData)['media_values']?['duration']);
       }
       provider.sendVoiceMessage(contactUid: widget.uid, filePath: content.toString(), duration: duration);
     } else if (type == 'document') {
@@ -1168,7 +1179,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
     // Check if it's a deleted message first
     if (messageData['is_deleted'] == true) return 'text';
 
-    final mediaValues = messageData['__data']?['media_values'];
+    final mediaValues = Helpers.getMessageData(messageData)['media_values'];
     if (mediaValues is Map) {
       final type = mediaValues['type']?.toString().toLowerCase() ?? '';
       final link = mediaValues['link']?.toString() ?? '';
@@ -1215,7 +1226,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
   dynamic _getMessageContent(dynamic messageData) {
     if (messageData is! Map) return '';
     
-    final mediaValues = messageData['__data']?['media_values'];
+    final mediaValues = Helpers.getMessageData(messageData)['media_values'];
     if (mediaValues is Map && mediaValues['link'] != null) {
       final link = mediaValues['link'].toString();
       // 🛡️ Safety: Only return as link if it looks like a path or URL
@@ -1946,7 +1957,7 @@ class ChatBubble extends StatelessWidget {
     if (direct != null && direct > 0) return direct;
 
     // 2. Check media_values in __data (Common in this app's optimistic updates)
-    final mediaValues = messageData['__data']?['media_values'];
+    final mediaValues = Helpers.getMessageData(messageData)['media_values'];
     if (mediaValues is Map) {
       final nested = Helpers.toInt(mediaValues['duration']) ?? 
                     Helpers.toInt(mediaValues['media_duration']) ?? 
@@ -1998,8 +2009,9 @@ class ChatBubble extends StatelessWidget {
 
   Widget _buildStatusIcon(BuildContext context, dynamic messageData, {bool isOverlay = false}) {
     final status = (messageData?['status'] ?? '').toString().toLowerCase();
-    final double? progress = (messageData is Map && messageData['__data'] != null)
-        ? (messageData['__data']['progress'] is num ? (messageData['__data']['progress'] as num).toDouble() : null)
+    final data = Helpers.getMessageData(messageData);
+    final double? progress = (messageData is Map && data.isNotEmpty)
+        ? (data['progress'] is num ? (data['progress'] as num).toDouble() : null)
         : null;
 
     if (status == 'sending' || status == 'uploading') {
