@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
@@ -147,36 +148,51 @@ class VoicePlaybackManager extends ChangeNotifier {
 
   Future<void> togglePlay(String url) async {
     try {
+      debugPrint('🎵 [VOICE] togglePlay called for: $url');
       final session = await AudioSession.instance;
+      
+      // Aggressive re-configuration to ensure we are in playback mode
+      // This helps if the recorder or another plugin left the session in a weird state
+      await session.configure(const AudioSessionConfiguration.music());
+      
       if (await session.setActive(true)) {
         if (_currentAudioUrl == url) {
           if (_player.playing) {
+            debugPrint('⏸️ [VOICE] Pausing');
             await _player.pause();
           } else {
             if (_player.processingState == ProcessingState.completed) {
+              debugPrint('🔄 [VOICE] Restarting from beginning');
               await _player.seek(Duration.zero);
             }
+            debugPrint('▶️ [VOICE] Resuming');
             await _player.setSpeed(_currentSpeed);
             _player.play();
           }
         } else {
           // Switching audio: stop current and prepare new one
-          // We stop previous playback immediately for better UX
-          if (_player.playing) await _player.stop();
+          if (_player.playing) {
+            debugPrint('⏹️ [VOICE] Stopping previous audio');
+            await _player.stop();
+          }
           
+          final extension = url.split('.').last.split('?').first.toLowerCase();
+          debugPrint('🎵 [VOICE] Audio Extension: $extension');
+          if (extension == 'opus' || extension == 'ogg') {
+            debugPrint('⚠️ [VOICE] WARNING: iOS may not support OPUS/OGG natively. If playback fails, transcoding may be needed.');
+          }
+
           _currentAudioUrl = url;
-          notifyListeners(); // Trigger UI to show buffering/loading
+          notifyListeners();
 
           final cachedPath = await getCachedPath(url);
           
           if (cachedPath != null) {
-            debugPrint('🚀 [VOICE] Instant play from cache: $cachedPath');
+            debugPrint('🚀 [VOICE] Playing from cache: $cachedPath');
             await _player.setFilePath(cachedPath);
           } else {
-            debugPrint('📡 [VOICE] Streaming from URL: $url');
-            // Start streaming while also caching in background
-            // Use Future.wait to start both but we only care about player readiness
-            _player.setUrl(url).catchError((e) {
+            debugPrint('📡 [VOICE] Playing from URL: $url');
+            await _player.setUrl(url).catchError((e) {
               debugPrint('❌ [VOICE] Streaming error: $e');
               return null;
             });
@@ -184,8 +200,11 @@ class VoicePlaybackManager extends ChangeNotifier {
           }
           
           await _player.setSpeed(_currentSpeed);
-          _player.play(); // play() will wait for source readiness internally
+          debugPrint('▶️ [VOICE] Starting playback');
+          _player.play();
         }
+      } else {
+        debugPrint('❌ [VOICE] Could not activate AudioSession');
       }
       notifyListeners();
     } catch (e) {

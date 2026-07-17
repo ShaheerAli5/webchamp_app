@@ -8,13 +8,15 @@ I have implemented the fixes for voice messages, camera access, and video record
 - **Info.plist**: Added missing mandatory usage descriptions for `Camera`, `Microphone`, and `Photo Library`. These were the primary reasons the camera and video recording were not working on iOS.
 - **Background Audio**: Enabled `audio` background mode in `Info.plist` to support consistent playback.
 
-### 2. Audio Session Management
+### 2. Audio Session Management (Updated)
 - **Dependency**: Added `audio_session` to the project.
 - **VoicePlaybackManager**:
-    - Integrated `AVAudioSession` configuration using the `music` profile for playback.
-    - Added logic to explicitly activate the audio session before playing voice messages. This ensures playback works even when the device's silent switch is on.
+    - Fixed missing initialization of `AudioSession`.
+    - Integrated aggressive re-configuration of `AVAudioSession` to the `music` profile right before playback. This ensures that even if other plugins (like Agora or the Recorder) changed the session state, the player can still output sound.
+    - Added comprehensive logging to track session activation, audio format (extensions like `.opus`), and playback status.
 - **IndividualChatScreen**:
-    - Added `AVAudioSession` configuration for the `playAndRecord` category before starting a recording. This ensures the microphone is correctly prioritized and audio routing is handled properly by iOS.
+    - Fixed missing `audio_session` import.
+    - Added logic to explicitly **deactivate** the audio session after a recording is stopped or cancelled. This releases the microphone and allows the playback system to take control without conflicts.
 
 ### 3. Camera Robustness
 - **WhatsAppCameraScreen**:

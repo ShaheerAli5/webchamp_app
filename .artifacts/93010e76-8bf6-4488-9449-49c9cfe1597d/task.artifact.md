@@ -1,6 +1,6 @@
-- [x] Update `pubspec.yaml` with `audio_session`
-- [x] Configure `Info.plist` with missing iOS permissions
-- [x] Initialize and manage `AVAudioSession` in `VoicePlaybackManager`
-- [x] Configure `AudioSession` in `IndividualChatScreen` for recording
-- [x] Add error logging and safety checks in `WhatsAppCameraScreen`
-- [x] Verify logical consistency and handle cleanup
+- [x] Correctly import `audio_session` in `voice_playback_manager.dart`
+- [x] Call `_initAudioSession()` in `VoicePlaybackManager` constructor
+- [x] Enhance `togglePlay` with aggressive session re-configuration
+- [x] Add detailed logging for audio format and errors
+- [x] Verify `individual_chat_screen.dart` uses correct session for recording
+- [x] Final verification of logical consistency
