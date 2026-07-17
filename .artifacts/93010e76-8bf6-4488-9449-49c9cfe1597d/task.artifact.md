@@ -1,0 +1,6 @@
+- [x] Update `pubspec.yaml` with `audio_session`
+- [x] Configure `Info.plist` with missing iOS permissions
+- [x] Initialize and manage `AVAudioSession` in `VoicePlaybackManager`
+- [x] Configure `AudioSession` in `IndividualChatScreen` for recording
+- [x] Add error logging and safety checks in `WhatsAppCameraScreen`
+- [x] Verify logical consistency and handle cleanup

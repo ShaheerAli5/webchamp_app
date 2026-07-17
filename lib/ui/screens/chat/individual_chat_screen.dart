@@ -165,6 +165,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
         return;
       }
 
+      // Configure AudioSession for recording on iOS
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+        avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.defaultToSpeaker,
+        avAudioSessionMode: AVAudioSessionMode.defaultMode,
+        avAudioSessionRouteSharingPolicy: AVAudioSessionRouteSharingPolicy.defaultPolicy,
+        avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
+      ));
+      await session.setActive(true);
+
       final directory = await getTemporaryDirectory();
       final path = '${directory.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
       _recordedFilePath = path;

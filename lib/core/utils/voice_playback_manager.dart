@@ -54,6 +54,11 @@ class VoicePlaybackManager extends ChangeNotifier {
   Stream<Duration> get positionStream => _player.positionStream;
   Stream<Duration?> get durationStream => _player.durationStream;
 
+  Future<void> _initAudioSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+  }
+
   void setSpeed(double speed) {
     _currentSpeed = speed;
     _player.setSpeed(speed);
@@ -142,42 +147,45 @@ class VoicePlaybackManager extends ChangeNotifier {
 
   Future<void> togglePlay(String url) async {
     try {
-      if (_currentAudioUrl == url) {
-        if (_player.playing) {
-          await _player.pause();
-        } else {
-          if (_player.processingState == ProcessingState.completed) {
-            await _player.seek(Duration.zero);
+      final session = await AudioSession.instance;
+      if (await session.setActive(true)) {
+        if (_currentAudioUrl == url) {
+          if (_player.playing) {
+            await _player.pause();
+          } else {
+            if (_player.processingState == ProcessingState.completed) {
+              await _player.seek(Duration.zero);
+            }
+            await _player.setSpeed(_currentSpeed);
+            _player.play();
           }
-          await _player.setSpeed(_currentSpeed);
-          _player.play();
-        }
-      } else {
-        // Switching audio: stop current and prepare new one
-        // We stop previous playback immediately for better UX
-        if (_player.playing) await _player.stop();
-        
-        _currentAudioUrl = url;
-        notifyListeners(); // Trigger UI to show buffering/loading
-
-        final cachedPath = await getCachedPath(url);
-        
-        if (cachedPath != null) {
-          debugPrint('🚀 [VOICE] Instant play from cache: $cachedPath');
-          await _player.setFilePath(cachedPath);
         } else {
-          debugPrint('📡 [VOICE] Streaming from URL: $url');
-          // Start streaming while also caching in background
-          // Use Future.wait to start both but we only care about player readiness
-          _player.setUrl(url).catchError((e) {
-            debugPrint('❌ [VOICE] Streaming error: $e');
-            return null;
-          });
-          _downloadAndCache(url).catchError((_) => '');
+          // Switching audio: stop current and prepare new one
+          // We stop previous playback immediately for better UX
+          if (_player.playing) await _player.stop();
+          
+          _currentAudioUrl = url;
+          notifyListeners(); // Trigger UI to show buffering/loading
+
+          final cachedPath = await getCachedPath(url);
+          
+          if (cachedPath != null) {
+            debugPrint('🚀 [VOICE] Instant play from cache: $cachedPath');
+            await _player.setFilePath(cachedPath);
+          } else {
+            debugPrint('📡 [VOICE] Streaming from URL: $url');
+            // Start streaming while also caching in background
+            // Use Future.wait to start both but we only care about player readiness
+            _player.setUrl(url).catchError((e) {
+              debugPrint('❌ [VOICE] Streaming error: $e');
+              return null;
+            });
+            _downloadAndCache(url).catchError((_) => '');
+          }
+          
+          await _player.setSpeed(_currentSpeed);
+          _player.play(); // play() will wait for source readiness internally
         }
-        
-        await _player.setSpeed(_currentSpeed);
-        _player.play(); // play() will wait for source readiness internally
       }
       notifyListeners();
     } catch (e) {
