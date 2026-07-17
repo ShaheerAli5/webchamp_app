@@ -48,12 +48,16 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
     }
 
     _cameras = await availableCameras();
-    if (_cameras.isEmpty) return;
+    if (_cameras.isEmpty) {
+      debugPrint("❌ [CAMERA] No cameras available");
+      return;
+    }
 
     _onNewCameraSelected(_cameras[_selectedCameraIndex]);
   }
 
   Future<void> _onNewCameraSelected(CameraDescription cameraDescription) async {
+    debugPrint("📸 [CAMERA] Selecting camera: ${cameraDescription.name}");
     if (_controller != null) {
       await _controller!.dispose();
     }
@@ -67,14 +71,28 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
 
     try {
       await _controller!.initialize();
+      if (!mounted) return;
+      
       await _controller!.setFlashMode(_flashMode);
+      debugPrint("✅ [CAMERA] Camera initialized successfully");
+      
       if (mounted) {
         setState(() {
           _isReady = true;
         });
       }
     } catch (e) {
-      debugPrint("Camera Error: $e");
+      debugPrint("❌ [CAMERA] Initialization Error: $e");
+      if (e is CameraException) {
+        switch (e.code) {
+          case 'CameraAccessDenied':
+            debugPrint('User denied camera access.');
+            break;
+          default:
+            debugPrint('Handle other errors: ${e.code}');
+            break;
+        }
+      }
     }
   }
 

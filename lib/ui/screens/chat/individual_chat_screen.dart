@@ -16,6 +16,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:any_link_preview/any_link_preview.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -165,6 +166,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
         return;
       }
 
+      // Configure AudioSession for recording on iOS
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+        avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.defaultToSpeaker,
+        avAudioSessionMode: AVAudioSessionMode.defaultMode,
+        avAudioSessionRouteSharingPolicy: AVAudioSessionRouteSharingPolicy.defaultPolicy,
+        avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
+      ));
+      await session.setActive(true);
+
       final directory = await getTemporaryDirectory();
       final path = '${directory.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
       _recordedFilePath = path;
@@ -218,6 +230,14 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
       _recordTimer?.cancel();
       final path = await _audioRecorder.stop();
       await _recorderController.stop();
+
+      // Deactivate AudioSession after recording
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(false);
+      } catch (e) {
+        debugPrint("⚠️ [SESSION] Deactivation error: $e");
+      }
       
       if (path != null && _recordDuration > 0) {
         if (sendImmediately) {
@@ -249,6 +269,15 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
       _recordTimer?.cancel();
       await _audioRecorder.stop();
       await _recorderController.stop();
+
+      // Deactivate AudioSession after cancellation
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(false);
+      } catch (e) {
+        debugPrint("⚠️ [SESSION] Deactivation error: $e");
+      }
+
       setState(() { 
         _recordingState = RecordingState.idle;
         _recordDuration = 0; 
