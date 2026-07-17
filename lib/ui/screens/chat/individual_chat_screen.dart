@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -41,7 +42,7 @@ class IndividualChatScreen extends StatefulWidget {
   State<IndividualChatScreen> createState() => _IndividualChatScreenState();
 }
 
-class _IndividualChatScreenState extends State<IndividualChatScreen> {
+class _IndividualChatScreenState extends State<IndividualChatScreen> with WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
@@ -53,6 +54,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   
   Timer? _pollingTimer;
   bool _isPolling = false;
+  bool _isAppInBackground = false;
   Map<String, dynamic>? _replyingTo;
   String? _selectedMessageId;
 
@@ -66,6 +68,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _recorderController = RecorderController()
       ..androidEncoder = AndroidEncoder.aac
       ..androidOutputFormat = AndroidOutputFormat.mpeg4
@@ -97,21 +100,41 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     return Helpers.htmlToPlainText(Helpers.sanitizeString(text)).trim();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _isAppInBackground = true;
+      _pollingTimer?.cancel();
+    } else if (state == AppLifecycleState.resumed) {
+      _isAppInBackground = false;
+      _startPolling();
+    }
+  }
+
   void _startPolling() {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+    if (_isAppInBackground) return;
+    
+    _pollingTimer = Timer.periodic(const Duration(seconds: 6), (timer) async {
       final provider = context.read<ContactProvider>();
-      // 🛡️ Only poll if this screen's UID is the active one in the provider
-      if (mounted && !_isPolling && provider.activeChatUid == widget.uid) {
+      // 🛡️ Only poll if this screen's UID is the active one in the provider AND app is in foreground
+      if (mounted && !_isPolling && provider.activeChatUid == widget.uid && !_isAppInBackground) {
         _isPolling = true;
-        await provider.getContactChatBoxData(widget.uid, showLoading: false);
-        if (mounted) _isPolling = false;
+        try {
+          // 🚀 Pass pollOnly: true to skip metadata requests during frequent polls
+          await provider.getContactChatBoxData(widget.uid, showLoading: false, refresh: true, pollOnly: true);
+        } catch (e) {
+          debugPrint('❌ [CHAT] Polling error: $e');
+        } finally {
+          if (mounted) _isPolling = false;
+        }
       }
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollingTimer?.cancel();
     _recordTimer?.cancel();
     _audioRecorder.dispose();
@@ -548,17 +571,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       backgroundColor: Colors.transparent,
       appBar: PreferredSize(
         preferredSize: Size.fromHeight(60.h),
-        child: Consumer<ContactProvider>(
-          builder: (context, provider, child) {
-            // OPTIMIZED: Cache the contact lookup
-            final contact = provider.selectedContact != null && 
+        child: Selector<ContactProvider, Map<String, dynamic>>(
+          selector: (_, provider) {
+            return provider.selectedContact != null && 
                            (provider.selectedContact!['_uid'] ?? provider.selectedContact!['uid']) == widget.uid
                 ? provider.selectedContact!
                 : provider.contacts.firstWhere(
                     (c) => (c['_uid'] ?? c['uid']) == widget.uid, 
                     orElse: () => <String, dynamic>{}
                   );
-
+          },
+          builder: (context, contact, child) {
             final name = contact['full_name'] ?? contact['first_name'] ?? widget.name;
             final imageUrl = contact['profile_image'] ?? contact['image_url'];
             return ChatAppBar(name: _sanitizeText(name), uid: widget.uid, imageUrl: imageUrl, onInfoTap: _showContactInfo);
@@ -609,11 +632,18 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                   children: [
                     const ChatCountdownTimer(),
                     Expanded(
-                      child: Consumer<ContactProvider>(
-                        builder: (context, provider, child) {
-                          debugPrint('🎨 [UI] Rebuilding chat list. Total messages: ${provider.messages.length}');
-                          
-                          if (provider.isLoading && provider.messages.isEmpty) {
+                      child: Selector<ContactProvider, _ChatStateData>(
+                        selector: (_, provider) => _ChatStateData(
+                          messages: provider.messages,
+                          isLoading: provider.isLoading,
+                          errorMessage: provider.errorMessage,
+                        ),
+                        builder: (context, data, child) {
+                          final messages = data.messages;
+                          final isLoading = data.isLoading;
+                          final errorMessage = data.errorMessage;
+
+                          if (isLoading && messages.isEmpty) {
                             return Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -629,7 +659,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                             );
                           }
 
-                          if (provider.errorMessage != null && provider.messages.isEmpty) {
+                          if (errorMessage != null && messages.isEmpty) {
                             return Center(
                               child: Padding(
                                 padding: EdgeInsets.all(24.w),
@@ -639,13 +669,13 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                                     Icon(Icons.error_outline, size: 48.sp, color: Colors.red),
                                     SizedBox(height: 16.h),
                                     Text(
-                                      provider.errorMessage!,
+                                      errorMessage,
                                       textAlign: TextAlign.center,
                                       style: TextStyle(color: const Color(0xFF667781), fontSize: 14.sp),
                                     ),
                                     SizedBox(height: 16.h),
                                     ElevatedButton(
-                                      onPressed: () => provider.getContactChatBoxData(widget.uid, refresh: true),
+                                      onPressed: () => context.read<ContactProvider>().getContactChatBoxData(widget.uid, refresh: true),
                                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF008069), foregroundColor: Colors.white),
                                       child: const Text('Retry'),
                                     ),
@@ -656,7 +686,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                           }
 
                           // Optimized: Pass message list to builder
-                          return _buildMessagesList(provider.messages, null);
+                          return _buildMessagesList(messages, null);
                         },
                       ),
                     ),
@@ -765,6 +795,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       );
     }
 
+    final Set<String> seenIds = {};
+    
     return ListView.builder(
       controller: _scrollController,
       padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 12.h),
@@ -781,7 +813,16 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         final time = _messageTime(messageData);
         final type = _getMessageType(messageData);
         final content = _getMessageContent(messageData);
-        final messageId = (messageData['whatsapp_message_id'] ?? messageData['wamid'] ?? messageData['_uid'] ?? index).toString();
+        final String rawId = Helpers.getMessageId(messageData) ?? 'idx_$index';
+        
+        // 🛡️ Debug: Detect and log duplicate IDs being rendered
+        String messageId = rawId;
+        if (seenIds.contains(rawId)) {
+          final text = Helpers.getNormalizedText(messageData);
+          debugPrint('🚨 [UI CRITICAL] Duplicate Message ID detected in ListView: $rawId at index $index. Text: "$text". Applying safety suffix.');
+          messageId = '${rawId}_dup_$index';
+        }
+        seenIds.add(rawId);
 
         bool showDateSeparator = false;
         String? dateStr;
@@ -985,7 +1026,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       int? duration;
       if (messageData is Map) {
         duration = Helpers.toInt(messageData['duration']) ?? 
-                   Helpers.toInt(messageData['__data']?['media_values']?['duration']);
+                   Helpers.toInt(Helpers.getMessageData(messageData)['media_values']?['duration']);
       }
       provider.sendVoiceMessage(contactUid: widget.uid, filePath: content.toString(), duration: duration);
     } else if (type == 'document') {
@@ -1138,7 +1179,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     // Check if it's a deleted message first
     if (messageData['is_deleted'] == true) return 'text';
 
-    final mediaValues = messageData['__data']?['media_values'];
+    final mediaValues = Helpers.getMessageData(messageData)['media_values'];
     if (mediaValues is Map) {
       final type = mediaValues['type']?.toString().toLowerCase() ?? '';
       final link = mediaValues['link']?.toString() ?? '';
@@ -1185,7 +1226,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   dynamic _getMessageContent(dynamic messageData) {
     if (messageData is! Map) return '';
     
-    final mediaValues = messageData['__data']?['media_values'];
+    final mediaValues = Helpers.getMessageData(messageData)['media_values'];
     if (mediaValues is Map && mediaValues['link'] != null) {
       final link = mediaValues['link'].toString();
       // 🛡️ Safety: Only return as link if it looks like a path or URL
@@ -1251,6 +1292,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     return _bubbleTimeFormat.format(dateTime);
   }
 }
+
 
 class MediaSendPreview extends StatefulWidget {
   final String path;
@@ -1542,6 +1584,7 @@ class _MediaSendPreviewState extends State<MediaSendPreview> {
   }
 }
 
+
 class ChatAppBar extends StatelessWidget {
   final String name;
   final String uid;
@@ -1581,6 +1624,7 @@ class ChatAppBar extends StatelessWidget {
   }
 }
 
+
 class DateSeparator extends StatelessWidget {
   final String date;
   const DateSeparator({super.key, required this.date});
@@ -1606,6 +1650,7 @@ class DateSeparator extends StatelessWidget {
     );
   }
 }
+
 
 class _BlinkingDot extends StatefulWidget {
   const _BlinkingDot();
@@ -1634,6 +1679,7 @@ class _BlinkingDotState extends State<_BlinkingDot> with SingleTickerProviderSta
     return FadeTransition(opacity: _controller, child: Container(width: 8.w, height: 8.w, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)));
   }
 }
+
 
 class BubbleTailPainter extends CustomPainter {
   final bool isMe;
@@ -1911,7 +1957,7 @@ class ChatBubble extends StatelessWidget {
     if (direct != null && direct > 0) return direct;
 
     // 2. Check media_values in __data (Common in this app's optimistic updates)
-    final mediaValues = messageData['__data']?['media_values'];
+    final mediaValues = Helpers.getMessageData(messageData)['media_values'];
     if (mediaValues is Map) {
       final nested = Helpers.toInt(mediaValues['duration']) ?? 
                     Helpers.toInt(mediaValues['media_duration']) ?? 
@@ -1963,8 +2009,9 @@ class ChatBubble extends StatelessWidget {
 
   Widget _buildStatusIcon(BuildContext context, dynamic messageData, {bool isOverlay = false}) {
     final status = (messageData?['status'] ?? '').toString().toLowerCase();
-    final double? progress = (messageData is Map && messageData['__data'] != null)
-        ? (messageData['__data']['progress'] is num ? (messageData['__data']['progress'] as num).toDouble() : null)
+    final data = Helpers.getMessageData(messageData);
+    final double? progress = (messageData is Map && data.isNotEmpty)
+        ? (data['progress'] is num ? (data['progress'] as num).toDouble() : null)
         : null;
 
     if (status == 'sending' || status == 'uploading') {
@@ -2352,6 +2399,7 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
+
 class _ImageGalleryViewer extends StatefulWidget {
   final String url;
   const _ImageGalleryViewer({required this.url});
@@ -2426,6 +2474,7 @@ class _ImageGalleryViewerState extends State<_ImageGalleryViewer> {
     );
   }
 }
+
 
 class ChatCountdownTimer extends StatefulWidget {
   const ChatCountdownTimer({super.key});
@@ -2514,6 +2563,7 @@ class _ChatCountdownTimerState extends State<ChatCountdownTimer> {
   }
 }
 
+
 class PhoneNumberLinkifier extends Linkifier {
   const PhoneNumberLinkifier();
 
@@ -2549,6 +2599,7 @@ class PhoneNumberLinkifier extends Linkifier {
     return list;
   }
 }
+
 
 class ChatInputBar extends StatefulWidget {
   final TextEditingController controller;
@@ -2999,3 +3050,29 @@ class _ChatInputBarState extends State<ChatInputBar> {
     );
   }
 }
+
+class _ChatStateData {
+  final List<dynamic> messages;
+  final bool isLoading;
+  final String? errorMessage;
+
+  _ChatStateData({
+    required this.messages,
+    required this.isLoading,
+    this.errorMessage,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _ChatStateData &&
+          runtimeType == other.runtimeType &&
+          isLoading == other.isLoading &&
+          errorMessage == other.errorMessage &&
+          listEquals(messages, other.messages);
+
+  @override
+  int get hashCode =>
+      Object.hash(messages, isLoading, errorMessage);
+}
+

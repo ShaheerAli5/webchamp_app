@@ -1,0 +1,6 @@
+- `[x]` Update `IndividualChatScreen` polling interval (2s -> 6s)
+- `[x]` Optimize `ContactProvider.getContactChatBoxData` to skip metadata during polls
+- `[x]` Update `ContactProvider` bulk sync delay (1.2s -> 2.5s)
+- `[x]` Update `ContactProvider` global unread polling (15s -> 45s)
+- `[x]` Verify request reduction and responsiveness
+- `[x]` Create walkthrough

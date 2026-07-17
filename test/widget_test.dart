@@ -1,30 +1,45 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:provider/provider.dart';
 import 'package:webchamp_app/main.dart';
+import 'package:webchamp_app/providers/auth_provider.dart';
+import 'package:webchamp_app/features/auth/data/repositories/auth_repository.dart';
+import 'package:webchamp_app/features/auth/data/services/auth_api_service.dart';
+import 'package:webchamp_app/features/auth/data/services/multi_account_service.dart';
+import 'package:webchamp_app/core/network/api_client.dart';
+import 'package:webchamp_app/core/storage/secure_storage_service.dart';
+import 'package:webchamp_app/features/contacts/data/repositories/contact_repository.dart';
+import 'package:webchamp_app/features/contacts/data/services/contact_api_service.dart';
+import 'package:webchamp_app/features/contacts/presentation/providers/contact_provider.dart';
+import 'package:webchamp_app/features/contacts/presentation/providers/contact_group_provider.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+  testWidgets('App smoke test', (WidgetTester tester) async {
+    // Setup dependencies (Mocking would be better in a real scenario)
+    final secureStorage = SecureStorageService();
+    final multiAccountService = MultiAccountService(secureStorage);
+    final apiClient = ApiClient(secureStorage);
+    final authService = AuthApiService(apiClient);
+    final authRepository = AuthRepository(authService, secureStorage, multiAccountService);
+    final authProvider = AuthProvider(authRepository);
+    
+    final contactService = ContactApiService(apiClient);
+    final contactRepository = ContactRepository(contactService);
+    final contactProvider = ContactProvider(contactRepository);
+    final contactGroupProvider = ContactGroupProvider(contactRepository);
+
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: authProvider),
+          ChangeNotifierProvider.value(value: contactProvider),
+          ChangeNotifierProvider.value(value: contactGroupProvider),
+        ],
+        child: MyApp(authProvider: authProvider),
+      ),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Basic verification that the app starts
+    expect(find.byType(MyApp), findsOneWidget);
   });
 }

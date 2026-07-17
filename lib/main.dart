@@ -20,10 +20,23 @@ void main() async {
   
   final secureStorage = SecureStorageService();
   final multiAccountService = MultiAccountService(secureStorage);
-  final apiClient = ApiClient(secureStorage);
+  
+  late final ApiClient apiClient;
+  apiClient = ApiClient(secureStorage, onUnauthorized: () {
+    // This will be linked to authProvider below
+  });
+
   final authService = AuthApiService(apiClient);
   final authRepository = AuthRepository(authService, secureStorage, multiAccountService);
   final authProvider = AuthProvider(authRepository);
+
+  // Link ApiClient with AuthProvider for global logout on 401
+  apiClient.onUnauthorized = () {
+    if (authProvider.isLoggedIn) {
+      debugPrint('🚪 [MAIN] Global 401 - Logging out');
+      authProvider.logout();
+    }
+  };
 
   final contactService = ContactApiService(apiClient);
   final contactRepository = ContactRepository(contactService);

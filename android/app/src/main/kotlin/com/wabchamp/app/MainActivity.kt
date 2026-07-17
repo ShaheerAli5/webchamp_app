@@ -1,4 +1,4 @@
-package com.example.webchamp_app
+package com.wabchamp.app
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

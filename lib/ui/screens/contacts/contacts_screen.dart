@@ -62,42 +62,46 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ContactProvider>(
-      builder: (context, provider, child) {
-        debugPrint('ContactsScreen Build: isLoading=${provider.isLoading}, contacts=${provider.contacts.length}, total=${provider.total}');
-        return Scaffold(
-          backgroundColor: AppColors.background,
-          appBar: _buildAppBar(),
-          body: RefreshIndicator(
-            onRefresh: () async {
-              await provider.getContacts(
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: _buildAppBar(),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await context.read<ContactProvider>().getContacts(
                 search: _searchController.text.isNotEmpty ? _searchController.text : null,
               );
-            },
-            child: CustomScrollView(
-              controller: _scrollController,
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20.h),
-                    child: Column(
-                      children: [
-                        _buildSearchBar(),
-                        SizedBox(height: 16.h),
-                        _buildActionButtons(),
-                        SizedBox(height: 16.h),
-                        _buildCounterCard(provider.total > 0 ? provider.total : provider.contacts.length),
-                        SizedBox(height: 16.h),
-                      ],
+        },
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20.h),
+                child: Column(
+                  children: [
+                    _buildSearchBar(),
+                    SizedBox(height: 16.h),
+                    const _ActionButtons(),
+                    SizedBox(height: 16.h),
+                    Selector<ContactProvider, int>(
+                      selector: (_, p) => p.total > 0 ? p.total : p.contacts.length,
+                      builder: (context, total, _) => _CounterCard(count: total),
                     ),
-                  ),
+                    SizedBox(height: 16.h),
+                  ],
                 ),
-                if (provider.isLoading && provider.contacts.isEmpty)
-                  SliverFillRemaining(
+              ),
+            ),
+            Consumer<ContactProvider>(
+              builder: (context, provider, child) {
+                if (provider.isLoading && provider.contacts.isEmpty) {
+                  return const SliverFillRemaining(
                     child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-                  )
-                else if (provider.errorMessage != null && provider.contacts.isEmpty)
-                  SliverFillRemaining(
+                  );
+                }
+                
+                if (provider.errorMessage != null && provider.contacts.isEmpty) {
+                  return SliverFillRemaining(
                     child: Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -110,40 +114,56 @@ class _ContactsScreenState extends State<ContactsScreen> {
                         ],
                       ),
                     ),
-                  )
-                else if (provider.contacts.isEmpty && _searchController.text.isEmpty)
-                  SliverFillRemaining(child: _buildEmptyState())
-                else if (provider.contacts.isEmpty && _searchController.text.isNotEmpty)
-                  SliverFillRemaining(child: _buildNoResultsState())
-                else ...[
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        return _buildContactCard(provider.contacts[index]);
-                      },
-                      childCount: provider.contacts.length,
-                    ),
+                  );
+                }
+
+                if (provider.contacts.isEmpty && _searchController.text.isEmpty) {
+                  return SliverFillRemaining(child: _buildEmptyState());
+                }
+
+                if (provider.contacts.isEmpty && _searchController.text.isNotEmpty) {
+                  return SliverFillRemaining(child: _buildNoResultsState());
+                }
+
+                return SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      return ContactCard(
+                        contact: provider.contacts[index],
+                        onTap: (action, contact) => _handleContactAction(action, contact),
+                      );
+                    },
+                    childCount: provider.contacts.length,
+                    addAutomaticKeepAlives: true,
+                    addRepaintBoundaries: true,
                   ),
-                  if (provider.hasMore)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 20.h),
-                        child: const Center(child: CircularProgressIndicator()),
-                      ),
-                    ),
-                  SliverToBoxAdapter(child: SizedBox(height: 80.h)),
-                ],
-              ],
+                );
+              },
             ),
-          ),
-          floatingActionButton: FloatingActionButton(
-            heroTag: 'contacts_fab',
-            onPressed: () => context.push('/add-contact').then((_) => _fetchContacts()),
-            backgroundColor: AppColors.primary,
-            child: const Icon(Icons.add, color: Colors.white),
-          ),
-        );
-      },
+            Selector<ContactProvider, bool>(
+              selector: (_, p) => p.hasMore,
+              builder: (context, hasMore, _) {
+                if (hasMore) {
+                  return SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20.h),
+                      child: const Center(child: CircularProgressIndicator()),
+                    ),
+                  );
+                }
+                return const SliverToBoxAdapter(child: SizedBox.shrink());
+              },
+            ),
+            SliverToBoxAdapter(child: SizedBox(height: 80.h)),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'contacts_fab',
+        onPressed: () => context.push('/add-contact').then((_) => _fetchContacts()),
+        backgroundColor: AppColors.primary,
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
     );
   }
 
@@ -192,16 +212,20 @@ class _ContactsScreenState extends State<ContactsScreen> {
             hintText: 'Search contacts...',
             hintStyle: TextStyle(color: const Color(0xFF98A2B3), fontSize: 14.sp),
             prefixIcon: const Icon(Icons.search, color: Color(0xFF98A2B3)),
-            suffixIcon: _searchController.text.isNotEmpty 
-              ? IconButton(
-                  icon: const Icon(Icons.close), 
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() {});
-                    _fetchContacts();
-                  },
-                ) 
-              : null,
+            suffixIcon: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _searchController,
+              builder: (context, value, _) {
+                return value.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          _searchController.clear();
+                          _fetchContacts();
+                        },
+                      )
+                    : const SizedBox.shrink();
+              },
+            ),
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
             focusedBorder: InputBorder.none,
@@ -209,7 +233,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
             filled: false,
           ),
           onChanged: (val) {
-            setState(() {}); // Update clear button visibility
             _searchTimer?.cancel();
             _searchTimer = Timer(const Duration(milliseconds: 500), () {
               _fetchContacts();
@@ -217,267 +240,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
           },
         ),
       ),
-    );
-  }
-
-  Widget _buildActionButtons() {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16.w),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _buildActionButton(
-              onTap: () => context.push('/add-contact').then((_) => _fetchContacts()),
-              icon: Icons.add,
-              label: 'Create Contact',
-              isPrimary: true,
-            ),
-            SizedBox(width: 8.w),
-            _buildActionButton(
-              onTap: () => context.push('/upload-csv').then((_) => _fetchContacts()),
-              icon: Icons.upload_outlined,
-              label: 'Upload Contacts',
-              isPrimary: false,
-            ),
-            SizedBox(width: 8.w),
-            _buildActionButton(
-              onTap: () => context.push('/contact-groups'),
-              icon: Icons.group_outlined,
-              label: 'Groups',
-              isPrimary: false,
-            ),
-            SizedBox(width: 8.w),
-            _buildActionButton(
-              onTap: () {},
-              icon: Icons.download_outlined,
-              label: 'Export Contacts',
-              isPrimary: false,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required VoidCallback onTap,
-    required IconData icon,
-    required String label,
-    required bool isPrimary,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8.r),
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
-        decoration: BoxDecoration(
-          color: isPrimary ? AppColors.primary : Colors.white,
-          borderRadius: BorderRadius.circular(8.r),
-          border: isPrimary ? null : Border.all(color: AppColors.primary),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18.sp, color: isPrimary ? Colors.white : AppColors.primary),
-            SizedBox(width: 8.w),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.sp,
-                fontWeight: FontWeight.w600,
-                color: isPrimary ? Colors.white : AppColors.primary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCounterCard(int count) {
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16.w),
-      padding: EdgeInsets.all(16.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20.r),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(10.w),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12.r),
-            ),
-            child: Icon(Icons.people_outline, color: AppColors.primary, size: 24.sp),
-          ),
-          SizedBox(width: 16.w),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Total Contacts',
-                style: TextStyle(fontSize: 12.sp, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
-              ),
-              Text(
-                count.toString(),
-                style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildContactCard(dynamic contact) {
-    final firstName = Helpers.sanitizeString((contact['first_name'] ?? contact['fname'] ?? '').toString());
-    final lastName = Helpers.sanitizeString((contact['last_name'] ?? contact['lname'] ?? '').toString());
-    final fullName = Helpers.sanitizeString((contact['full_name'] ?? contact['name'] ?? '').toString());
-    final name = fullName.isNotEmpty ? fullName : '$firstName $lastName'.trim();
-    final phone = Helpers.sanitizeString((contact['wa_id'] ?? contact['phone_number'] ?? contact['mobile_number'] ?? '').toString());
-    final email = Helpers.sanitizeString((contact['email'] ?? '').toString());
-    final country = Helpers.sanitizeString((contact['country'] ?? '').toString());
-    final optOut = contact['whatsapp_opt_out'] == true || contact['opt_out'] == 1 || contact['opt_out'] == true;
-    
-    // Extract unread count and latest message preview
-    final unreadCount = Helpers.toInt(contact['unread_messages_count'] ?? contact['unread_count']);
-    final latestPreview = Helpers.getMessagePreview(contact is Map ? Map<String, dynamic>.from(contact) : {});
-    final latestTime = contact['latest_message'] ?? (contact['last_message'] is Map ? contact['last_message']['created_at'] : null) ?? contact['updated_at'] ?? contact['messaged_at'];
-
-    return InkWell(
-      onTap: () => _handleContactAction('view', contact),
-      child: Container(
-        margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-        padding: EdgeInsets.all(16.w),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20.r),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4)),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 24.r,
-                  backgroundColor: AppColors.primary.withOpacity(0.1),
-                  child: Text(
-                    Helpers.getInitial(name),
-                    style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18.sp),
-                  ),
-                ),
-                SizedBox(width: 12.w),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              name.isNotEmpty ? name : 'No Name',
-                              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (latestTime != null)
-                            Text(
-                              Helpers.formatShortTimestamp(latestTime),
-                              style: TextStyle(fontSize: 10.sp, color: AppColors.textSecondary),
-                            ),
-                        ],
-                      ),
-                      if (phone.isNotEmpty) ...[
-                        SizedBox(height: 4.h),
-                        Row(
-                          children: [
-                            Icon(Icons.phone_outlined, size: 14.sp, color: AppColors.textSecondary),
-                            SizedBox(width: 8.w),
-                            Text(phone, style: TextStyle(fontSize: 12.sp, color: AppColors.textSecondary)),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (unreadCount != null && unreadCount > 0)
-                  Container(
-                    margin: EdgeInsets.only(left: 8.w),
-                    padding: EdgeInsets.all(6.w),
-                    decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
-                    child: Text(unreadCount.toString(), style: TextStyle(color: Colors.white, fontSize: 10.sp, fontWeight: FontWeight.bold)),
-                  ),
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, color: Color(0xFFD0D5DD)),
-                  onSelected: (val) => _handleContactAction(val, contact),
-                  itemBuilder: (ctx) => [
-                    const PopupMenuItem(value: 'view', child: Text('View')),
-                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                    const PopupMenuItem(value: 'delete', child: Text('Delete')),
-                  ],
-                ),
-              ],
-            ),
-            if (latestPreview.isNotEmpty) ...[
-              SizedBox(height: 8.h),
-              Padding(
-                padding: EdgeInsets.only(left: 60.w),
-                child: Text(
-                  latestPreview,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 13.sp, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
-                ),
-              ),
-            ],
-            Padding(
-              padding: EdgeInsets.only(left: 60.w, top: 8.h),
-              child: Row(
-                children: [
-                  _buildStatusBadge(optOut),
-                  if (country.isNotEmpty) ...[
-                    SizedBox(width: 8.w),
-                    Icon(Icons.public_outlined, size: 12.sp, color: AppColors.textSecondary),
-                    SizedBox(width: 4.w),
-                    Text(country, style: TextStyle(fontSize: 10.sp, color: AppColors.textSecondary)),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(IconData icon, String text) {
-    return Row(
-      children: [
-        Icon(icon, size: 14.sp, color: AppColors.textSecondary),
-        SizedBox(width: 8.w),
-        Expanded(
-          child: Text(text, style: TextStyle(fontSize: 12.sp, color: AppColors.textSecondary), overflow: TextOverflow.ellipsis),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatusBadge(bool isOptedOut) {
-    final color = isOptedOut ? Colors.red : AppColors.primary;
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12.r)),
-      child: Text(isOptedOut ? 'Opted Out' : 'Opted In', style: TextStyle(color: color, fontSize: 10.sp, fontWeight: FontWeight.w600)),
     );
   }
 
@@ -534,6 +296,290 @@ class _ContactsScreenState extends State<ContactsScreen> {
         padding: EdgeInsets.symmetric(vertical: 40.h),
         child: Text('You have no contacts.', style: TextStyle(color: AppColors.textSecondary, fontSize: 14.sp)),
       ),
+    );
+  }
+}
+
+class _ActionButtons extends StatelessWidget {
+  const _ActionButtons();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16.w),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _ActionButton(
+              onTap: () => context.push('/add-contact').then((_) => context.read<ContactProvider>().getContacts()),
+              icon: Icons.add,
+              label: 'Create Contact',
+              isPrimary: true,
+            ),
+            SizedBox(width: 8.w),
+            _ActionButton(
+              onTap: () => context.push('/upload-csv').then((_) => context.read<ContactProvider>().getContacts()),
+              icon: Icons.upload_outlined,
+              label: 'Upload Contacts',
+              isPrimary: false,
+            ),
+            SizedBox(width: 8.w),
+            _ActionButton(
+              onTap: () => context.push('/contact-groups'),
+              icon: Icons.group_outlined,
+              label: 'Groups',
+              isPrimary: false,
+            ),
+            SizedBox(width: 8.w),
+            _ActionButton(
+              onTap: () {},
+              icon: Icons.download_outlined,
+              label: 'Export Contacts',
+              isPrimary: false,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  final VoidCallback onTap;
+  final IconData icon;
+  final String label;
+  final bool isPrimary;
+
+  const _ActionButton({
+    required this.onTap,
+    required this.icon,
+    required this.label,
+    required this.isPrimary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8.r),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+        decoration: BoxDecoration(
+          color: isPrimary ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(8.r),
+          border: isPrimary ? null : Border.all(color: AppColors.primary),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18.sp, color: isPrimary ? Colors.white : AppColors.primary),
+            SizedBox(width: 8.w),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.sp,
+                fontWeight: FontWeight.w600,
+                color: isPrimary ? Colors.white : AppColors.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CounterCard extends StatelessWidget {
+  final int count;
+  const _CounterCard({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 16.w),
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20.r),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.all(10.w),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12.r),
+            ),
+            child: Icon(Icons.people_outline, color: AppColors.primary, size: 24.sp),
+          ),
+          SizedBox(width: 16.w),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Total Contacts',
+                style: TextStyle(fontSize: 12.sp, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+              ),
+              Text(
+                count.toString(),
+                style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ContactCard extends StatelessWidget {
+  final dynamic contact;
+  final Function(String, dynamic) onTap;
+
+  const ContactCard({super.key, required this.contact, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final firstName = Helpers.sanitizeString((contact['first_name'] ?? contact['fname'] ?? '').toString());
+    final lastName = Helpers.sanitizeString((contact['last_name'] ?? contact['lname'] ?? '').toString());
+    final fullName = Helpers.sanitizeString((contact['full_name'] ?? contact['name'] ?? '').toString());
+    final name = fullName.isNotEmpty ? fullName : '$firstName $lastName'.trim();
+    final phone = Helpers.sanitizeString((contact['wa_id'] ?? contact['phone_number'] ?? contact['mobile_number'] ?? '').toString());
+    final country = Helpers.sanitizeString((contact['country'] ?? '').toString());
+    final optOut = contact['whatsapp_opt_out'] == true || contact['opt_out'] == 1 || contact['opt_out'] == true;
+    
+    final unreadCount = Helpers.toInt(contact['unread_messages_count'] ?? contact['unread_count']);
+    final latestPreview = Helpers.getMessagePreview(contact is Map ? Map<String, dynamic>.from(contact) : {});
+    final latestTime = contact['latest_message'] ?? (contact['last_message'] is Map ? contact['last_message']['created_at'] : null) ?? contact['updated_at'] ?? contact['messaged_at'];
+
+    return RepaintBoundary(
+      child: InkWell(
+        onTap: () => onTap('view', contact),
+        child: Container(
+          margin: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+          padding: EdgeInsets.all(16.w),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20.r),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24.r,
+                    backgroundColor: AppColors.primary.withOpacity(0.1),
+                    child: Text(
+                      Helpers.getInitial(name),
+                      style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18.sp),
+                    ),
+                  ),
+                  SizedBox(width: 12.w),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                name.isNotEmpty ? name : 'No Name',
+                                style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (latestTime != null)
+                              Text(
+                                Helpers.formatShortTimestamp(latestTime),
+                                style: TextStyle(fontSize: 10.sp, color: AppColors.textSecondary),
+                              ),
+                          ],
+                        ),
+                        if (phone.isNotEmpty) ...[
+                          SizedBox(height: 4.h),
+                          Row(
+                            children: [
+                              Icon(Icons.phone_outlined, size: 14.sp, color: AppColors.textSecondary),
+                              SizedBox(width: 8.w),
+                              Text(phone, style: TextStyle(fontSize: 12.sp, color: AppColors.textSecondary)),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (unreadCount != null && unreadCount > 0)
+                    Container(
+                      margin: EdgeInsets.only(left: 8.w),
+                      padding: EdgeInsets.all(6.w),
+                      decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
+                      child: Text(unreadCount.toString(), style: TextStyle(color: Colors.white, fontSize: 10.sp, fontWeight: FontWeight.bold)),
+                    ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: Color(0xFFD0D5DD)),
+                    onSelected: (val) => onTap(val, contact),
+                    itemBuilder: (ctx) => [
+                      const PopupMenuItem(value: 'view', child: Text('View')),
+                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                      const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                    ],
+                  ),
+                ],
+              ),
+              if (latestPreview.isNotEmpty) ...[
+                SizedBox(height: 8.h),
+                Padding(
+                  padding: EdgeInsets.only(left: 60.w),
+                  child: Text(
+                    latestPreview,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13.sp, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              ],
+              Padding(
+                padding: EdgeInsets.only(left: 60.w, top: 8.h),
+                child: Row(
+                  children: [
+                    _StatusBadge(isOptedOut: optOut),
+                    if (country.isNotEmpty) ...[
+                      SizedBox(width: 8.w),
+                      Icon(Icons.public_outlined, size: 12.sp, color: AppColors.textSecondary),
+                      SizedBox(width: 4.w),
+                      Text(country, style: TextStyle(fontSize: 10.sp, color: AppColors.textSecondary)),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  final bool isOptedOut;
+  const _StatusBadge({required this.isOptedOut});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isOptedOut ? Colors.red : AppColors.primary;
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12.r)),
+      child: Text(isOptedOut ? 'Opted Out' : 'Opted In', style: TextStyle(color: color, fontSize: 10.sp, fontWeight: FontWeight.w600)),
     );
   }
 }

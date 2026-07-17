@@ -263,8 +263,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMetricGrid() {
-    return Consumer<ContactProvider>(
-      builder: (context, contactProvider, child) {
+    return Selector<ContactProvider, _MetricData>(
+      selector: (_, provider) => _MetricData(
+        total: provider.total,
+        contactsCount: provider.contacts.length,
+        groupsCount: provider.availableGroups.length,
+        teamMembersCount: provider.teamMembers.length,
+        unreadCount: provider.globalUnreadCount,
+      ),
+      builder: (context, data, child) {
         return GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -275,21 +282,33 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             _buildMetricCard(
               'TOTAL\nCONTACTS',
-              (contactProvider.total > 0
-                      ? contactProvider.total
-                      : contactProvider.contacts.length)
-                  .toString(),
+              (data.total > 0 ? data.total : data.contactsCount).toString(),
               Icons.person,
               const Color(0xFF007176),
               onTap: () => context.go('/contacts'),
             ),
-            _buildMetricCard('TOTAL\nGROUPS', contactProvider.availableGroups.length.toString(), Icons.group_work_rounded, const Color(0xFF6D8C00)),
+            _buildMetricCard(
+              'TOTAL\nGROUPS',
+              data.groupsCount.toString(),
+              Icons.group_work_rounded,
+              const Color(0xFF6D8C00),
+            ),
             _buildMetricCard('TOTAL\nCAMPAIGNS', '...', Icons.campaign, const Color(0xFF8B002D)),
             _buildMetricCard('TOTAL\nTEMPLATES', '...', Icons.layers_rounded, const Color(0xFF6D8C00)),
             _buildMetricCard('TOTAL\nBOT REPLIES', '...', Icons.inventory_2_rounded, const Color(0xFF6B8E23)),
-            _buildMetricCard('ACTIVE\nTEAM MEMBERS', contactProvider.teamMembers.length.toString(), Icons.person_off_rounded, const Color(0xFFD92D20)),
+            _buildMetricCard(
+              'ACTIVE\nTEAM MEMBERS',
+              data.teamMembersCount.toString(),
+              Icons.person_off_rounded,
+              const Color(0xFFD92D20),
+            ),
             _buildMetricCard('MESSAGES\nIN QUEUE', '...', Icons.schedule_send_rounded, const Color(0xFF6B8E23)),
-            _buildMetricCard('UNREAD\nMESSAGES', contactProvider.globalUnreadCount.toString(), Icons.task_alt_rounded, const Color(0xFF007176)),
+            _buildMetricCard(
+              'UNREAD\nMESSAGES',
+              data.unreadCount.toString(),
+              Icons.task_alt_rounded,
+              const Color(0xFF007176),
+            ),
           ],
         );
       },
@@ -470,4 +489,39 @@ class _HomeScreenState extends State<HomeScreen> {
       if (parts.length > 1) TextSpan(text: parts[1]),
     ];
   }
+}
+
+class _MetricData {
+  final int total;
+  final int contactsCount;
+  final int groupsCount;
+  final int teamMembersCount;
+  final int unreadCount;
+
+  _MetricData({
+    required this.total,
+    required this.contactsCount,
+    required this.groupsCount,
+    required this.teamMembersCount,
+    required this.unreadCount,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _MetricData &&
+          runtimeType == other.runtimeType &&
+          total == other.total &&
+          contactsCount == other.contactsCount &&
+          groupsCount == other.groupsCount &&
+          teamMembersCount == other.teamMembersCount &&
+          unreadCount == other.unreadCount;
+
+  @override
+  int get hashCode =>
+      total.hashCode ^
+      contactsCount.hashCode ^
+      groupsCount.hashCode ^
+      teamMembersCount.hashCode ^
+      unreadCount.hashCode;
 }
