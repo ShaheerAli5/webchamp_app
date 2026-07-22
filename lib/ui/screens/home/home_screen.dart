@@ -69,7 +69,13 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, auth, child) {
           final user = auth.user;
           final displayName = user?.displayName ?? 'Admin Panel';
-          final initials = displayName.trim().split(' ').where((e) => e.isNotEmpty).take(2).map((e) => Helpers.getInitial(e)).join();
+          final initials = displayName
+              .trim()
+              .split(' ')
+              .where((e) => e.isNotEmpty)
+              .take(2)
+              .map((e) => Helpers.getInitial(e))
+              .join();
           final firstName = user?.firstName ?? (displayName.split(' ').first);
 
           return Row(
@@ -135,7 +141,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     _buildHeaderButton(Iconsax.scan_barcode),
                     _buildHeaderButton(Iconsax.setting_2),
-                    _buildHeaderButton(Iconsax.notification, hasNotification: true),
+                    _buildHeaderButton(
+                      Iconsax.notification,
+                      hasNotification: true,
+                    ),
                   ],
                 ),
               ),
@@ -180,13 +189,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildFinishSetupBanner() {
     return Container(
-      height: 95.h,
       width: double.infinity,
       padding: EdgeInsets.all(12.w),
       decoration: BoxDecoration(
         color: AppColors.bannerBg,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.bannerBorder.withOpacity(0.25), width: 1),
+        border: Border.all(
+          color: AppColors.bannerBorder.withOpacity(0.25),
+          width: 1,
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -198,28 +209,37 @@ class _HomeScreenState extends State<HomeScreen> {
               color: AppColors.bannerBorder.withOpacity(0.3),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Iconsax.info_circle, color: AppColors.bannerText, size: 16),
+            child: Icon(
+              Iconsax.info_circle,
+              color: AppColors.bannerText,
+              size: 16,
+            ),
           ),
           SizedBox(width: 12.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Finish setup',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13.sp,
-                        color: AppColors.bannerText,
-                        fontFamily: 'Geist',
+                    Expanded(
+                      child: Text(
+                        'Finish setup',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.sp,
+                          color: AppColors.bannerText,
+                          fontFamily: 'Geist',
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    SizedBox(width: 8.w),
                     Icon(Icons.close, size: 14, color: AppColors.bannerText),
                   ],
                 ),
+                SizedBox(height: 4.h),
                 Text(
                   'Connect WhatsApp Cloud API',
                   style: TextStyle(
@@ -227,31 +247,44 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: AppColors.bannerText,
                     fontFamily: 'Geist',
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const Spacer(),
-                Container(
-                  width: 121.w,
-                  height: 26.h,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppColors.buttonBorder),
-                  ),
-                  alignment: Alignment.center,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Complete setup',
-                        style: TextStyle(
-                          fontSize: 12.sp,
-                          fontWeight: FontWeight.w500,
+                SizedBox(height: 10.h),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: 140.w),
+                  child: Container(
+                    height: 26.h,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppColors.buttonBorder),
+                    ),
+                    alignment: Alignment.center,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Complete setup',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12.sp,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 4.w),
+                        Icon(
+                          Icons.arrow_outward,
+                          size: 12,
                           color: AppColors.textPrimary,
                         ),
-                      ),
-                      SizedBox(width: 4.w),
-                      Icon(Icons.arrow_outward, size: 12, color: AppColors.textPrimary),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -293,16 +326,36 @@ class _HomeScreenState extends State<HomeScreen> {
               Icons.group_work_rounded,
               const Color(0xFF6D8C00),
             ),
-            _buildMetricCard('TOTAL\nCAMPAIGNS', '...', Icons.campaign, const Color(0xFF8B002D)),
-            _buildMetricCard('TOTAL\nTEMPLATES', '...', Icons.layers_rounded, const Color(0xFF6D8C00)),
-            _buildMetricCard('TOTAL\nBOT REPLIES', '...', Icons.inventory_2_rounded, const Color(0xFF6B8E23)),
+            _buildMetricCard(
+              'TOTAL\nCAMPAIGNS',
+              '...',
+              Icons.campaign,
+              const Color(0xFF8B002D),
+            ),
+            _buildMetricCard(
+              'TOTAL\nTEMPLATES',
+              '...',
+              Icons.layers_rounded,
+              const Color(0xFF6D8C00),
+            ),
+            _buildMetricCard(
+              'TOTAL\nBOT REPLIES',
+              '...',
+              Icons.inventory_2_rounded,
+              const Color(0xFF6B8E23),
+            ),
             _buildMetricCard(
               'ACTIVE\nTEAM MEMBERS',
               data.teamMembersCount.toString(),
               Icons.person_off_rounded,
               const Color(0xFFD92D20),
             ),
-            _buildMetricCard('MESSAGES\nIN QUEUE', '...', Icons.schedule_send_rounded, const Color(0xFF6B8E23)),
+            _buildMetricCard(
+              'MESSAGES\nIN QUEUE',
+              '...',
+              Icons.schedule_send_rounded,
+              const Color(0xFF6B8E23),
+            ),
             _buildMetricCard(
               'UNREAD\nMESSAGES',
               data.unreadCount.toString(),
@@ -315,7 +368,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, Color iconColor, {VoidCallback? onTap}) {
+  Widget _buildMetricCard(
+    String title,
+    String value,
+    IconData icon,
+    Color iconColor, {
+    VoidCallback? onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -419,17 +478,47 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           // Steps
           _buildStepItem(1, 'Login to your Facebook Account', height: 48.h),
-          _buildStepItem(2, 'Complete Setup as Shown in WhatsApp Cloud API Setup', linkText: 'WhatsApp Cloud API Setup', height: 64.h),
-          _buildStepItem(3, 'Manage and Sync WhatsApp templates at Manage WhatsApp Templates', linkText: 'Manage WhatsApp Templates', height: 64.h),
-          _buildStepItem(4, 'Create your contact groups using Manage Groups', linkText: 'Manage Groups', height: 48.h),
-          _buildStepItem(5, 'Create your Contacts or Upload excel file with predefined exportable template at Manage Contacts', linkText: 'Manage Contacts', height: 64.h),
-          _buildStepItem(6, 'Create & Schedule your Campaigns at Manage Campaigns', linkText: 'Manage Campaigns', height: 64.h),
+          _buildStepItem(
+            2,
+            'Complete Setup as Shown in WhatsApp Cloud API Setup',
+            linkText: 'WhatsApp Cloud API Setup',
+            height: 64.h,
+          ),
+          _buildStepItem(
+            3,
+            'Manage and Sync WhatsApp templates at Manage WhatsApp Templates',
+            linkText: 'Manage WhatsApp Templates',
+            height: 64.h,
+          ),
+          _buildStepItem(
+            4,
+            'Create your contact groups using Manage Groups',
+            linkText: 'Manage Groups',
+            height: 48.h,
+          ),
+          _buildStepItem(
+            5,
+            'Create your Contacts or Upload excel file with predefined exportable template at Manage Contacts',
+            linkText: 'Manage Contacts',
+            height: 64.h,
+          ),
+          _buildStepItem(
+            6,
+            'Create & Schedule your Campaigns at Manage Campaigns',
+            linkText: 'Manage Campaigns',
+            height: 64.h,
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildStepItem(int number, String text, {String? linkText, required double height}) {
+  Widget _buildStepItem(
+    int number,
+    String text, {
+    String? linkText,
+    required double height,
+  }) {
     return Container(
       height: height,
       padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
@@ -484,7 +573,10 @@ class _HomeScreenState extends State<HomeScreen> {
       TextSpan(text: parts[0]),
       TextSpan(
         text: linkText,
-        style: const TextStyle(color: Color(0xFFC4D52C), fontWeight: FontWeight.w700),
+        style: const TextStyle(
+          color: Color(0xFFC4D52C),
+          fontWeight: FontWeight.w700,
+        ),
       ),
       if (parts.length > 1) TextSpan(text: parts[1]),
     ];
