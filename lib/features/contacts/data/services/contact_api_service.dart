@@ -247,6 +247,7 @@ class ContactApiService {
     String? uploadedFileName,
     String? waId,
     String? caption,
+    num? duration,
     bool isRecordedAudio = false,
   }) async {
     // 🛡️ Prepare data map
@@ -255,6 +256,10 @@ class ContactApiService {
       if (waId != null && waId.isNotEmpty) 'wa_id': waId,
       'media_type': mediaType,
       if (caption != null && caption.isNotEmpty) 'caption': caption,
+      // Send duration as double so the backend preserves fractional seconds (float/double).
+      // The server API accepts duration as a float; sending as int is also fine but
+      // casting ensures JSON serialisation always produces a numeric value, never a string.
+      if (duration != null && duration > 0) 'duration': duration.toDouble(),
       if (isRecordedAudio) 'is_recorded_audio': true,
       if (_csrfToken != null && _csrfToken!.isNotEmpty) '_token': _csrfToken,
     };
@@ -440,6 +445,7 @@ class ContactApiService {
           ext == 'aac' ||
           ext == 'mp3' ||
           ext == 'ogg' ||
+          ext == 'opus' ||
           ext == 'amr' ||
           ext == 'wav') {
         return fileName;
@@ -461,6 +467,8 @@ class ContactApiService {
             return 'audio/mpeg';
           case 'ogg':
             return 'audio/ogg';
+          case 'opus':
+            return 'audio/ogg; codecs=opus';
           case 'amr':
             return 'audio/amr';
           case 'aac':

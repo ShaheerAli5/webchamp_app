@@ -364,6 +364,7 @@ class ContactRepository {
     required String mediaType,
     String? waId,
     String? caption,
+    num? duration,
     ProgressCallback? onSendProgress,
   }) async {
     debugPrint('🚀 [REPO] sendMedia called for $mediaType');
@@ -453,6 +454,7 @@ class ContactRepository {
         uploadedFileName: uploadedFileName,
         waId: waId,
         caption: caption,
+        duration: duration,
         isRecordedAudio: mediaType.toLowerCase() == 'voice',
       );
 

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:just_audio/just_audio.dart' as just_audio;
+import 'package:audioplayers/audioplayers.dart' as legacy_audio;
 import 'package:audio_session/audio_session.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
@@ -16,11 +17,12 @@ class VoicePlaybackManager extends ChangeNotifier {
   factory VoicePlaybackManager() => _instance;
 
   VoicePlaybackManager._internal() {
-    _player = AudioPlayer();
+    _player = just_audio.AudioPlayer();
+    _legacyPlayer = _createLegacyPlayer();
     _initAudioSession();
 
     _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
+      if (state.processingState == just_audio.ProcessingState.completed) {
         _stopInternal(clearCurrent: true, resetPosition: true);
       }
       notifyListeners();
@@ -28,12 +30,31 @@ class VoicePlaybackManager extends ChangeNotifier {
 
     _player.processingStateStream.listen((state) {
       final bool buffering =
-          state == ProcessingState.buffering ||
-          state == ProcessingState.loading;
+          state == just_audio.ProcessingState.buffering ||
+          state == just_audio.ProcessingState.loading;
       if (_isBuffering != buffering) {
         _isBuffering = buffering;
         notifyListeners();
       }
+    });
+
+    _player.durationStream.listen((duration) {
+      if (duration != null && duration.inSeconds > 0) {
+        if (_currentAudioUrl != null) {
+          _durationCache[_currentAudioUrl!] = duration.inSeconds;
+        }
+        if (_currentAudioMessageId != null) {
+          _durationCacheByMessageId[_currentAudioMessageId!] =
+              duration.inSeconds;
+        }
+        notifyListeners();
+      }
+    });
+
+    _legacyPlayer.onPlayerComplete.listen((_) {
+      _usingLegacyPlayback = false;
+      _currentAudioUrl = null;
+      notifyListeners();
     });
 
     // 🛡️ PERFORMANCE: Do NOT call notifyListeners() on every position update.
@@ -42,25 +63,42 @@ class VoicePlaybackManager extends ChangeNotifier {
     // _player.durationStream.listen((_) => notifyListeners());
   }
 
-  late final AudioPlayer _player;
+  late final just_audio.AudioPlayer _player;
+  late legacy_audio.AudioPlayer _legacyPlayer;
   String? _currentAudioUrl;
+  String? _currentAudioMessageId;
+  bool _usingLegacyPlayback = false;
+  Duration? _legacyDuration;
   double _currentSpeed = 1.0;
   bool _isBuffering = false;
   int _playbackRequestId = 0;
 
   final Set<String> _preloadingUrls = {};
   final Map<String, int> _durationCache = {};
+  final Map<String, int> _durationCacheByMessageId = {};
   final SecureStorageService _storageService = SecureStorageService();
 
-  AudioPlayer get player => _player;
+  just_audio.AudioPlayer get player => _player;
   String? get currentAudioUrl => _currentAudioUrl;
-  bool get isPlaying => _player.playing;
+  String? get currentAudioMessageId => _currentAudioMessageId;
+  int? getCachedDuration(String url) => _durationCache[url];
+  int? getCachedDurationByMessageId(String messageId) =>
+      _durationCacheByMessageId[messageId];
+  bool get isPlaying => _usingLegacyPlayback
+      ? _legacyPlayer.state == legacy_audio.PlayerState.playing
+      : _player.playing;
   bool get isBuffering => _isBuffering;
   double get currentSpeed => _currentSpeed;
 
   // 🚀 Added streams for granular UI updates
-  Stream<Duration> get positionStream => _player.positionStream;
-  Stream<Duration?> get durationStream => _player.durationStream;
+  Stream<Duration> get positionStream => _usingLegacyPlayback
+      ? _legacyPlayer.onPositionChanged
+      : _player.positionStream;
+  Stream<Duration?> get durationStream => _usingLegacyPlayback
+      ? _legacyPlayer.onDurationChanged
+      : _player.durationStream;
+  Duration? get currentDuration =>
+      _usingLegacyPlayback ? _legacyDuration : _player.duration;
 
   Future<void> _initAudioSession() async {
     try {
@@ -87,19 +125,76 @@ class VoicePlaybackManager extends ChangeNotifier {
     }
   }
 
-  void setSpeed(double speed) {
+  legacy_audio.AudioPlayer _createLegacyPlayer() {
+    final player = legacy_audio.AudioPlayer();
+    player.setReleaseMode(legacy_audio.ReleaseMode.stop);
+    player.onPlayerComplete.listen((_) {
+      _usingLegacyPlayback = false;
+      _currentAudioUrl = null;
+      _currentAudioMessageId = null;
+      notifyListeners();
+    });
+    player.onPlayerStateChanged.listen((state) {
+      _usingLegacyPlayback = true;
+      if (state == legacy_audio.PlayerState.completed) {
+        _currentAudioUrl = null;
+        _currentAudioMessageId = null;
+      }
+      if (state == legacy_audio.PlayerState.playing) {
+        player.setPlaybackRate(_currentSpeed).catchError((_) {});
+      }
+      notifyListeners();
+    });
+    player.onDurationChanged.listen((duration) {
+      _legacyDuration = duration;
+      if (duration.inSeconds > 0) {
+        if (_currentAudioUrl != null) {
+          _durationCache[_currentAudioUrl!] = duration.inSeconds;
+        }
+        if (_currentAudioMessageId != null) {
+          _durationCacheByMessageId[_currentAudioMessageId!] =
+              duration.inSeconds;
+        }
+        notifyListeners();
+      }
+    });
+    return player;
+  }
+
+  Future<void> _disposeLegacyPlayer() async {
+    try {
+      await _legacyPlayer.stop();
+    } catch (_) {}
+    try {
+      await _legacyPlayer.release();
+    } catch (_) {}
+    try {
+      await _legacyPlayer.dispose();
+    } catch (_) {}
+    _legacyDuration = null;
+  }
+
+  Future<void> setSpeed(double speed) async {
     _currentSpeed = speed;
-    _player.setSpeed(speed);
+    if (_usingLegacyPlayback) {
+      try {
+        await _legacyPlayer.setPlaybackRate(speed);
+      } catch (_) {}
+    } else {
+      try {
+        await _player.setSpeed(speed);
+      } catch (_) {}
+    }
     notifyListeners();
   }
 
-  void toggleSpeed() {
+  Future<void> toggleSpeed() async {
     if (_currentSpeed == 1.0) {
-      setSpeed(1.5);
+      await setSpeed(1.5);
     } else if (_currentSpeed == 1.5) {
-      setSpeed(2.0);
+      await setSpeed(2.0);
     } else {
-      setSpeed(1.0);
+      await setSpeed(1.0);
     }
   }
 
@@ -120,14 +215,24 @@ class VoicePlaybackManager extends ChangeNotifier {
   }
 
   String _getFilenameFromUrl(String url) {
-    // Generate a unique filename based on the URL to avoid collisions
-    // Using a hash would be safer, but for now we take the last part
+    // Use a stable hash of the full URL so different media cannot collide even
+    // if they share the same basename or lack query parameters.
     final uri = Uri.parse(url);
     final lastPart = uri.pathSegments.isNotEmpty
         ? uri.pathSegments.last
         : 'voice';
-    final queryHash = uri.query.hashCode.toRadixString(36);
-    return '${lastPart}_$queryHash';
+    final safeName = lastPart.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final urlHash = _stableUrlHash(url);
+    return '${safeName}_$urlHash';
+  }
+
+  String _stableUrlHash(String input) {
+    var hash = 0x811c9dc5;
+    for (final codeUnit in input.codeUnits) {
+      hash ^= codeUnit;
+      hash = (hash * 0x01000193) & 0x7fffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
   }
 
   /// Preloads audio by downloading it to local cache
@@ -146,6 +251,61 @@ class VoicePlaybackManager extends ChangeNotifier {
       debugPrint('⚠️ [VOICE] Preload failed for $url: $e');
     } finally {
       _preloadingUrls.remove(url);
+    }
+  }
+
+  String _normalizeLocalPath(String path) {
+    final trimmed = path.trim();
+    if (trimmed.startsWith('file://')) {
+      return Uri.parse(trimmed).toFilePath();
+    }
+    return trimmed;
+  }
+
+  /// Downloads [url] to local cache and returns (filePath, contentType).
+  Future<(String, String?)> _downloadAndCacheWithMime(String url) async {
+    final dir = await getTemporaryDirectory();
+    final filename = _getFilenameFromUrl(url);
+    final filePath = '${dir.path}/voice_cache_$filename';
+
+    if (await File(filePath).exists()) {
+      // File already cached — content-type unavailable without re-fetching headers.
+      // Rely on URL extension check for already-cached files.
+      return (filePath, null);
+    }
+
+    try {
+      final token = await _storageService.getToken();
+      final session = await _storageService.getSession();
+      final dio = Dio();
+      if (token != null && token.isNotEmpty) {
+        dio.options.headers['Authorization'] = 'Bearer $token';
+      }
+      if (session != null && session.isNotEmpty) {
+        dio.options.headers['Cookie'] = session;
+      }
+      dio.options.headers['Accept'] = '*/*';
+      dio.options.headers['X-Requested-With'] = 'XMLHttpRequest';
+
+      String? contentType;
+      final response = await dio.download(
+        url,
+        filePath,
+        options: Options(
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
+        ),
+        onReceiveProgress: (sent, total) {},
+      );
+      contentType = response.headers.value(Headers.contentTypeHeader);
+      debugPrint(
+        '📡 [VOICE] Downloaded: status=${response.statusCode}, mime=$contentType, path=$filePath',
+      );
+      return (filePath, contentType);
+    } catch (e) {
+      final file = File(filePath);
+      if (await file.exists()) await file.delete();
+      rethrow;
     }
   }
 
@@ -196,10 +356,25 @@ class VoicePlaybackManager extends ChangeNotifier {
     }
   }
 
-  bool _needsIosTranscode(String url) {
+  /// Returns true when [pathOrUrl] points to audio that iOS cannot natively play.
+  /// We check both the file extension and, for cached files with generic names,
+  /// we fall through to false so the caller also passes the *original* URL.
+  bool _needsIosTranscode(String pathOrUrl) {
     if (!Platform.isIOS) return false;
-    final lower = url.split('?').first.toLowerCase();
-    return lower.endsWith('.ogg') || lower.endsWith('.opus');
+    // Strip query-string so "file.ogg?token=xyz" is handled correctly.
+    final lower = pathOrUrl.split('?').first.toLowerCase();
+    return lower.endsWith('.ogg') ||
+        lower.endsWith('.opus') ||
+        lower.endsWith('.webm');
+  }
+
+  /// Returns true when the server MIME type indicates a format iOS can't play.
+  bool _mimeNeedsIosTranscode(String? contentType) {
+    if (!Platform.isIOS || contentType == null) return false;
+    final lower = contentType.toLowerCase();
+    return lower.contains('audio/ogg') ||
+        lower.contains('audio/webm') ||
+        lower.contains('audio/opus');
   }
 
   Future<String> _transcodeForIos(String sourcePath) async {
@@ -238,7 +413,7 @@ class VoicePlaybackManager extends ChangeNotifier {
     return targetPath;
   }
 
-  Future<void> togglePlay(String url) async {
+  Future<void> togglePlay(String url, {String? messageId}) async {
     final int requestId = ++_playbackRequestId;
     try {
       debugPrint('🎵 [VOICE] togglePlay called for: $url');
@@ -260,14 +435,34 @@ class VoicePlaybackManager extends ChangeNotifier {
         ),
       );
       if (await session.setActive(true)) {
-        if (_currentAudioUrl == url) {
+        final bool isSameMessage = messageId != null
+            ? _currentAudioMessageId == messageId
+            : _currentAudioUrl == url;
+
+        if (isSameMessage) {
+          if (Platform.isIOS && _usingLegacyPlayback) {
+            if (_legacyPlayer.state == legacy_audio.PlayerState.playing) {
+              debugPrint('⏸️ [VOICE] Pausing legacy iOS playback');
+              await _legacyPlayer.pause();
+              notifyListeners();
+              return;
+            } else {
+              debugPrint('▶️ [VOICE] Resuming legacy iOS playback');
+              await _legacyPlayer.resume();
+              await _legacyPlayer.setPlaybackRate(_currentSpeed);
+              notifyListeners();
+              return;
+            }
+          }
+
           if (_player.playing) {
             debugPrint('⏸️ [VOICE] Pausing');
             await _player.pause();
             notifyListeners();
             return;
           } else {
-            if (_player.processingState == ProcessingState.completed) {
+            if (_player.processingState ==
+                just_audio.ProcessingState.completed) {
               debugPrint('🔄 [VOICE] Restarting from beginning');
               await _player.seek(Duration.zero);
             }
@@ -276,12 +471,9 @@ class VoicePlaybackManager extends ChangeNotifier {
             await _player.play();
           }
         } else {
-          // Switching audio: stop current and fully reset before loading new item.
-          await _stopInternal(
-            clearCurrent: true,
-            resetPosition: true,
-            bumpRequest: false,
-          );
+          // Switching audio: fully tear down any existing playback before
+          // loading the new item. This avoids overlapping iOS players.
+          await _hardResetPlayback(bumpRequest: false);
 
           final extension = url.split('.').last.split('?').first.toLowerCase();
           debugPrint('🎵 [VOICE] Audio Extension: $extension');
@@ -293,10 +485,13 @@ class VoicePlaybackManager extends ChangeNotifier {
 
           if (requestId != _playbackRequestId) return;
           _currentAudioUrl = url;
+          _currentAudioMessageId = messageId;
           notifyListeners();
 
           final cachedPath = await getCachedPath(url);
+          if (requestId != _playbackRequestId) return;
           String playbackPath;
+          String? downloadedContentType;
 
           if (cachedPath != null) {
             debugPrint('🚀 [VOICE] Playing from cache: $cachedPath');
@@ -304,8 +499,10 @@ class VoicePlaybackManager extends ChangeNotifier {
           } else if (url.startsWith('http')) {
             debugPrint('📡 [VOICE] Playing from URL: $url');
             try {
-              final downloaded = await _downloadAndCache(url);
-              playbackPath = downloaded;
+              final downloaded = await _downloadAndCacheWithMime(url);
+              if (requestId != _playbackRequestId) return;
+              playbackPath = downloaded.$1;
+              downloadedContentType = downloaded.$2;
             } catch (e) {
               debugPrint('❌ [VOICE] Download failed: $e');
               rethrow;
@@ -315,23 +512,70 @@ class VoicePlaybackManager extends ChangeNotifier {
             playbackPath = url;
           }
 
-          if (_needsIosTranscode(playbackPath) || _needsIosTranscode(url)) {
+          // Check both the original URL extension AND the MIME type returned by
+          // the server (captured during download). This handles cases where the
+          // cached file has a generic name that doesn't reveal the codec.
+          final bool iosTranscodeNeeded =
+              _needsIosTranscode(playbackPath) ||
+              _needsIosTranscode(url) ||
+              _mimeNeedsIosTranscode(downloadedContentType);
+
+          if (iosTranscodeNeeded) {
             debugPrint(
-              '🍏 [VOICE] iOS fallback triggered for unsupported audio',
+              '🍏 [VOICE] iOS transcode triggered (url=$url, mime=$downloadedContentType)',
             );
             playbackPath = await _transcodeForIos(playbackPath);
           }
 
           if (requestId != _playbackRequestId) return;
-          final duration = await _player.setFilePath(playbackPath);
-          debugPrint(
-            '🎵 [VOICE] Loaded duration: ${duration?.inSeconds ?? 0}s',
-          );
-          debugPrint('🎵 [VOICE] Final playback path: $playbackPath');
+          if (Platform.isIOS) {
+            _usingLegacyPlayback = false;
+            await _disposeLegacyPlayer();
+            if (requestId != _playbackRequestId) return;
+            _legacyPlayer = _createLegacyPlayer();
+            final String localPlaybackPath = _normalizeLocalPath(playbackPath);
+            String iosPlaybackPath = localPlaybackPath;
+            if (await File(iosPlaybackPath).exists()) {
+              debugPrint('🍏 [VOICE] iOS normalizing voice file before play');
+              try {
+                iosPlaybackPath = await _transcodeForIos(iosPlaybackPath);
+              } catch (e) {
+                debugPrint('⚠️ [VOICE] iOS normalization transcode failed: $e');
+              }
+            }
 
-          await _player.setSpeed(_currentSpeed);
-          debugPrint('▶️ [VOICE] Starting playback');
-          if (requestId == _playbackRequestId) {
+            if (requestId != _playbackRequestId) return;
+            final legacySource = await File(iosPlaybackPath).exists()
+                ? legacy_audio.DeviceFileSource(iosPlaybackPath)
+                : legacy_audio.UrlSource(playbackPath);
+            await _legacyPlayer.setReleaseMode(legacy_audio.ReleaseMode.stop);
+            await _legacyPlayer.setPlayerMode(
+              legacy_audio.PlayerMode.mediaPlayer,
+            );
+            await _legacyPlayer.setPlaybackRate(_currentSpeed);
+            if (requestId != _playbackRequestId) return;
+            _currentAudioUrl = url;
+            _currentAudioMessageId = messageId;
+            _usingLegacyPlayback = true;
+            await _legacyPlayer.play(legacySource);
+            debugPrint('✅ [VOICE] legacy iOS playback started: $playbackPath');
+          } else {
+            final duration = await _player.setFilePath(playbackPath);
+            if (duration != null && duration.inSeconds > 0) {
+              _durationCache[url] = duration.inSeconds;
+              if (messageId != null) {
+                _durationCacheByMessageId[messageId] = duration.inSeconds;
+              }
+            }
+            if (requestId != _playbackRequestId) return;
+            debugPrint(
+              '🎵 [VOICE] Loaded duration: ${duration?.inSeconds ?? 0}s',
+            );
+            debugPrint('🎵 [VOICE] Final playback path: $playbackPath');
+
+            await _player.setSpeed(_currentSpeed);
+            if (requestId != _playbackRequestId) return;
+            debugPrint('▶️ [VOICE] Starting playback');
             await _player.play();
             debugPrint('🎵 [VOICE] Play command issued');
           }
@@ -341,6 +585,44 @@ class VoicePlaybackManager extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
+      final bool isCannotOpen =
+          e.toString().contains('(-11828)') ||
+          e.toString().contains('Cannot Open');
+      if (Platform.isIOS && isCannotOpen) {
+        debugPrint(
+          '🍏 [VOICE] just_audio failed on iOS, trying audioplayers fallback',
+        );
+        try {
+          if (requestId != _playbackRequestId) return;
+          await _hardResetPlayback(bumpRequest: false);
+          if (requestId != _playbackRequestId) return;
+          _currentAudioUrl = url;
+          _currentAudioMessageId = messageId;
+          _usingLegacyPlayback = true;
+          notifyListeners();
+
+          await _disposeLegacyPlayer();
+          if (requestId != _playbackRequestId) return;
+          _legacyPlayer = _createLegacyPlayer();
+          final String localUrl = _normalizeLocalPath(url);
+          if (await File(localUrl).exists()) {
+            final String normalizedUrl = await _transcodeForIos(localUrl);
+            if (requestId != _playbackRequestId) return;
+            await _legacyPlayer.setPlaybackRate(_currentSpeed);
+            await _legacyPlayer.play(
+              legacy_audio.DeviceFileSource(normalizedUrl),
+            );
+          } else {
+            if (requestId != _playbackRequestId) return;
+            await _legacyPlayer.setPlaybackRate(_currentSpeed);
+            await _legacyPlayer.play(legacy_audio.UrlSource(url));
+          }
+          debugPrint('✅ [VOICE] audioplayers fallback started');
+          return;
+        } catch (fallbackError) {
+          debugPrint('❌ [VOICE] audioplayers fallback failed: $fallbackError');
+        }
+      }
       await _stopInternal(clearCurrent: true, resetPosition: true);
       notifyListeners();
       debugPrint('❌ [VOICE] Playback error: $e');
@@ -348,29 +630,47 @@ class VoicePlaybackManager extends ChangeNotifier {
   }
 
   /// Optimized duration detection using cache and local storage
-  Future<int?> getOrDetectDuration(String url) async {
+  Future<int?> getOrDetectDuration(String url, {String? messageId}) async {
     if (_durationCache.containsKey(url)) return _durationCache[url];
+    if (messageId != null && _durationCacheByMessageId.containsKey(messageId)) {
+      return _durationCacheByMessageId[messageId];
+    }
 
     try {
       final cachedPath = await getCachedPath(url);
-      final player = AudioPlayer();
+      final player = just_audio.AudioPlayer();
       Duration? d;
+      String probePath;
 
       if (cachedPath != null) {
         debugPrint('🎵 [VOICE] Duration probe using cache: $cachedPath');
-        d = await player.setFilePath(cachedPath);
+        probePath = cachedPath;
       } else if (url.startsWith('http')) {
         debugPrint('🎵 [VOICE] Duration probe downloading: $url');
         final downloaded = await _downloadAndCache(url);
         debugPrint('🎵 [VOICE] Duration probe cached file: $downloaded');
-        d = await player.setFilePath(downloaded);
+        probePath = downloaded;
       } else {
         debugPrint('🎵 [VOICE] Duration probe local file: $url');
-        d = await player.setFilePath(url);
+        probePath = _normalizeLocalPath(url);
       }
+
+      if (Platform.isIOS &&
+          (_needsIosTranscode(probePath) || _needsIosTranscode(url))) {
+        try {
+          probePath = await _transcodeForIos(probePath);
+        } catch (e) {
+          debugPrint('⚠️ [VOICE] Duration probe iOS transcode failed: $e');
+        }
+      }
+
+      d = await player.setFilePath(probePath);
 
       if (d != null) {
         _durationCache[url] = d.inSeconds;
+        if (messageId != null) {
+          _durationCacheByMessageId[messageId] = d.inSeconds;
+        }
         await player.dispose();
         return d.inSeconds;
       }
@@ -383,6 +683,9 @@ class VoicePlaybackManager extends ChangeNotifier {
 
   Future<void> stop() async {
     await _stopInternal(clearCurrent: true, resetPosition: true);
+    await _legacyPlayer.stop();
+    await _legacyPlayer.release();
+    _usingLegacyPlayback = false;
     notifyListeners();
   }
 
@@ -396,6 +699,15 @@ class VoicePlaybackManager extends ChangeNotifier {
     try {
       await _player.stop();
     } catch (_) {}
+    try {
+      await _legacyPlayer.stop();
+    } catch (_) {}
+    try {
+      await _legacyPlayer.release();
+    } catch (_) {}
+    if (clearCurrent) {
+      _usingLegacyPlayback = false;
+    }
 
     if (resetPosition) {
       try {
@@ -405,12 +717,32 @@ class VoicePlaybackManager extends ChangeNotifier {
 
     if (clearCurrent) {
       _currentAudioUrl = null;
+      _currentAudioMessageId = null;
     }
+  }
+
+  Future<void> _hardResetPlayback({bool bumpRequest = true}) async {
+    if (bumpRequest) {
+      _playbackRequestId++;
+    }
+    _isBuffering = false;
+    _usingLegacyPlayback = false;
+    _currentAudioUrl = null;
+    _currentAudioMessageId = null;
+    try {
+      await _player.stop();
+    } catch (_) {}
+    try {
+      await _player.seek(Duration.zero);
+    } catch (_) {}
+    await _disposeLegacyPlayer();
+    _legacyPlayer = _createLegacyPlayer();
   }
 
   @override
   void dispose() {
     _player.dispose();
+    _legacyPlayer.dispose();
     super.dispose();
   }
 }

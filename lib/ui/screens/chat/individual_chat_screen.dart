@@ -217,12 +217,19 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
       );
       await _audioRecorder.start(config, path: path);
 
-      // 🛡 Waveform recording can sometimes fail due to plugin linking issues
-      try {
-        await _recorderController.record();
-      } catch (e) {
-        debugPrint("📊 [WAVEFORM] Failed to start waveform recorder: $e");
-        // We continue even if waveform fails so recording isn't blocked
+      // 🛡 Waveform recording can sometimes fail due to plugin linking issues.
+      // On iOS, audio_waveforms' recorder opens its OWN AVAudioSession recording
+      // track on top of the already-active `record` package session.  iOS then
+      // silently interrupts the first session, which is why the saved file ends
+      // up with 0 seconds duration.  Skip waveform recording on iOS entirely —
+      // the waveform will stay static, but the voice message records correctly.
+      if (!Platform.isIOS) {
+        try {
+          await _recorderController.record();
+        } catch (e) {
+          debugPrint("📊 [WAVEFORM] Failed to start waveform recorder: $e");
+          // We continue even if waveform fails so recording isn't blocked
+        }
       }
 
       setState(() {
@@ -261,7 +268,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     try {
       _recordTimer?.cancel();
       final path = await _audioRecorder.stop();
-      await _recorderController.stop();
+      if (!Platform.isIOS) {
+        await _recorderController.stop();
+      }
 
       // Deactivate AudioSession after recording
       try {
@@ -304,7 +313,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     try {
       _recordTimer?.cancel();
       await _audioRecorder.stop();
-      await _recorderController.stop();
+      if (!Platform.isIOS) {
+        await _recorderController.stop();
+      }
 
       // Deactivate AudioSession after cancellation
       try {
@@ -433,7 +444,11 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     );
   }
 
-  Future<dynamic> _showMediaPreview(String path, String type) async {
+  Future<dynamic> _showMediaPreview(
+    String path,
+    String type, {
+    int? videoDuration,
+  }) async {
     debugPrint('🧩 [ATTACH] Opening preview: type=$type path=$path');
     final dynamic result = await Navigator.push(
       context,
@@ -459,8 +474,10 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
         debugPrint('🧩 [ATTACH] Sending image after preview: $path');
         _sendImage(path);
       } else if (type == 'video') {
-        debugPrint('🧩 [ATTACH] Sending video after preview: $path');
-        _sendVideo(path);
+        debugPrint(
+          '🧩 [ATTACH] Sending video after preview: $path (duration: ${videoDuration}s)',
+        );
+        _sendVideo(path, duration: videoDuration);
       } else if (type == 'document') {
         debugPrint('🧩 [ATTACH] Sending document after preview: $path');
         _sendDocument(path);
@@ -504,6 +521,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
           );
           if (video != null && mounted) {
             debugPrint('🧩 [ATTACH] Gallery video selected: ${video.path}');
+            int? videoDurationSec;
             try {
               final info = await VideoCompress.getMediaInfo(video.path);
               final durationMs = info.duration ?? 0;
@@ -518,16 +536,23 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                 }
                 return;
               }
+              if (durationMs > 0) {
+                videoDurationSec = (durationMs / 1000).round();
+              }
             } catch (e) {
               debugPrint("⚠ [VIDEO] Could not get duration: $e");
             }
 
-            final previewResult = await _showMediaPreview(video.path, 'video');
+            final previewResult = await _showMediaPreview(
+              video.path,
+              'video',
+              videoDuration: videoDurationSec,
+            );
             if (previewResult != true) {
               debugPrint(
                 '🧩 [ATTACH] Video preview did not confirm send, using fallback send: ${video.path}',
               );
-              _sendVideo(video.path);
+              _sendVideo(video.path, duration: videoDurationSec);
             }
           }
         }
@@ -667,13 +692,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     _scrollToBottom();
   }
 
-  void _sendVideo(String path) {
+  void _sendVideo(String path, {int? duration}) {
     if (_isSending) return;
-    debugPrint('🧩 [ATTACH] _sendVideo called: $path');
+    debugPrint('🧩 [ATTACH] _sendVideo called: $path (duration: ${duration}s)');
     setState(() => _isSending = true);
     context
         .read<ContactProvider>()
-        .sendVideoMessage(contactUid: widget.uid, filePath: path)
+        .sendVideoMessage(
+          contactUid: widget.uid,
+          filePath: path,
+          duration: duration,
+        )
         .then((_) {
           if (mounted) setState(() => _isSending = false);
         })
@@ -1223,6 +1252,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                     time: time,
                     isMe: isMe,
                     type: type,
+                    messageId: messageId,
                     messageData: messageData,
                     imageUrl: contactImageUrl,
                     showTail: showTail,
@@ -1673,18 +1703,11 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
       final type = mediaValues['type']?.toString().toLowerCase() ?? '';
       final link = mediaValues['link']?.toString() ?? '';
 
-      // 🛡️ Safety: If link doesn't look like a URL or path, treat as text
-      if (link.isEmpty ||
-          (!link.startsWith('http') &&
-              !link.startsWith('/') &&
-              !link.contains('cache/'))) {
-        return 'text';
-      }
-
       if (type.contains('sticker')) return 'sticker';
       if (type.contains('audio') ||
           type.contains('voice') ||
-          type.contains('ptt'))
+          type.contains('ptt') ||
+          _looksLikeAudioFile(link))
         return 'voice';
       if (type.contains('image')) return 'image';
       if (type.contains('video')) return 'video';
@@ -1704,7 +1727,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     if (type != 'text' && type.isNotEmpty) {
       if (!content.startsWith('http') &&
           !content.startsWith('/') &&
-          !content.contains('cache/')) {
+          !content.contains('cache/') &&
+          !_looksLikeAudioFile(content)) {
         return 'text';
       }
     }
@@ -1712,7 +1736,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     if (type.contains('sticker')) return 'sticker';
     if (type.contains('audio') ||
         type.contains('voice') ||
-        type.contains('ptt'))
+        type.contains('ptt') ||
+        _looksLikeAudioFile(content))
       return 'voice';
     if (type.contains('image')) return 'image';
     if (type.contains('video')) return 'video';
@@ -1751,13 +1776,25 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
 
     final mediaValues = Helpers.getMessageData(messageData)['media_values'];
     if (mediaValues is Map && mediaValues['link'] != null) {
-      final link = mediaValues['link'].toString();
-      // 🛡️ Safety: Only return as link if it looks like a path or URL
-      if (link.isNotEmpty &&
-          (link.startsWith('http') ||
-              link.startsWith('/') ||
-              link.contains('cache/'))) {
-        return link;
+      final link = mediaValues['link'].toString().trim();
+      if (link.isNotEmpty) {
+        if (link.startsWith('http') ||
+            link.startsWith('/') ||
+            link.contains('cache/')) {
+          return link;
+        }
+
+        // Some backend responses return just the stored filename. Convert that
+        // into the storage URL pattern used elsewhere in the app.
+        final mediaType = (mediaValues['type'] ?? '').toString().toLowerCase();
+        if (_looksLikeMediaFile(link) || mediaType.isNotEmpty) {
+          final normalized = link.startsWith('storage/')
+              ? link.substring(8)
+              : link.startsWith('/')
+              ? link.substring(1)
+              : link;
+          return 'https://wabchamp.com/storage/$normalized';
+        }
       }
     }
 
@@ -1801,6 +1838,32 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
             messageData['text'] ??
             '')
         .toString();
+  }
+
+  bool _looksLikeMediaFile(String value) {
+    final lower = value.toLowerCase();
+    return lower.endsWith('.aac') ||
+        lower.endsWith('.m4a') ||
+        lower.endsWith('.mp3') ||
+        lower.endsWith('.ogg') ||
+        lower.endsWith('.opus') ||
+        lower.endsWith('.wav') ||
+        lower.endsWith('.amr') ||
+        lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.mkv');
+  }
+
+  bool _looksLikeAudioFile(String value) {
+    final lower = value.toLowerCase();
+    return lower.endsWith('.aac') ||
+        lower.endsWith('.m4a') ||
+        lower.endsWith('.mp3') ||
+        lower.endsWith('.ogg') ||
+        lower.endsWith('.opus') ||
+        lower.endsWith('.wav') ||
+        lower.endsWith('.amr');
   }
 
   static final DateFormat _bubbleTimeFormat = DateFormat('hh:mm a');
@@ -2392,6 +2455,7 @@ class ChatBubble extends StatelessWidget {
   final String time;
   final bool isMe;
   final String type;
+  final String messageId;
   final dynamic messageData;
   final String? imageUrl;
   final bool showTail;
@@ -2405,6 +2469,7 @@ class ChatBubble extends StatelessWidget {
     required this.time,
     required this.isMe,
     required this.type,
+    required this.messageId,
     this.messageData,
     this.imageUrl,
     this.showTail = true,
@@ -2663,10 +2728,12 @@ class ChatBubble extends StatelessWidget {
 
   Widget _buildMessageContent(BuildContext context) {
     if (type == 'voice') {
+      final double? durationSeconds = _extractDuration(messageData);
       return VoiceMessageBubble(
         audioUrl: content.toString(),
+        messageId: messageId,
         isMe: isMe,
-        duration: _extractDuration(messageData),
+        duration: durationSeconds == null ? null : durationSeconds.round(),
         senderImageUrl: imageUrl,
         time: time,
         statusIcon: isMe ? _buildStatusIcon(context, messageData) : null,
@@ -2712,46 +2779,109 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  int? _extractDuration(dynamic messageData) {
+  double? _extractDuration(dynamic messageData) {
     if (messageData is! Map) return null;
 
-    // 1. Check direct fields
-    final direct =
-        Helpers.toInt(messageData['duration']) ??
-        Helpers.toInt(messageData['media_duration']) ??
-        Helpers.toInt(messageData['seconds']) ??
-        Helpers.toInt(messageData['length']) ??
-        Helpers.toInt(messageData['audio_duration']);
+    double? tryDurationFields(Map<String, dynamic> map) {
+      final durationMs = Helpers.toDouble(map['duration_ms']);
+      return Helpers.toDouble(map['duration']) ??
+          Helpers.toDouble(map['media_duration']) ??
+          Helpers.toDouble(map['seconds']) ??
+          Helpers.toDouble(map['length']) ??
+          Helpers.toDouble(map['audio_duration']) ??
+          Helpers.toDouble(map['voice_duration']) ??
+          Helpers.toDouble(map['voice_length']) ??
+          Helpers.toDouble(map['audio_length']) ??
+          Helpers.toDouble(map['duration_seconds']) ??
+          (durationMs != null ? durationMs / 1000.0 : null);
+    }
+
+    final direct = tryDurationFields(messageData.cast<String, dynamic>());
     if (direct != null && direct > 0) return direct;
 
-    // 2. Check media_values in __data (Common in this app's optimistic updates)
-    final mediaValues = Helpers.getMessageData(messageData)['media_values'];
+    // 2. Check __data and media_values in __data (common in this app's payloads)
+    final dataMap = Helpers.getMessageData(messageData);
+    final fromData = tryDurationFields(dataMap);
+    if (fromData != null && fromData > 0) return fromData;
+
+    final mediaValues = dataMap['media_values'];
     if (mediaValues is Map) {
-      final nested =
-          Helpers.toInt(mediaValues['duration']) ??
-          Helpers.toInt(mediaValues['media_duration']) ??
-          Helpers.toInt(mediaValues['seconds']) ??
-          Helpers.toInt(mediaValues['audio_duration']);
+      final nested = tryDurationFields(mediaValues.cast<String, dynamic>());
       if (nested != null && nested > 0) return nested;
     }
 
-    // 3. Try parsing string formats like "00:05"
-    final rawDuration =
-        messageData['duration']?.toString() ??
-        messageData['media_duration']?.toString() ??
-        mediaValues?['duration']?.toString();
+    // 3. Try parsing string formats or values from other raw fields.
+    final rawValues = <String?>[
+      messageData['duration']?.toString(),
+      messageData['media_duration']?.toString(),
+      messageData['duration_seconds']?.toString(),
+      messageData['duration_ms']?.toString(),
+      dataMap['duration']?.toString(),
+      dataMap['media_duration']?.toString(),
+      dataMap['duration_seconds']?.toString(),
+      dataMap['duration_ms']?.toString(),
+      mediaValues?['duration']?.toString(),
+      messageData['audio_duration']?.toString(),
+      messageData['voice_duration']?.toString(),
+      dataMap['audio_duration']?.toString(),
+      dataMap['voice_duration']?.toString(),
+    ];
 
-    if (rawDuration != null && rawDuration.contains(':')) {
-      try {
-        final parts = rawDuration.split(':');
-        if (parts.length == 2) {
-          return int.parse(parts[0]) * 60 + int.parse(parts[1]);
-        } else if (parts.length == 3) {
-          return int.parse(parts[0]) * 3600 +
-              int.parse(parts[1]) * 60 +
-              int.parse(parts[2]);
+    for (final raw in rawValues) {
+      if (raw == null || raw.trim().isEmpty) continue;
+      final parsed = _parseDurationString(raw.trim());
+      if (parsed != null && parsed > 0) return parsed;
+    }
+
+    return null;
+  }
+
+  double? _parseDurationString(String rawDuration) {
+    final normalized = rawDuration.toLowerCase().trim();
+
+    if (normalized.contains(':')) {
+      final parts = normalized.split(':');
+      if (parts.length == 2) {
+        final minutes = int.tryParse(parts[0]);
+        final seconds = int.tryParse(parts[1]);
+        if (minutes != null && seconds != null) {
+          return minutes * 60.0 + seconds;
         }
-      } catch (_) {}
+      } else if (parts.length == 3) {
+        final hours = int.tryParse(parts[0]);
+        final minutes = int.tryParse(parts[1]);
+        final seconds = int.tryParse(parts[2]);
+        if (hours != null && minutes != null && seconds != null) {
+          return hours * 3600.0 + minutes * 60.0 + seconds;
+        }
+      }
+      return null;
+    }
+
+    final secondsMatch = RegExp(
+      r'^(\d+(?:\.\d+)?)(?:\s*s(ec(?:onds?)?)?)?$',
+    ).firstMatch(normalized);
+    if (secondsMatch != null) {
+      return double.tryParse(secondsMatch.group(1)!);
+    }
+
+    final minutesMatch = RegExp(
+      r'^(\d+(?:\.\d+)?)(?:\s*m(in(?:utes?)?)?)?$',
+    ).firstMatch(normalized);
+    if (minutesMatch != null) {
+      final minutes = double.tryParse(minutesMatch.group(1)!);
+      return minutes != null ? minutes * 60.0 : null;
+    }
+
+    final msMatch = RegExp(r'^(\d+)(?:\s*ms)$').firstMatch(normalized);
+    if (msMatch != null) {
+      final ms = int.tryParse(msMatch.group(1)!);
+      return ms != null ? ms / 1000.0 : null;
+    }
+
+    final numberOnly = double.tryParse(normalized);
+    if (numberOnly != null) {
+      return numberOnly > 0 ? numberOnly : null;
     }
 
     return null;
@@ -3068,7 +3198,7 @@ class ChatBubble extends StatelessWidget {
 
   Widget _buildVideoContent(BuildContext context) {
     final String url = content.toString();
-    final int? duration = _extractDuration(messageData);
+    final double? duration = _extractDuration(messageData);
 
     return Container(
       decoration: BoxDecoration(
@@ -3084,7 +3214,7 @@ class ChatBubble extends StatelessWidget {
         isMe: isMe,
         width: 210.w,
         height: 160.h,
-        duration: duration,
+        duration: duration == null ? null : duration.round(),
         onTap: () => _openFullscreenMedia(context, url, 'video'),
       ),
     );

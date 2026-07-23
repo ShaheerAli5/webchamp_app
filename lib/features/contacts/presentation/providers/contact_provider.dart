@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/utils/helpers.dart';
 import '../../data/repositories/contact_repository.dart';
@@ -2242,7 +2243,7 @@ class ContactProvider extends ChangeNotifier {
   Future<bool> sendVoiceMessage({
     required String contactUid,
     required String filePath,
-    int? duration,
+    num? duration,
   }) async {
     return _sendMediaOptimistic(
       contactUid: contactUid,
@@ -2266,11 +2267,13 @@ class ContactProvider extends ChangeNotifier {
   Future<bool> sendVideoMessage({
     required String contactUid,
     required String filePath,
+    num? duration,
   }) async {
     return _sendMediaOptimistic(
       contactUid: contactUid,
       filePath: filePath,
       mediaType: 'video',
+      duration: duration,
     );
   }
 
@@ -2300,7 +2303,7 @@ class ContactProvider extends ChangeNotifier {
     required String contactUid,
     required String filePath,
     required String mediaType,
-    int? duration,
+    num? duration,
   }) async {
     _errorMessage = null;
 
@@ -2344,14 +2347,14 @@ class ContactProvider extends ChangeNotifier {
     );
 
     // If this is a video and no duration was provided, try to detect it
-    int? computedDuration = duration;
+    num? computedDuration = duration;
     if (mediaType == 'video' &&
         (computedDuration == null || computedDuration == 0)) {
       try {
         final info = await VideoCompress.getMediaInfo(filePath);
         final durationMs = info.duration ?? 0;
         if (durationMs > 0) {
-          computedDuration = (durationMs / 1000).round();
+          computedDuration = durationMs / 1000.0;
           debugPrint(
             '📹 [SEND MEDIA] Detected video duration: ${computedDuration}s',
           );
@@ -2407,7 +2410,7 @@ class ContactProvider extends ChangeNotifier {
         try {
           final info = await VideoCompress.getMediaInfo(filePath);
           final durationMs = info.duration ?? 0;
-          final durationSec = durationMs / 1000;
+          final durationSec = durationMs / 1000.0;
 
           debugPrint(
             '📹 [COMPRESS] Video Info: ${durationSec}s, ${info.width}x${info.height}, ${Helpers.formatFileSize(info.filesize ?? 0)}',
@@ -2474,16 +2477,33 @@ class ContactProvider extends ChangeNotifier {
         }
       } else if (mediaType == 'image') {
         debugPrint('🖼️ [COMPRESS] Compressing image...');
-        final String targetPath = '${filePath}_compressed.jpg';
-        final XFile? compressedFile =
-            await FlutterImageCompress.compressAndGetFile(
-              filePath,
-              targetPath,
-              quality: 70,
+        // Use getTemporaryDirectory() for the output, NOT a path derived from
+        // the source file.  On iOS 16+ the ImagePicker writes its temp files to
+        // a sandboxed location where sibling writes are blocked, so
+        // '${filePath}_compressed.jpg' returns null from FlutterImageCompress
+        // and the original HEIC/large JPEG goes to the server uncompressed.
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final String targetPath =
+              '${tempDir.path}/img_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          final XFile? compressedFile =
+              await FlutterImageCompress.compressAndGetFile(
+                filePath,
+                targetPath,
+                quality: 70,
+              );
+          if (compressedFile != null) {
+            uploadPath = compressedFile.path;
+            debugPrint('🖼️ [COMPRESS] Image output path: $uploadPath');
+          } else {
+            debugPrint(
+              '⚠️ [COMPRESS] Image compression returned null, uploading original',
             );
-        if (compressedFile != null) {
-          uploadPath = compressedFile.path;
-          debugPrint('🖼️ [COMPRESS] Image output path: $uploadPath');
+          }
+        } catch (e) {
+          debugPrint(
+            '⚠️ [COMPRESS] Image compression error: $e — uploading original',
+          );
         }
       }
 
@@ -2495,6 +2515,9 @@ class ContactProvider extends ChangeNotifier {
         filePath: uploadPath,
         mediaType: mediaType,
         waId: waId,
+        // Pass the locally-tracked duration so the server stores the real value.
+        // Without this the server returns 0 and the voice bubble shows 0 sec.
+        duration: computedDuration,
         onSendProgress: (sent, total) {
           if (total <= 0) return;
           final progress = (sent / total).clamp(0.0, 0.99);
@@ -2615,14 +2638,18 @@ class ContactProvider extends ChangeNotifier {
                   DateTime.now().toIso8601String(),
             };
 
-            final int? localDuration = Helpers.toInt(
-              Helpers.getMessageData(_messages[index])['media_values']
-                  ?['duration'],
+            final double? localDuration = Helpers.toDouble(
+              Helpers.getMessageData(
+                _messages[index],
+              )['media_values']?['duration'],
             );
-            final int? serverDuration = Helpers.toInt(
-              Helpers.getMessageData(serverMsg)['media_values']?['duration'],
-            ) ??
-                Helpers.toInt(serverMsg['duration']);
+            final double? serverDuration =
+                Helpers.toDouble(
+                  Helpers.getMessageData(
+                    serverMsg,
+                  )['media_values']?['duration'],
+                ) ??
+                Helpers.toDouble(serverMsg['duration']);
             if ((serverDuration == null || serverDuration <= 0) &&
                 localDuration != null &&
                 localDuration > 0) {
@@ -2630,9 +2657,8 @@ class ContactProvider extends ChangeNotifier {
               final Map<String, dynamic> updatedData = Helpers.getMessageData(
                 updatedMsg,
               );
-              final Map<String, dynamic> updatedMediaValues = Map<String, dynamic>.from(
-                updatedData['media_values'] ?? {},
-              );
+              final Map<String, dynamic> updatedMediaValues =
+                  Map<String, dynamic>.from(updatedData['media_values'] ?? {});
               updatedMediaValues['duration'] = localDuration;
               updatedData['media_values'] = updatedMediaValues;
               updatedMsg['__data'] = updatedData;

@@ -6,6 +6,7 @@ import '../../../../core/utils/voice_playback_manager.dart';
 
 class VoiceMessageBubble extends StatefulWidget {
   final String audioUrl;
+  final String messageId;
   final bool isMe;
   final int? duration;
   final String? senderImageUrl;
@@ -15,6 +16,7 @@ class VoiceMessageBubble extends StatefulWidget {
   const VoiceMessageBubble({
     super.key,
     required this.audioUrl,
+    required this.messageId,
     required this.isMe,
     this.duration,
     this.senderImageUrl,
@@ -30,6 +32,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   late final VoicePlaybackManager _manager;
   StreamSubscription<Duration?>? _durationSubscription;
   int? _autoDetectedDuration;
+  int? _knownTotalDuration;
   bool _isDetecting = false;
 
   @override
@@ -37,6 +40,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
     super.initState();
     _manager = VoicePlaybackManager();
     _manager.addListener(_onManagerUpdate);
+    _knownTotalDuration = _initialDuration;
 
     // 🚀 PRELOAD: Buffer audio as soon as it's visible
     if (widget.audioUrl.isNotEmpty) {
@@ -56,15 +60,27 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
     }
   }
 
+  int? get _initialDuration {
+    final int? widgetDuration =
+        (widget.duration != null && widget.duration! > 0)
+        ? widget.duration
+        : null;
+    return widgetDuration ?? _cachedManagerDuration ?? _autoDetectedDuration;
+  }
+
   Future<void> _detectDuration() async {
     if (_isDetecting || widget.audioUrl.isEmpty) return;
 
     setState(() => _isDetecting = true);
     try {
-      final duration = await _manager.getOrDetectDuration(widget.audioUrl);
+      final duration = await _manager.getOrDetectDuration(
+        widget.audioUrl,
+        messageId: widget.messageId,
+      );
       if (mounted && duration != null && duration > 0) {
         setState(() {
           _autoDetectedDuration = duration;
+          _knownTotalDuration ??= duration;
         });
       }
     } catch (e) {
@@ -77,9 +93,36 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   @override
   void didUpdateWidget(VoiceMessageBubble oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.audioUrl != widget.audioUrl &&
-        (widget.duration == null || widget.duration == 0)) {
-      _detectDuration();
+
+    // URL changed → reset auto-detection for the new URL if duration still unknown.
+    if (oldWidget.audioUrl != widget.audioUrl) {
+      if (widget.duration == null || widget.duration == 0) {
+        _autoDetectedDuration = null;
+        _detectDuration();
+      }
+      return;
+    }
+
+    // Server returned a valid duration for the first time (e.g. after optimistic
+    // update is replaced by the server response). Prefer the server value and
+    // clear the locally auto-detected one to avoid a stale override.
+    final bool serverNowHasDuration =
+        (widget.duration != null && widget.duration! > 0) &&
+        (oldWidget.duration == null || oldWidget.duration == 0);
+    if (serverNowHasDuration && _autoDetectedDuration != null) {
+      // Server value takes precedence — clear the local detection result.
+      setState(() => _autoDetectedDuration = null);
+    }
+
+    if (widget.duration != null && widget.duration! > 0) {
+      _knownTotalDuration = widget.duration;
+    }
+
+    // If duration is still absent after the widget update, try detection again.
+    if (widget.duration == null || widget.duration == 0) {
+      if (_autoDetectedDuration == null && !_isDetecting) {
+        _detectDuration();
+      }
     }
   }
 
@@ -92,23 +135,62 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
 
   void _onManagerUpdate() {
     if (mounted) {
-      // 🛡️ PERFORMANCE OPTIMIZATION: Only rebuild if:
-      // 1. This bubble is the one currently playing (needs to update progress/speed)
-      // 2. This bubble WAS playing but stopped (needs to reset UI)
-      // 3. This bubble is now being buffered
-      final bool isThisPlaying = _manager.currentAudioUrl == widget.audioUrl;
-      final bool wasThisPlaying = _isThisPlaying;
-
-      if (isThisPlaying || wasThisPlaying) {
-        setState(() {});
-      }
+      setState(() {});
     }
   }
 
-  bool get _isThisPlaying => _manager.currentAudioUrl == widget.audioUrl;
+  bool get _isThisPlaying => _manager.currentAudioMessageId == widget.messageId;
+
+  int? get _cachedManagerDuration {
+    return _manager.getCachedDurationByMessageId(widget.messageId) ??
+        _manager.getCachedDuration(widget.audioUrl);
+  }
+
+  int? get _resolvedTotalDuration {
+    final int? widgetDuration =
+        (widget.duration != null && widget.duration! > 0)
+        ? widget.duration
+        : null;
+    final int? managerDuration = _cachedManagerDuration;
+    return widgetDuration ??
+        _knownTotalDuration ??
+        managerDuration ??
+        _autoDetectedDuration;
+  }
+
+  Future<void> _ensureDurationSeeded() async {
+    if (_resolvedTotalDuration != null && _resolvedTotalDuration! > 0) return;
+    if (_isDetecting || widget.audioUrl.isEmpty) return;
+
+    _isDetecting = true;
+    try {
+      final duration = await _manager.getOrDetectDuration(
+        widget.audioUrl,
+        messageId: widget.messageId,
+      );
+      if (!mounted || duration == null || duration <= 0) return;
+
+      setState(() {
+        _autoDetectedDuration = duration;
+        _knownTotalDuration = duration;
+      });
+    } catch (e) {
+      debugPrint('⚠️ [VOICE] Seed duration probe failed: $e');
+    } finally {
+      _isDetecting = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          (widget.duration == null || widget.duration == 0) &&
+          _resolvedTotalDuration == null) {
+        _ensureDurationSeeded();
+      }
+    });
+
     return Container(
       width: 220.w,
       padding: EdgeInsets.fromLTRB(12.w, 8.h, 14.w, 8.h),
@@ -214,7 +296,10 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
               ),
             ),
           IconButton(
-            onPressed: () => _manager.togglePlay(widget.audioUrl),
+            onPressed: () => _manager.togglePlay(
+              widget.audioUrl,
+              messageId: widget.messageId,
+            ),
             icon: Icon(
               isPlaying ? Icons.pause : Icons.play_arrow,
               color: const Color(0xFF54656F),
@@ -231,11 +316,11 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   Widget _buildSlider() {
     final bool active = _isThisPlaying;
 
-    // 🛡️ Priority: 1. Active Player 2. Auto-detected 3. Widget Prop
-    final int? playerSeconds = _manager.player.duration?.inSeconds;
-    final int effectiveSeconds = active && (playerSeconds ?? 0) > 0
-        ? playerSeconds!
-        : (_autoDetectedDuration ?? widget.duration ?? 0);
+    // 🛡️ Priority: 1. Active Player (live) → 2. Server/prop duration → 3. Auto-detected → 0
+    final int? activePlayerSeconds = _manager.currentDuration?.inSeconds;
+    final int effectiveSeconds = active && (activePlayerSeconds ?? 0) > 0
+        ? activePlayerSeconds!
+        : (_resolvedTotalDuration ?? 0);
 
     final double max = effectiveSeconds * 1000.0;
 
@@ -274,10 +359,11 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
   Widget _buildInfoRow() {
     final bool active = _isThisPlaying;
 
-    final int? playerSeconds = _manager.player.duration?.inSeconds;
-    final int effectiveSeconds = active && (playerSeconds ?? 0) > 0
-        ? playerSeconds!
-        : (_autoDetectedDuration ?? widget.duration ?? 0);
+    final int? activePlayerSeconds = _manager.currentDuration?.inSeconds;
+    final int? cachedDuration = _cachedManagerDuration;
+    final int effectiveSeconds = active && (activePlayerSeconds ?? 0) > 0
+        ? activePlayerSeconds!
+        : (_resolvedTotalDuration ?? cachedDuration ?? 0);
 
     return Padding(
       padding: EdgeInsets.only(left: 44.w),
