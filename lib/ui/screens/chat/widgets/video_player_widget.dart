@@ -5,6 +5,7 @@ import 'package:chewie/chewie.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path_provider/path_provider.dart';
+import 'dart:async';
 
 class FullScreenVideoPlayer extends StatefulWidget {
   final String videoUrl;
@@ -138,6 +139,9 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
     super.initState();
     _duration = widget.duration;
     _loadThumbnail();
+    if (_duration == null || _duration == 0) {
+      _extractDuration();
+    }
   }
 
   Future<void> _loadThumbnail() async {
@@ -167,13 +171,8 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
         if (mounted) setState(() => _thumbnailPath = path);
       }
       
-      // Optimization: Avoid expensive duration extraction for every bubble
-      // Only do it if not provided by backend AND not in cache
-      if (_duration == null && !_durationCache.containsKey(widget.videoUrl)) {
-        // We defer duration extraction to a more appropriate time or 
-        // handle it more lazily to avoid jank.
-        // For now, let's just not do it here. 
-        // If the user taps it, the full player will have the duration anyway.
+      if ((_duration == null || _duration == 0) && !_durationCache.containsKey(widget.videoUrl)) {
+        Future.microtask(_extractDuration);
       }
     } catch (e) {
       debugPrint("Thumbnail generation error: $e");
@@ -197,6 +196,9 @@ class _VideoBubblePreviewState extends State<VideoBubblePreview> {
           _duration = controller.value.duration.inSeconds;
           _durationCache[widget.videoUrl] = _duration!;
         });
+      } else {
+        _duration = controller.value.duration.inSeconds;
+        _durationCache[widget.videoUrl] = _duration!;
       }
       await controller.dispose();
     } catch (e) {

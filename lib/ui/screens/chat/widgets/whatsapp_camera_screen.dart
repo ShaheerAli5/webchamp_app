@@ -2,10 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:path_provider/path_provider.dart';
 
 enum CameraMode { photo, video }
 
@@ -16,9 +14,11 @@ class WhatsAppCameraScreen extends StatefulWidget {
   State<WhatsAppCameraScreen> createState() => _WhatsAppCameraScreenState();
 }
 
-class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with WidgetsBindingObserver {
+class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen>
+    with WidgetsBindingObserver {
   List<CameraDescription> _cameras = [];
   CameraController? _controller;
+  CameraDescription? _activeCamera;
   bool _isReady = false;
   bool _isRecording = false;
   bool _isPaused = false;
@@ -36,45 +36,60 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
   }
 
   Future<void> _initializeCamera() async {
-    final status = await [
-      Permission.camera,
-      Permission.microphone,
-    ].request();
-
-    if (status[Permission.camera] != PermissionStatus.granted ||
-        status[Permission.microphone] != PermissionStatus.granted) {
+    final cameraStatus = await Permission.camera.request();
+    if (!cameraStatus.isGranted) {
       if (mounted) Navigator.pop(context);
       return;
     }
 
     _cameras = await availableCameras();
-    if (_cameras.isEmpty) return;
+    if (_cameras.isEmpty) {
+      debugPrint("❌ [CAMERA] No cameras available");
+      return;
+    }
 
-    _onNewCameraSelected(_cameras[_selectedCameraIndex]);
+    await _onNewCameraSelected(_cameras[_selectedCameraIndex]);
   }
 
   Future<void> _onNewCameraSelected(CameraDescription cameraDescription) async {
+    debugPrint("📸 [CAMERA] Selecting camera: ${cameraDescription.name}");
+    _activeCamera = cameraDescription;
     if (_controller != null) {
       await _controller!.dispose();
+      _controller = null;
     }
 
     _controller = CameraController(
       cameraDescription,
-      ResolutionPreset.high, // Use High instead of Max to avoid excessively large files
-      enableAudio: true,
+      ResolutionPreset.high,
+      enableAudio: false,
       imageFormatGroup: ImageFormatGroup.jpeg,
     );
 
     try {
       await _controller!.initialize();
+      if (!mounted) return;
+
       await _controller!.setFlashMode(_flashMode);
+      debugPrint("✅ [CAMERA] Camera initialized successfully");
+
       if (mounted) {
         setState(() {
           _isReady = true;
         });
       }
     } catch (e) {
-      debugPrint("Camera Error: $e");
+      debugPrint("❌ [CAMERA] Initialization Error: $e");
+      if (e is CameraException) {
+        switch (e.code) {
+          case 'CameraAccessDenied':
+            debugPrint('User denied camera access.');
+            break;
+          default:
+            debugPrint('Handle other errors: ${e.code}');
+            break;
+        }
+      }
     }
   }
 
@@ -95,18 +110,27 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
     }
 
     if (state == AppLifecycleState.inactive) {
-      cameraController.dispose();
+      _controller?.dispose();
+      _controller = null;
+      _isReady = false;
     } else if (state == AppLifecycleState.resumed) {
-      _onNewCameraSelected(cameraController.description);
+      final camera = _activeCamera;
+      if (camera != null) {
+        _onNewCameraSelected(camera);
+      }
     }
   }
 
   void _toggleFlash() async {
     if (_controller == null) return;
     FlashMode nextMode;
-    if (_flashMode == FlashMode.off) nextMode = FlashMode.always;
-    else if (_flashMode == FlashMode.always) nextMode = FlashMode.auto;
-    else nextMode = FlashMode.off;
+    if (_flashMode == FlashMode.off) {
+      nextMode = FlashMode.always;
+    } else if (_flashMode == FlashMode.always) {
+      nextMode = FlashMode.auto;
+    } else {
+      nextMode = FlashMode.off;
+    }
 
     await _controller!.setFlashMode(nextMode);
     setState(() {
@@ -121,7 +145,10 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
   }
 
   Future<void> _takePhoto() async {
-    if (_controller == null || !_controller!.value.isInitialized || _isRecording) return;
+    if (_controller == null ||
+        !_controller!.value.isInitialized ||
+        _isRecording)
+      return;
 
     try {
       final XFile photo = await _controller!.takePicture();
@@ -134,9 +161,20 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
   }
 
   Future<void> _startRecording() async {
-    if (_controller == null || !_controller!.value.isInitialized || _isRecording) return;
+    if (_controller == null ||
+        !_controller!.value.isInitialized ||
+        _isRecording)
+      return;
 
     try {
+      final micStatus = await Permission.microphone.request();
+      if (!micStatus.isGranted) {
+        debugPrint("❌ [CAMERA] Microphone permission denied");
+        return;
+      }
+      if (_controller == null || !_controller!.value.isInitialized) {
+        return;
+      }
       await _controller!.startVideoRecording();
       setState(() {
         _isRecording = true;
@@ -155,12 +193,11 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
       if (mounted && _isRecording && !_isPaused) {
         setState(() {
           _recordDuration++;
-          // 🛡️ LIMIT: Stop recording at 4 minutes (240 seconds)
-          if (_recordDuration >= 240) {
-            _stopRecording();
-            _showLimitReachedMessage();
-          }
         });
+        if (_recordDuration >= 240) {
+          _stopRecording();
+          _showLimitReachedMessage();
+        }
       }
     });
   }
@@ -210,7 +247,7 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
         _isRecording = false;
         _isPaused = false;
       });
-      
+
       if (_recordDuration < 1) {
         File(video.path).delete();
         return;
@@ -231,7 +268,12 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
   @override
   Widget build(BuildContext context) {
     if (!_isReady || _controller == null || !_controller!.value.isInitialized) {
-      return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator(color: Color(0xFF00CF9D))));
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF00CF9D)),
+        ),
+      );
     }
 
     // Full screen logic: Scale preview to cover screen
@@ -247,9 +289,7 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
           Positioned.fill(
             child: Transform.scale(
               scale: scale,
-              child: Center(
-                child: CameraPreview(_controller!),
-              ),
+              child: Center(child: CameraPreview(_controller!)),
             ),
           ),
 
@@ -285,14 +325,22 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
                   children: [
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 30,
+                      ),
                     ),
                     Row(
                       children: [
                         IconButton(
                           onPressed: _toggleFlash,
                           icon: Icon(
-                            _flashMode == FlashMode.off ? Icons.flash_off : (_flashMode == FlashMode.always ? Icons.flash_on : Icons.flash_auto),
+                            _flashMode == FlashMode.off
+                                ? Icons.flash_off
+                                : (_flashMode == FlashMode.always
+                                      ? Icons.flash_on
+                                      : Icons.flash_auto),
                             color: Colors.white,
                             size: 28,
                           ),
@@ -300,7 +348,11 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
                         if (!_isRecording)
                           IconButton(
                             onPressed: _switchCamera,
-                            icon: const Icon(Icons.flip_camera_ios, color: Colors.white, size: 28),
+                            icon: const Icon(
+                              Icons.flip_camera_ios,
+                              color: Colors.white,
+                              size: 28,
+                            ),
                           ),
                       ],
                     ),
@@ -320,31 +372,39 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
                 child: Column(
                   children: [
                     Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
-                      decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20.r)),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12.w,
+                        vertical: 4.h,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20.r),
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            width: 8.w, 
-                            height: 8.w, 
+                            width: 8.w,
+                            height: 8.w,
                             decoration: BoxDecoration(
-                              color: _isPaused ? Colors.grey : Colors.red, 
-                              shape: BoxShape.circle
-                            )
+                              color: _isPaused ? Colors.grey : Colors.red,
+                              shape: BoxShape.circle,
+                            ),
                           ),
                           SizedBox(width: 8.w),
                           Text(
                             _formatDuration(_recordDuration),
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           Text(
                             " / 04:00",
-                            style: TextStyle(color: Colors.white70, fontSize: 12.sp),
-                          ),
-                          Text(
-                            " / 04:00",
-                            style: TextStyle(color: Colors.white70, fontSize: 12.sp),
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12.sp,
+                            ),
                           ),
                         ],
                       ),
@@ -359,7 +419,9 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
                             fontSize: 14.sp,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 2,
-                            shadows: const [Shadow(blurRadius: 4, color: Colors.black)],
+                            shadows: const [
+                              Shadow(blurRadius: 4, color: Colors.black),
+                            ],
                           ),
                         ),
                       ),
@@ -383,7 +445,11 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
                       padding: EdgeInsets.only(bottom: 12.h),
                       child: Text(
                         _mode == CameraMode.video ? "Max Recording: 4:00" : "",
-                        style: TextStyle(color: Colors.white70, fontSize: 12.sp, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   if (!_isRecording)
@@ -400,24 +466,34 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
                     ),
 
                   Padding(
-                    padding: EdgeInsets.only(bottom: 30.h, left: 30.w, right: 30.w),
+                    padding: EdgeInsets.only(
+                      bottom: 30.h,
+                      left: 30.w,
+                      right: 30.w,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         // Left: Gallery / Pause
                         if (_isRecording)
                           IconButton(
-                            onPressed: _isPaused ? _resumeRecording : _pauseRecording,
+                            onPressed: _isPaused
+                                ? _resumeRecording
+                                : _pauseRecording,
                             icon: Icon(
-                              _isPaused ? Icons.play_arrow : Icons.pause, 
-                              color: Colors.white, 
-                              size: 36
+                              _isPaused ? Icons.play_arrow : Icons.pause,
+                              color: Colors.white,
+                              size: 36,
                             ),
                           )
                         else
                           IconButton(
                             onPressed: () {}, // Future: Implement Gallery
-                            icon: const Icon(Icons.photo_library, color: Colors.white, size: 30),
+                            icon: const Icon(
+                              Icons.photo_library,
+                              color: Colors.white,
+                              size: 30,
+                            ),
                           ),
 
                         // Center: Capture Button
@@ -457,8 +533,12 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
                                 width: _isRecording ? 40.w : 64.w,
                                 height: _isRecording ? 40.w : 64.w,
                                 decoration: BoxDecoration(
-                                  color: _isRecording ? Colors.red : Colors.white24,
-                                  borderRadius: BorderRadius.circular(_isRecording ? 8.r : 32.r),
+                                  color: _isRecording
+                                      ? Colors.red
+                                      : Colors.white24,
+                                  borderRadius: BorderRadius.circular(
+                                    _isRecording ? 8.r : 32.r,
+                                  ),
                                 ),
                               ),
                             ),
@@ -467,11 +547,15 @@ class _WhatsAppCameraScreenState extends State<WhatsAppCameraScreen> with Widget
 
                         // Right: Switch Camera
                         if (_isRecording)
-                           const SizedBox(width: 48) // Balances layout
+                          const SizedBox(width: 48)
                         else
                           IconButton(
                             onPressed: _switchCamera,
-                            icon: const Icon(Icons.flip_camera_ios, color: Colors.white, size: 30),
+                            icon: const Icon(
+                              Icons.flip_camera_ios,
+                              color: Colors.white,
+                              size: 30,
+                            ),
                           ),
                       ],
                     ),

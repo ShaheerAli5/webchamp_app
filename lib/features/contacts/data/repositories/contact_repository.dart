@@ -39,10 +39,14 @@ class ContactRepository {
 
       debugPrint('❌ CONTACTS API ERROR: ${e.message}');
       debugPrint('Error Type: ${e.type}');
-      
+
       if (e.error is SocketException) {
-        debugPrint('DNS/Network Error: Failed to resolve ${ApiConstants.baseUrl}. Please check device internet.');
-        throw Exception('Network error: Cannot reach server. Please check your internet connection.');
+        debugPrint(
+          'DNS/Network Error: Failed to resolve ${ApiConstants.baseUrl}. Please check device internet.',
+        );
+        throw Exception(
+          'Network error: Cannot reach server. Please check your internet connection.',
+        );
       }
 
       debugPrint('Error Response: ${e.response?.data}');
@@ -109,12 +113,12 @@ class ContactRepository {
         enableReplyBot: enableReplyBot,
         customInputFields: customInputFields,
       );
-      
+
       final data = Helpers.sanitizeData(response.data);
       if (data is Map && data['result'] == 'failed') {
         throw Exception(data['message'] ?? 'Failed to create contact');
       }
-      
+
       return data;
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -150,12 +154,12 @@ class ContactRepository {
         enableReplyBot: enableReplyBot,
         customInputFields: customInputFields,
       );
-      
+
       final data = Helpers.sanitizeData(response.data);
       if (data is Map && data['result'] == 'failed') {
         throw Exception(data['message'] ?? 'Failed to update contact');
       }
-      
+
       return data;
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -190,9 +194,19 @@ class ContactRepository {
     }
   }
 
-  Future<dynamic> getChatHistory(String contactUid, {int page = 1, bool refresh = false, CancelToken? cancelToken}) async {
+  Future<dynamic> getChatHistory(
+    String contactUid, {
+    int page = 1,
+    bool refresh = false,
+    CancelToken? cancelToken,
+  }) async {
     try {
-      final response = await _apiService.getChatHistory(contactUid, page: page, refresh: refresh, cancelToken: cancelToken);
+      final response = await _apiService.getChatHistory(
+        contactUid,
+        page: page,
+        refresh: refresh,
+        cancelToken: cancelToken,
+      );
 
       // 1. If response is already a Map (Dio auto-parsed JSON)
       if (response.data is Map) {
@@ -218,7 +232,8 @@ class ContactRepository {
         try {
           final decoded = jsonDecode(dataStr);
           if (decoded is Map) {
-            final token = decoded['csrf_token'] ?? decoded['data']?['csrf_token'];
+            final token =
+                decoded['csrf_token'] ?? decoded['data']?['csrf_token'];
             if (token != null) {
               _apiService.setCsrfToken(token.toString());
             }
@@ -278,14 +293,16 @@ class ContactRepository {
           if (decoded is Map) {
             final messageList = decoded.values.whereType<Map>().toList();
             messageList.sort((a, b) {
-              final aTime = (a['created_at'] ?? a['messaged_at'] ?? '').toString();
-              final bTime = (b['created_at'] ?? b['messaged_at'] ?? '').toString();
+              final aTime = (a['created_at'] ?? a['messaged_at'] ?? '')
+                  .toString();
+              final bTime = (b['created_at'] ?? b['messaged_at'] ?? '')
+                  .toString();
               return bTime.compareTo(aTime);
             });
             debugPrint('✅ Extracted ${messageList.length} messages from HTML');
             return {
               'messages': messageList,
-              if (csrfToken != null) 'csrf_token': csrfToken
+              if (csrfToken != null) 'csrf_token': csrfToken,
             };
           }
         } catch (e) {
@@ -298,9 +315,17 @@ class ContactRepository {
     return {'messages': []};
   }
 
-  Future<dynamic> getContactChatBoxData(String contactUid, {bool refresh = false, CancelToken? cancelToken}) async {
+  Future<dynamic> getContactChatBoxData(
+    String contactUid, {
+    bool refresh = false,
+    CancelToken? cancelToken,
+  }) async {
     try {
-      final response = await _apiService.getContactChatBoxData(contactUid, refresh: refresh, cancelToken: cancelToken);
+      final response = await _apiService.getContactChatBoxData(
+        contactUid,
+        refresh: refresh,
+        cancelToken: cancelToken,
+      );
       return await Helpers.sanitizeDataAsync(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -316,9 +341,15 @@ class ContactRepository {
     }
   }
 
-  Future<dynamic> markAsRead({required String contactUid, String? messageId}) async {
+  Future<dynamic> markAsRead({
+    required String contactUid,
+    String? messageId,
+  }) async {
     try {
-      final response = await _apiService.markAsRead(contactUid: contactUid, messageId: messageId);
+      final response = await _apiService.markAsRead(
+        contactUid: contactUid,
+        messageId: messageId,
+      );
       return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       // 🛡️ Special handling: if mark-as-read fails, we don't want to break the whole flow
@@ -333,6 +364,7 @@ class ContactRepository {
     required String mediaType,
     String? waId,
     String? caption,
+    num? duration,
     ProgressCallback? onSendProgress,
   }) async {
     debugPrint('🚀 [REPO] sendMedia called for $mediaType');
@@ -346,25 +378,39 @@ class ContactRepository {
       // Step 1: Upload to temporary storage
       String uploadItem;
       switch (mediaType.toLowerCase()) {
-        case 'image': uploadItem = 'whatsapp_image'; break;
-        case 'sticker': uploadItem = 'whatsapp_sticker'; break;
+        case 'image':
+          uploadItem = 'whatsapp_image';
+          break;
+        case 'sticker':
+          uploadItem = 'whatsapp_sticker';
+          break;
         case 'audio':
-        case 'voice': uploadItem = 'whatsapp_audio'; break;
-        case 'video': uploadItem = 'whatsapp_video'; break;
+        case 'voice':
+          uploadItem = 'whatsapp_audio';
+          break;
+        case 'video':
+          uploadItem = 'whatsapp_video';
+          break;
         case 'document':
-        default: uploadItem = 'whatsapp_document';
+        default:
+          uploadItem = 'whatsapp_document';
       }
 
       debugPrint('📤 [REPO] Step 1: Uploading temp media ($uploadItem)...');
+      debugPrint('📤 [REPO] Step 1 filePath: $filePath');
       final startTime = DateTime.now();
       final uploadResponse = await _apiService.uploadTempMedia(
-        filePath, 
-        uploadItem, 
-        onSendProgress: onSendProgress
+        filePath,
+        uploadItem,
+        onSendProgress: onSendProgress,
       );
-      final uploadDuration = DateTime.now().difference(startTime).inMilliseconds;
-      
-      debugPrint('📥 [REPO] Step 1 Response: ${uploadResponse.statusCode} in ${uploadDuration}ms');
+      final uploadDuration = DateTime.now()
+          .difference(startTime)
+          .inMilliseconds;
+
+      debugPrint(
+        '📥 [REPO] Step 1 Response: ${uploadResponse.statusCode} in ${uploadDuration}ms',
+      );
       debugPrint('📥 [REPO] Step 1 Data: ${uploadResponse.data}');
 
       // Extract uploaded file name from response
@@ -374,39 +420,53 @@ class ContactRepository {
       } else if (uploadResponse.data is Map) {
         final Map resMap = uploadResponse.data;
         final dynamic nested = resMap['data'];
-        
+
         if (nested is Map) {
-           uploadedFileName = nested['fileName']?.toString() ?? 
-                              nested['file_name']?.toString();
+          uploadedFileName =
+              nested['fileName']?.toString() ?? nested['file_name']?.toString();
         }
-        
-        uploadedFileName ??= resMap['fileName']?.toString() ?? 
-                             resMap['file_name']?.toString() ?? 
-                             resMap['id']?.toString();
+
+        uploadedFileName ??=
+            resMap['fileName']?.toString() ??
+            resMap['file_name']?.toString() ??
+            resMap['id']?.toString();
       }
 
       if (uploadedFileName == null || uploadedFileName.isEmpty) {
-        debugPrint('❌ [REPO] Failed to get temp filename. Response: ${uploadResponse.data}');
-        throw Exception('Failed to get temporary filename from upload response');
+        debugPrint(
+          '❌ [REPO] Failed to get temp filename. Response: ${uploadResponse.data}',
+        );
+        throw Exception(
+          'Failed to get temporary filename from upload response',
+        );
       }
 
       debugPrint('✅ [REPO] Step 1 Success. Filename: $uploadedFileName');
 
       // Step 2: Send message referencing the uploaded file name
       debugPrint('📤 [REPO] Step 2: Finalizing media send...');
+      debugPrint(
+        '📤 [REPO] Step 2 mediaType: $mediaType uploadedFileName: $uploadedFileName waId: $waId',
+      );
       final response = await _apiService.sendMedia(
         contactUid: contactUid,
         mediaType: mediaType.toLowerCase() == 'voice' ? 'audio' : mediaType,
         uploadedFileName: uploadedFileName,
         waId: waId,
         caption: caption,
+        duration: duration,
         isRecordedAudio: mediaType.toLowerCase() == 'voice',
       );
 
       debugPrint('📥 [REPO] Step 2 Response: ${response.statusCode}');
+      debugPrint('📥 [REPO] Step 2 Data: ${response.data}');
 
-      if (response.data is Map && (response.data['result'] == 'failed' || response.data['reaction'] == 0)) {
-        throw Exception(response.data['message'] ?? 'Failed to send media in step 2');
+      if (response.data is Map &&
+          (response.data['result'] == 'failed' ||
+              response.data['reaction'] == 0)) {
+        throw Exception(
+          response.data['message'] ?? 'Failed to send media in step 2',
+        );
       }
 
       final sanitizedData = Helpers.sanitizeData(response.data);
@@ -418,9 +478,17 @@ class ContactRepository {
     }
   }
 
-  Future<dynamic> uploadMedia(String filePath, {required String contactUid, String type = 'audio'}) async {
+  Future<dynamic> uploadMedia(
+    String filePath, {
+    required String contactUid,
+    String type = 'audio',
+  }) async {
     try {
-      final response = await _apiService.uploadMedia(filePath, contactUid: contactUid, type: type);
+      final response = await _apiService.uploadMedia(
+        filePath,
+        contactUid: contactUid,
+        type: type,
+      );
       return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -500,22 +568,28 @@ class ContactRepository {
         waId: waId,
         replyToMessageId: replyToMessageId,
       );
-      
+
       final data = response.data;
 
       // 🛡️ Guard against HTML responses (redirects to home/login)
       if (data is String && data.contains('<!DOCTYPE html>')) {
-        debugPrint('⚠️ sendMessage returned HTML instead of JSON. Possible session/auth issue.');
-        throw Exception('Server returned an unexpected page. Please try logging out and in again.');
+        debugPrint(
+          '⚠️ sendMessage returned HTML instead of JSON. Possible session/auth issue.',
+        );
+        throw Exception(
+          'Server returned an unexpected page. Please try logging out and in again.',
+        );
       }
 
       if (data is Map) {
-        if (data['result'] == 'failed' || data['reaction'] == 0 || data['status'] == 'error') {
+        if (data['result'] == 'failed' ||
+            data['reaction'] == 0 ||
+            data['status'] == 'error') {
           throw Exception(data['message'] ?? 'Failed to send message');
         }
         return Helpers.sanitizeData(data);
       }
-      
+
       return Helpers.sanitizeData(data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -640,14 +714,22 @@ class ContactRepository {
   String _extractError(DioException e) {
     if (e.response != null) {
       final status = e.response!.statusCode;
-      if (status == 403) return "Too many requests. Please wait a moment.";
-      if (status == 404) return "currently not working.";
-      if (status == 413) return "Video file is too large for the server. Please try a shorter or lower quality video.";
-      if (status != null && status >= 500) return "Server error. Please try again later.";
+      if (status == 403)
+        return "Access denied. You may not have permission for this action.";
+      if (status == 404) return "The requested resource was not found.";
+      if (status == 413)
+        return "Video file is too large for the server. Please try a shorter or lower quality video.";
+      if (status != null && status >= 500)
+        return "Server error. Please try again later.";
 
       final data = e.response!.data;
       if (data is Map) {
-        String msg = (data['message'] ?? data['incident'] ?? data['error'] ?? 'An error occurred').toString();
+        String msg =
+            (data['message'] ??
+                    data['incident'] ??
+                    data['error'] ??
+                    'An error occurred')
+                .toString();
         // 🛡️ WhatsApp specific error conversion
         if (msg.contains('24 hours')) return "24_hour_policy_error";
         return msg;

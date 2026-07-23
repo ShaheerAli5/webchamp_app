@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
 import 'dart:io';
+import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 import 'package:open_filex/open_filex.dart';
@@ -13,10 +14,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 class Helpers {
   static void showSnackBar(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-      ),
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -24,17 +22,19 @@ class Helpers {
   /// If null, returns current UTC time.
   static DateTime toUtc(dynamic timestamp) {
     if (timestamp == null) return DateTime.now().toUtc();
-    
+
     if (timestamp is DateTime) {
       return timestamp.isUtc ? timestamp : timestamp.toUtc();
     }
-    
+
     try {
       String str = timestamp.toString();
       // Optimization: common Laravel format "YYYY-MM-DD HH:MM:SS"
       if (str.length == 19 && str[10] == ' ') {
         str = '${str.substring(0, 10)}T${str.substring(11)}Z';
-      } else if (!str.contains('Z') && !str.contains('+') && RegExp(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}').hasMatch(str)) {
+      } else if (!str.contains('Z') &&
+          !str.contains('+') &&
+          RegExp(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}').hasMatch(str)) {
         str = str.replaceFirst(' ', 'T') + 'Z';
       }
       return DateTime.tryParse(str)?.toUtc() ?? DateTime.now().toUtc();
@@ -56,14 +56,16 @@ class Helpers {
   static String formatTimestamp(dynamic timestamp) {
     final DateTime pktTime = toPKT(timestamp);
     final DateTime now = toPKT(DateTime.now());
-    
-    final bool isToday = pktTime.year == now.year && 
-                       pktTime.month == now.month && 
-                       pktTime.day == now.day;
-    
-    final bool isYesterday = pktTime.year == now.year && 
-                           pktTime.month == now.month && 
-                           pktTime.day == now.day - 1;
+
+    final bool isToday =
+        pktTime.year == now.year &&
+        pktTime.month == now.month &&
+        pktTime.day == now.day;
+
+    final bool isYesterday =
+        pktTime.year == now.year &&
+        pktTime.month == now.month &&
+        pktTime.day == now.day - 1;
 
     if (isToday) {
       return _timeFormat.format(pktTime);
@@ -80,10 +82,14 @@ class Helpers {
   static String formatShortTimestamp(dynamic timestamp) {
     final DateTime pktTime = toPKT(timestamp);
     final DateTime now = toPKT(DateTime.now());
-    
-    if (pktTime.year == now.year && pktTime.month == now.month && pktTime.day == now.day) {
+
+    if (pktTime.year == now.year &&
+        pktTime.month == now.month &&
+        pktTime.day == now.day) {
       return _timeFormat.format(pktTime);
-    } else if (pktTime.year == now.year && pktTime.month == now.month && pktTime.day == now.day - 1) {
+    } else if (pktTime.year == now.year &&
+        pktTime.month == now.month &&
+        pktTime.day == now.day - 1) {
       return 'Yesterday';
     } else {
       return _shortDateFormat.format(pktTime);
@@ -154,7 +160,9 @@ class Helpers {
       // Use Map.from for faster iteration if it's already a Map<String, dynamic>
       final Map<String, dynamic> sanitizedMap = {};
       data.forEach((key, value) {
-        final String safeKey = key is String ? sanitizeString(key) : key.toString();
+        final String safeKey = key is String
+            ? sanitizeString(key)
+            : key.toString();
         sanitizedMap[safeKey] = sanitizeData(value);
       });
       return sanitizedMap;
@@ -168,7 +176,7 @@ class Helpers {
   static Future<dynamic> sanitizeDataAsync(dynamic data) async {
     if (data == null) return null;
     if (data is! Map && data is! List) return sanitizeData(data);
-    
+
     // Only use compute for reasonably sized data to avoid isolate overhead
     // A rough heuristic: if it's a list with > 10 items or a map
     return await compute(_sanitizeDataIsolate, data);
@@ -197,6 +205,52 @@ class Helpers {
     return int.tryParse(val.toString());
   }
 
+  static double? toDouble(dynamic val) {
+    if (val == null) return null;
+    if (val is double) return val;
+    if (val is int) return val.toDouble();
+    return double.tryParse(val.toString());
+  }
+
+  /// Safely extracts the __data map from a message object, handling JSON strings.
+  static Map<String, dynamic> getMessageData(dynamic message) {
+    if (message is! Map) return {};
+    final rawData = message['__data'];
+    if (rawData == null) return {};
+    if (rawData is Map) return Map<String, dynamic>.from(rawData);
+    if (rawData is String && rawData.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawData);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  /// Extracts a unique identifier for a message from various potential fields.
+  static String? getMessageId(dynamic message) {
+    if (message is! Map) return null;
+    final id =
+        message['whatsapp_message_id'] ??
+        message['wamid'] ??
+        message['_uid'] ??
+        message['uid'] ??
+        message['id'] ??
+        message['local_id'];
+    return id?.toString();
+  }
+
+  /// Gets stripped and trimmed text content from a message object.
+  static String getNormalizedText(dynamic message) {
+    if (message is! Map) return '';
+    final String rawText =
+        (message['message'] ?? message['message_body'] ?? message['text'] ?? '')
+            .toString();
+    if (rawText == 'Media')
+      return 'Media'; // Special case for media placeholders
+    return htmlToPlainText(rawText).trim();
+  }
+
   static String formatDuration(int seconds) {
     final minutes = seconds ~/ 60;
     final remainingSeconds = seconds % 60;
@@ -205,11 +259,11 @@ class Helpers {
 
   static String format24hCountdown(Duration duration) {
     if (duration.isNegative || duration.inSeconds == 0) return "expired";
-    
+
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     final seconds = duration.inSeconds.remainder(60);
-    
+
     if (hours >= 24) return "24 hours";
 
     List<String> parts = [];
@@ -220,7 +274,7 @@ class Helpers {
       parts.add("${minutes}m");
     }
     parts.add("${seconds.toString().padLeft(2, '0')}s");
-    
+
     return parts.join(' ');
   }
 
@@ -235,27 +289,31 @@ class Helpers {
   /// Optimized with compiled RegExp.
   static final RegExp _brRegex = RegExp(r'<br\s*/?>', caseSensitive: false);
   static final RegExp _emRegex = RegExp(r'</?em>', caseSensitive: false);
-  static final RegExp _strongRegex = RegExp(r'</?(strong|b)>', caseSensitive: false);
+  static final RegExp _strongRegex = RegExp(
+    r'</?(strong|b)>',
+    caseSensitive: false,
+  );
   static final RegExp _tagRegex = RegExp(r'<[^>]*>');
 
   static String htmlToPlainText(String? html) {
     if (html == null || html.isEmpty) return '';
-    
+
     String text = html;
     text = text.replaceAll(_brRegex, '\n');
     text = text.replaceAll(_emRegex, '_');
     text = text.replaceAll(_strongRegex, '*');
     text = text.replaceAll(_tagRegex, '');
-    
+
     // Efficient entity replacement
     if (text.contains('&')) {
-      text = text.replaceAll('&amp;', '&')
-                 .replaceAll('&lt;', '<')
-                 .replaceAll('&gt;', '>')
-                 .replaceAll('&quot;', '"')
-                 .replaceAll('&#39;', "'");
+      text = text
+          .replaceAll('&amp;', '&')
+          .replaceAll('&lt;', '<')
+          .replaceAll('&gt;', '>')
+          .replaceAll('&quot;', '"')
+          .replaceAll('&#39;', "'");
     }
-               
+
     return text.trim();
   }
 
@@ -272,7 +330,11 @@ class Helpers {
       if (Platform.isAndroid) {
         final sdkInt = await _getAndroidSdkInt();
         if (sdkInt != null && sdkInt >= 33) {
-          await [Permission.photos, Permission.videos, Permission.audio].request();
+          await [
+            Permission.photos,
+            Permission.videos,
+            Permission.audio,
+          ].request();
         } else {
           await Permission.storage.request();
         }
@@ -283,7 +345,10 @@ class Helpers {
       if (urlOrPath.startsWith('http')) {
         final directory = await getApplicationDocumentsDirectory();
         final String name = fileName ?? urlOrPath.split('/').last;
-        final String sanitizedName = name.replaceAll(RegExp(r'[^\w\s\.\-]'), '_');
+        final String sanitizedName = name.replaceAll(
+          RegExp(r'[^\w\s\.\-]'),
+          '_',
+        );
         localPath = '${directory.path}/$sanitizedName';
 
         final File file = File(localPath);
@@ -307,7 +372,9 @@ class Helpers {
         Fluttertoast.showToast(msg: result.message ?? "Could not open file");
       }
     } catch (e) {
-      Fluttertoast.showToast(msg: "No application available to open this file.");
+      Fluttertoast.showToast(
+        msg: "No application available to open this file.",
+      );
     }
   }
 
@@ -320,26 +387,44 @@ class Helpers {
     }
 
     String prefix = '';
-    final bool isGroup = contact['is_group_chat'] == true || contact['is_group'] == true;
-    
+    final bool isGroup =
+        contact['is_group_chat'] == true || contact['is_group'] == true;
+
     if (isGroup) {
-      final sender = lastMessage['sender_name'] ?? lastMessage['vendor_messaging_user']?['name'];
+      final sender =
+          lastMessage['sender_name'] ??
+          lastMessage['vendor_messaging_user']?['name'];
       if (sender != null) prefix = '$sender: ';
     }
 
-    if (lastMessage['is_deleted'] == true) return '${prefix}🚫 This message was deleted';
+    if (lastMessage['is_deleted'] == true)
+      return '${prefix}🚫 This message was deleted';
 
-    String type = (lastMessage['message_type'] ?? lastMessage['type'] ?? '').toString().toLowerCase();
-    
+    String type = (lastMessage['message_type'] ?? lastMessage['type'] ?? '')
+        .toString()
+        .toLowerCase();
+
     switch (type) {
-      case 'image': return '${prefix}🖼️ Photo';
-      case 'video': return '${prefix}🎥 Video';
-      case 'voice': case 'ptt': case 'audio': return '${prefix}🎤 Voice message';
-      case 'sticker': return '${prefix}😊 Sticker';
-      case 'document': case 'file': return '${prefix}📄 Document';
+      case 'image':
+        return '${prefix}🖼️ Photo';
+      case 'video':
+        return '${prefix}🎥 Video';
+      case 'voice':
+      case 'ptt':
+      case 'audio':
+        return '${prefix}🎤 Voice message';
+      case 'sticker':
+        return '${prefix}😊 Sticker';
+      case 'document':
+      case 'file':
+        return '${prefix}📄 Document';
       default:
-        final text = lastMessage['message'] ?? lastMessage['text'] ?? lastMessage['body'];
-        if (text != null && text.toString() != 'Media') return '${prefix}${htmlToPlainText(text.toString())}';
+        final text =
+            lastMessage['message'] ??
+            lastMessage['text'] ??
+            lastMessage['body'];
+        if (text != null && text.toString() != 'Media')
+          return '${prefix}${htmlToPlainText(text.toString())}';
         return '${prefix}📎 Media message';
     }
   }

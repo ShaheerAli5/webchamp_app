@@ -57,7 +57,7 @@ class ContactApiService {
       ApiConstants.contact,
       options: Options(
         extra: {
-          'useCache': true, 
+          'useCache': true,
           'refresh': refresh,
           'cacheDuration': 3600000, // 1 hour
         },
@@ -76,12 +76,7 @@ class ContactApiService {
         if (phoneNumber != null) 'phone_number': phoneNumber,
         if (email != null) 'email': email,
       },
-      options: Options(
-        extra: {
-          'useCache': true,
-          'refresh': refresh,
-        },
-      ),
+      options: Options(extra: {'useCache': true, 'refresh': refresh}),
     );
   }
 
@@ -151,9 +146,7 @@ class ContactApiService {
   }
 
   Future<Response> deleteContact(String phoneNumber) async {
-    return await _apiClient.post(
-      ApiConstants.deleteContact(phoneNumber),
-    );
+    return await _apiClient.post(ApiConstants.deleteContact(phoneNumber));
   }
 
   Future<Response> assignTeamMember({
@@ -162,14 +155,16 @@ class ContactApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.assignTeamMember,
-      data: {
-        'phone_number': phoneNumber,
-        'username_or_email': usernameOrEmail,
-      },
+      data: {'phone_number': phoneNumber, 'username_or_email': usernameOrEmail},
     );
   }
 
-  Future<Response> getChatHistory(String contactUid, {int page = 1, bool refresh = false, CancelToken? cancelToken}) async {
+  Future<Response> getChatHistory(
+    String contactUid, {
+    int page = 1,
+    bool refresh = false,
+    CancelToken? cancelToken,
+  }) async {
     return await _apiClient.get(
       '${ApiConstants.chatHistory(contactUid)}?page=$page',
       cancelToken: cancelToken,
@@ -183,7 +178,11 @@ class ContactApiService {
     );
   }
 
-  Future<Response> getContactChatBoxData(String contactUid, {bool refresh = false, CancelToken? cancelToken}) async {
+  Future<Response> getContactChatBoxData(
+    String contactUid, {
+    bool refresh = false,
+    CancelToken? cancelToken,
+  }) async {
     return await _apiClient.get(
       ApiConstants.contactChatBoxData(contactUid),
       cancelToken: cancelToken,
@@ -201,7 +200,10 @@ class ContactApiService {
     return await _apiClient.get(ApiConstants.unreadCount);
   }
 
-  Future<Response> markAsRead({required String contactUid, String? messageId}) async {
+  Future<Response> markAsRead({
+    required String contactUid,
+    String? messageId,
+  }) async {
     return await _apiClient.post(
       ApiConstants.markRead,
       data: {
@@ -245,6 +247,7 @@ class ContactApiService {
     String? uploadedFileName,
     String? waId,
     String? caption,
+    num? duration,
     bool isRecordedAudio = false,
   }) async {
     // 🛡️ Prepare data map
@@ -253,6 +256,10 @@ class ContactApiService {
       if (waId != null && waId.isNotEmpty) 'wa_id': waId,
       'media_type': mediaType,
       if (caption != null && caption.isNotEmpty) 'caption': caption,
+      // Send duration as double so the backend preserves fractional seconds (float/double).
+      // The server API accepts duration as a float; sending as int is also fine but
+      // casting ensures JSON serialisation always produces a numeric value, never a string.
+      if (duration != null && duration > 0) 'duration': duration.toDouble(),
       if (isRecordedAudio) 'is_recorded_audio': true,
       if (_csrfToken != null && _csrfToken!.isNotEmpty) '_token': _csrfToken,
     };
@@ -260,9 +267,11 @@ class ContactApiService {
     // Case 1: Finalize upload using a previously uploaded temporary file name
     if (uploadedFileName != null) {
       dataMap['uploaded_media_file_name'] = uploadedFileName;
-      
-      debugPrint('📤 [API] Finalizing media send with temp file: $uploadedFileName');
-      
+
+      debugPrint(
+        '📤 [API] Finalizing media send with temp file: $uploadedFileName',
+      );
+
       return await _apiClient.post(
         ApiConstants.sendMedia,
         data: dataMap,
@@ -276,29 +285,23 @@ class ContactApiService {
           },
         ),
       );
-    } 
+    }
 
     // Case 2: Direct upload (Fallback/Legacy)
     if (filePath != null) {
       final fileName = filePath.split(RegExp(r'[/\\]')).last;
-      final String ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
-      
-      String contentType = 'application/octet-stream';
-      String safeFileName = fileName;
+      final String ext = fileName.contains('.')
+          ? fileName.split('.').last.toLowerCase()
+          : '';
+      final String contentType = _guessMimeType(mediaType, ext);
+      final String safeFileName = _normalizeUploadName(
+        fileName,
+        mediaType,
+        ext,
+      );
 
-      if (mediaType == 'audio' || mediaType == 'voice') {
-        contentType = 'audio/mp4';
-      } else if (mediaType == 'image') {
-        contentType = 'image/jpeg';
-      } else if (mediaType == 'video') {
-        contentType = 'video/mp4';
-        if (ext != 'mp4' && ext != '3gp') {
-          safeFileName = '${fileName.replaceAll('.$ext', '')}.mp4';
-        }
-      }
-      
       dataMap['uploaded_media_file_name'] = safeFileName;
-      
+
       dataMap['file'] = await MultipartFile.fromFile(
         filePath,
         filename: safeFileName,
@@ -324,54 +327,48 @@ class ContactApiService {
     );
   }
 
-  Future<Response> uploadTempMedia(String filePath, String uploadItem, {ProgressCallback? onSendProgress}) async {
+  Future<Response> uploadTempMedia(
+    String filePath,
+    String uploadItem, {
+    ProgressCallback? onSendProgress,
+  }) async {
     final fileName = filePath.split(RegExp(r'[/\\]')).last;
     final bool isVideo = uploadItem.contains('video');
     final bool isAudio = uploadItem.contains('audio');
-    
-    // 🛡️ Robust extension extraction
-    final String ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
-    
-    // 🛡️ Determine MIME type and safe filename
-    String contentType = 'application/octet-stream';
-    String safeFileName = fileName;
+    final bool isImage = uploadItem.contains('image');
+    final bool isSticker = uploadItem.contains('sticker');
 
-    if (isVideo) {
-      contentType = 'video/mp4';
-      // 🛡️ Force .mp4 extension in the filename sent to server to trick extension-based validation
-      if (ext != 'mp4' && ext != '3gp' && ext != '3gpp') {
-        safeFileName = '${fileName.replaceAll('.$ext', '')}.mp4';
-      }
-      if (ext == '3gp' || ext == '3gpp') {
-        contentType = 'video/3gpp';
-      }
-    } else if (isAudio) {
-      contentType = 'audio/mp4';
-      if (ext == 'mp3') contentType = 'audio/mpeg';
-      else if (ext == 'ogg') contentType = 'audio/ogg';
-      else if (ext == 'amr') contentType = 'audio/amr';
-      else if (ext == 'aac') contentType = 'audio/aac';
-    } else if (uploadItem.contains('image')) {
-      contentType = 'image/jpeg';
-      if (ext == 'png') contentType = 'image/png';
-      else if (ext == 'gif') contentType = 'image/gif';
-    } else if (uploadItem.contains('sticker')) {
-      contentType = 'image/webp';
-    } else if (uploadItem.contains('document')) {
-      // 🛡️ Document MIME types
-      switch (ext) {
-        case 'pdf': contentType = 'application/pdf'; break;
-        case 'docx': contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'; break;
-        case 'doc': contentType = 'application/msword'; break;
-        case 'xlsx': contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; break;
-        case 'xls': contentType = 'application/vnd.ms-excel'; break;
-        case 'pptx': contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'; break;
-        case 'ppt': contentType = 'application/vnd.ms-powerpoint'; break;
-        case 'txt': contentType = 'text/plain'; break;
-        case 'zip': contentType = 'application/zip'; break;
-        default: contentType = 'application/octet-stream';
-      }
-    }
+    // 🛡️ Robust extension extraction
+    final String ext = fileName.contains('.')
+        ? fileName.split('.').last.toLowerCase()
+        : '';
+
+    // 🛡️ Determine MIME type and safe filename
+    final String contentType = _guessMimeType(
+      isVideo
+          ? 'video'
+          : isAudio
+          ? 'audio'
+          : isImage
+          ? 'image'
+          : isSticker
+          ? 'sticker'
+          : 'document',
+      ext,
+    );
+    final String safeFileName = _normalizeUploadName(
+      fileName,
+      isVideo
+          ? 'video'
+          : isAudio
+          ? 'audio'
+          : isImage
+          ? 'image'
+          : isSticker
+          ? 'sticker'
+          : 'document',
+      ext,
+    );
 
     final formData = FormData.fromMap({
       'filepond': await MultipartFile.fromFile(
@@ -382,7 +379,9 @@ class ContactApiService {
       if (_csrfToken != null && _csrfToken!.isNotEmpty) '_token': _csrfToken,
     });
 
-    debugPrint('📤 [API] uploadTempMedia: $fileName as $safeFileName ($contentType) -> $uploadItem');
+    debugPrint(
+      '📤 [API] uploadTempMedia: $fileName as $safeFileName ($contentType) -> $uploadItem',
+    );
 
     return await _apiClient.post(
       ApiConstants.uploadTempMedia(uploadItem),
@@ -394,35 +393,25 @@ class ContactApiService {
           'Accept': '*/*', // Permissive Accept header for Filepond
           'X-Requested-With': 'XMLHttpRequest',
           'Api-Request-Signature': 'mobile-app-request',
-          if (_csrfToken != null && _csrfToken!.isNotEmpty) 'X-CSRF-TOKEN': _csrfToken,
+          if (_csrfToken != null && _csrfToken!.isNotEmpty)
+            'X-CSRF-TOKEN': _csrfToken,
         },
       ),
     );
   }
 
-
-  Future<Response> uploadMedia(String filePath, {required String contactUid, String type = 'audio'}) async {
+  Future<Response> uploadMedia(
+    String filePath, {
+    required String contactUid,
+    String type = 'audio',
+  }) async {
     final fileName = filePath.split(RegExp(r'[/\\]')).last;
-    final ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
-    
-    String contentType = (type == 'video') ? 'video/mp4' : 'audio/mp4';
-    String safeFileName = fileName;
+    final ext = fileName.contains('.')
+        ? fileName.split('.').last.toLowerCase()
+        : '';
 
-    if (type == 'video') {
-      if (ext == '3gp' || ext == '3gpp') {
-        contentType = 'video/3gpp';
-      } else {
-        contentType = 'video/mp4';
-        if (ext != 'mp4') {
-          safeFileName = '${fileName.replaceAll('.$ext', '')}.mp4';
-        }
-      }
-    } else {
-      if (ext == 'mp3') contentType = 'audio/mpeg';
-      else if (ext == 'ogg') contentType = 'audio/ogg';
-      else if (ext == 'amr') contentType = 'audio/amr';
-      else if (ext == 'aac') contentType = 'audio/aac';
-    }
+    final String contentType = _guessMimeType(type, ext);
+    final String safeFileName = _normalizeUploadName(fileName, type, ext);
 
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(
@@ -434,9 +423,100 @@ class ContactApiService {
       'type': type,
     });
     return await _apiClient.post(
-      ApiConstants.uploadTempMedia(type == 'video' ? 'whatsapp_video' : 'whatsapp_audio'),
+      ApiConstants.uploadTempMedia(
+        type == 'video' ? 'whatsapp_video' : 'whatsapp_audio',
+      ),
       data: formData,
     );
+  }
+
+  String _normalizeUploadName(String fileName, String mediaType, String ext) {
+    final String baseName = fileName.contains('.')
+        ? fileName.substring(0, fileName.lastIndexOf('.'))
+        : fileName;
+
+    if (mediaType == 'video') {
+      return '$baseName.mp4';
+    }
+
+    if (mediaType == 'audio' || mediaType == 'voice') {
+      if (ext == 'm4a' ||
+          ext == 'mp4' ||
+          ext == 'aac' ||
+          ext == 'mp3' ||
+          ext == 'ogg' ||
+          ext == 'opus' ||
+          ext == 'amr' ||
+          ext == 'wav') {
+        return fileName;
+      }
+      return '$baseName.m4a';
+    }
+
+    return fileName;
+  }
+
+  String _guessMimeType(String mediaType, String ext) {
+    switch (mediaType) {
+      case 'video':
+        return 'video/mp4';
+      case 'audio':
+      case 'voice':
+        switch (ext) {
+          case 'mp3':
+            return 'audio/mpeg';
+          case 'ogg':
+            return 'audio/ogg';
+          case 'opus':
+            return 'audio/ogg; codecs=opus';
+          case 'amr':
+            return 'audio/amr';
+          case 'aac':
+            return 'audio/aac';
+          case 'wav':
+            return 'audio/wav';
+          default:
+            return 'audio/mp4';
+        }
+      case 'image':
+        switch (ext) {
+          case 'png':
+            return 'image/png';
+          case 'gif':
+            return 'image/gif';
+          case 'webp':
+            return 'image/webp';
+          default:
+            return 'image/jpeg';
+        }
+      case 'sticker':
+        return 'image/webp';
+      case 'document':
+        switch (ext) {
+          case 'pdf':
+            return 'application/pdf';
+          case 'docx':
+            return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          case 'doc':
+            return 'application/msword';
+          case 'xlsx':
+            return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+          case 'xls':
+            return 'application/vnd.ms-excel';
+          case 'pptx':
+            return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+          case 'ppt':
+            return 'application/vnd.ms-powerpoint';
+          case 'txt':
+            return 'text/plain';
+          case 'zip':
+            return 'application/zip';
+          default:
+            return 'application/octet-stream';
+        }
+      default:
+        return 'application/octet-stream';
+    }
   }
 
   Future<Response> sendTemplate({
@@ -461,11 +541,7 @@ class ContactApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.createLabel,
-      data: {
-        'title': title,
-        'text_color': textColor,
-        'bg_color': bgColor,
-      },
+      data: {'title': title, 'text_color': textColor, 'bg_color': bgColor},
     );
   }
 
@@ -487,9 +563,7 @@ class ContactApiService {
   }
 
   Future<Response> deleteLabel(String labelUid) async {
-    return await _apiClient.post(
-      ApiConstants.deleteLabel(labelUid),
-    );
+    return await _apiClient.post(ApiConstants.deleteLabel(labelUid));
   }
 
   Future<Response> assignLabels({
@@ -498,10 +572,7 @@ class ContactApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.assignLabels,
-      data: {
-        'contact_uid': contactUid,
-        'labels': labels,
-      },
+      data: {'contact_uid': contactUid, 'labels': labels},
       options: Options(
         extra: {'stateless': true},
         headers: {
@@ -517,12 +588,7 @@ class ContactApiService {
   Future<Response> getContactGroups({bool refresh = false}) async {
     return await _apiClient.get(
       ApiConstants.contactGroupsList,
-      options: Options(
-        extra: {
-          'useCache': true,
-          'refresh': refresh,
-        },
-      ),
+      options: Options(extra: {'useCache': true, 'refresh': refresh}),
     );
   }
 
@@ -554,9 +620,7 @@ class ContactApiService {
   }
 
   Future<Response> deleteContactGroup(String groupUid) async {
-    return await _apiClient.post(
-      ApiConstants.deleteContactGroup(groupUid),
-    );
+    return await _apiClient.post(ApiConstants.deleteContactGroup(groupUid));
   }
 
   Future<Response> assignContactsToGroup({
@@ -565,10 +629,7 @@ class ContactApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.assignContactsToGroup,
-      data: {
-        'contact_uids': contactUids,
-        'group_uids': groupUids,
-      },
+      data: {'contact_uids': contactUids, 'group_uids': groupUids},
     );
   }
 
@@ -578,10 +639,7 @@ class ContactApiService {
   }) async {
     return await _apiClient.post(
       ApiConstants.removeContactFromGroup,
-      data: {
-        'contact_uid': contactUid,
-        'group_uid': groupUid,
-      },
+      data: {'contact_uid': contactUid, 'group_uid': groupUid},
     );
   }
 }
