@@ -8,6 +8,7 @@ import '../../../../core/utils/helpers.dart';
 import '../../data/repositories/contact_repository.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import '../../data/models/label_model.dart';
 
 class ContactProvider extends ChangeNotifier {
   final ContactRepository _repository;
@@ -32,6 +33,7 @@ class ContactProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
 
   String? _activeUserId;
+  String? _activeUserUid;
 
   List<dynamic> _contacts = [];
   List<dynamic> get contacts => _contacts;
@@ -54,14 +56,14 @@ class ContactProvider extends ChangeNotifier {
   Map<String, dynamic>? _selectedContact;
   Map<String, dynamic>? get selectedContact => _selectedContact;
 
-  List<dynamic> _labels = [];
-  List<dynamic> get labels => _labels;
+  List<LabelModel> _labels = [];
+  List<LabelModel> get labels => _labels;
 
   List<dynamic> _teamMembers = [];
   List<dynamic> get teamMembers => _teamMembers;
 
-  List<dynamic> _allAvailableLabels = [];
-  List<dynamic> get allAvailableLabels => _allAvailableLabels;
+  List<LabelModel> _allAvailableLabels = [];
+  List<LabelModel> get allAvailableLabels => _allAvailableLabels;
 
   List<dynamic> _messages = [];
   List<dynamic> get messages => _messages;
@@ -94,8 +96,22 @@ class ContactProvider extends ChangeNotifier {
       final contactLabels = contact['labels'];
       if (contactLabels is List) {
         return contactLabels.any((label) {
-          final title = (label is Map ? label['title'] : label.toString()).toLowerCase();
-          return title == _selectedLabel!.toLowerCase();
+          String? title;
+          String? uid;
+          
+          if (label is Map) {
+            title = (label['title'] ?? '').toString();
+            uid = (label['label_uid'] ?? label['uid'] ?? label['id'] ?? '').toString();
+          } else if (label is LabelModel) {
+            title = label.title;
+            uid = label.uid;
+          } else {
+            title = label.toString();
+            uid = label.toString();
+          }
+          
+          return (title != null && title.toLowerCase() == _selectedLabel!.toLowerCase()) || 
+                 (uid != null && uid == _selectedLabel);
         });
       }
       return false;
@@ -172,8 +188,35 @@ class ContactProvider extends ChangeNotifier {
         _globalUnreadCount = cachedUnread;
         notifyListeners();
       }
+
+      await loadLabelsFromPrefs();
     } catch (e) {
       debugPrint('⚠️ [CACHE] Failed to load persistent cache: $e');
+    }
+  }
+
+  Future<void> loadLabelsFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? labelsJson = prefs.getString('cached_labels_${_activeUserId ?? 'anon'}');
+      if (labelsJson != null) {
+        final List<dynamic> decoded = jsonDecode(labelsJson);
+        _allAvailableLabels = decoded.map((e) => LabelModel.fromJson(e)).toList();
+        debugPrint('💾 [CACHE] Loaded ${_allAvailableLabels.length} labels from persistent storage');
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('⚠️ [CACHE] Failed to load labels from cache: $e');
+    }
+  }
+
+  Future<void> saveLabelsToPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String encoded = jsonEncode(_allAvailableLabels.map((e) => e.toJson()).toList());
+      await prefs.setString('cached_labels_${_activeUserId ?? 'anon'}', encoded);
+    } catch (e) {
+      debugPrint('⚠️ [CACHE] Failed to save labels to cache: $e');
     }
   }
 
@@ -185,6 +228,7 @@ class ContactProvider extends ChangeNotifier {
       final String encoded = await compute(jsonEncode, _contacts);
       await prefs.setString('cached_contacts_${_activeUserId ?? 'anon'}', encoded);
       await prefs.setInt('cached_unread_${_activeUserId ?? 'anon'}', _globalUnreadCount);
+      await saveLabelsToPrefs();
     } catch (e) {
       debugPrint('⚠️ [CACHE] Failed to save persistent cache: $e');
     }
@@ -216,7 +260,7 @@ class ContactProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final keys = prefs.getKeys();
       for (String key in keys) {
-        if (key.startsWith('cached_contacts_') || key.startsWith('cached_unread_')) {
+        if (key.startsWith('cached_contacts_') || key.startsWith('cached_unread_') || key.startsWith('cached_labels_')) {
           prefs.remove(key);
         }
       }
@@ -228,8 +272,13 @@ class ContactProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setActiveUser(String? userId) {
+  void setActiveUser(String? userId, {String? userUid}) {
     _activeUserId = userId;
+    if (userUid != null && userUid.isNotEmpty) {
+      _activeUserUid = userUid;
+      debugPrint('👤 [CONTACT-PROVIDER] Active User UID set: $_activeUserUid');
+    }
+    loadCachedData();
   }
 
   // Bug 4: Sanitize text for UTF-16
@@ -780,6 +829,7 @@ class ContactProvider extends ChangeNotifier {
         address: address,
         languageCode: languageCode,
         country: country,
+        userUid: _activeUserUid,
         contactGroups: contactGroups,
         whatsappOptOut: whatsappOptOut,
         enableAiBot: enableAiBot,
@@ -828,6 +878,7 @@ class ContactProvider extends ChangeNotifier {
         address: address,
         languageCode: languageCode,
         country: country,
+        userUid: _activeUserUid,
         contactGroups: contactGroups,
         whatsappOptOut: whatsappOptOut,
         enableAiBot: enableAiBot,
@@ -1074,16 +1125,20 @@ class ContactProvider extends ChangeNotifier {
       final dynamic safeClientModels = (clientModels is Map) ? clientModels : null;
 
       if (!pollOnly) {
-        _labels = _extractLargestList([result['labels'], data?['labels'], safeClientModels?['labels']]);
+        final rawLabels = _extractLargestList([result['labels'], data?['labels'], safeClientModels?['labels']]);
+        _labels = rawLabels.map((e) => LabelModel.fromJson(e)).toList();
+
         _teamMembers = _extractLargestList([result['teamMembers'], result['vendorMessagingUsers'], data?['teamMembers']]);
         
-        _allAvailableLabels = _extractLargestList([
+        final rawAllLabels = _extractLargestList([
           result['listOfAllLabels'], 
           data?['listOfAllLabels'], 
           result['allLabels'],
           safeClientModels?['listOfAllLabels'],
           safeClientModels?['allLabels'],
         ]);
+        _allAvailableLabels = rawAllLabels.map((e) => LabelModel.fromJson(e)).toList();
+        saveLabelsToPrefs();
       }
 
       // 3. Extract and Merge Messages
@@ -2178,13 +2233,27 @@ class ContactProvider extends ChangeNotifier {
     notifyListeners();
     try {
       debugPrint('🏷️ [LABELS] Creating new label: $title');
-      await _repository.createLabel(title: title, textColor: textColor, bgColor: bgColor);
+      final result = await _repository.createLabel(
+        title: title, 
+        textColor: textColor, 
+        bgColor: bgColor,
+        userUid: _activeUserUid,
+      );
       
-      // Refresh labels list - we use the currently selected contact to refresh available labels
-      if (_selectedContact != null) {
-        final uid = (_selectedContact!['_uid'] ?? _selectedContact!['uid'])?.toString();
-        if (uid != null) {
-          await getContactChatBoxData(uid, showLoading: false);
+      // Extract label from response if possible, otherwise refresh
+      if (result is Map && result['data'] != null) {
+        final newLabel = LabelModel.fromJson(result['data']);
+        if (newLabel.uid.isNotEmpty) {
+          _allAvailableLabels.add(newLabel);
+          await saveLabelsToPrefs();
+        }
+      } else {
+        // Refresh labels list - we use the currently selected contact to refresh available labels
+        if (_selectedContact != null) {
+          final uid = (_selectedContact!['_uid'] ?? _selectedContact!['uid'])?.toString();
+          if (uid != null) {
+            await getContactChatBoxData(uid, showLoading: false);
+          }
         }
       }
       
@@ -2204,7 +2273,26 @@ class ContactProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      await _repository.updateLabel(labelUid: labelUid, title: title, textColor: textColor, bgColor: bgColor);
+      await _repository.updateLabel(
+        labelUid: labelUid, 
+        title: title, 
+        textColor: textColor, 
+        bgColor: bgColor,
+        userUid: _activeUserUid,
+      );
+      
+      // Update local state
+      final index = _allAvailableLabels.indexWhere((l) => l.uid == labelUid);
+      if (index != -1) {
+        _allAvailableLabels[index] = LabelModel(
+          uid: labelUid,
+          title: title,
+          textColor: textColor,
+          bgColor: bgColor,
+        );
+        await saveLabelsToPrefs();
+      }
+
       _isLoading = false;
       notifyListeners();
       return true;
@@ -2217,11 +2305,38 @@ class ContactProvider extends ChangeNotifier {
   }
 
   Future<bool> deleteLabel(String labelUid) async {
+    if (labelUid.isEmpty) {
+      _errorMessage = 'Label identifier is missing. Please refresh the list.';
+      notifyListeners();
+      return false;
+    }
+
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
     try {
-      await _repository.deleteLabel(labelUid);
+      await _repository.deleteLabel(labelUid, userUid: _activeUserUid);
+      
+      // Update local state - remove from available labels
+      _allAvailableLabels.removeWhere((l) => l.uid == labelUid);
+      
+      // 🛡️ [CASCADING DELETE] Remove this label from all contacts in memory
+      for (var contact in _contacts) {
+        if (contact['labels'] is List) {
+          (contact['labels'] as List).removeWhere((label) {
+            if (label is Map) {
+              final uid = (label['label_uid'] ?? label['uid'] ?? label['id'] ?? '').toString();
+              return uid == labelUid;
+            } else if (label is LabelModel) {
+              return label.uid == labelUid;
+            }
+            return false;
+          });
+        }
+      }
+
+      await saveLabelsToPrefs();
+
       _isLoading = false;
       notifyListeners();
       return true;
@@ -2238,24 +2353,35 @@ class ContactProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     debugPrint('🏷️ [LABELS] Selected Contact UID: $contactUid');
-    debugPrint('🏷️ [LABELS] Selected Labels: $labels');
+    debugPrint('🏷️ [LABELS] Selected Labels to assign (UIDs): $labels');
 
     try {
-      final result = await _repository.assignLabels(contactUid: contactUid, labels: labels);
+      final result = await _repository.assignLabels(
+        contactUid: contactUid, 
+        labels: labels,
+        userUid: _activeUserUid,
+      );
       
       final isSuccessful = result['reaction'] == 1 || result['success'] == true || 
                            result['status'] == 'success' || result['result'] == 'success';
 
       if (!isSuccessful) throw Exception(result['message'] ?? 'Failed to assign labels');
 
-      // Refresh assigned labels for the current contact
-      await getContactChatBoxData(contactUid, showLoading: false);
+      // Update local _labels for the current chat
+      if (_activeChatUid == contactUid) {
+        _labels = _allAvailableLabels.where((l) => labels.contains(l.uid)).toList();
+      }
       
       // Update the contact in the main list immediately for filtering/UI
       final index = _contacts.indexWhere((c) => _extractUid(c) == contactUid);
       if (index != -1) {
         final updatedContact = Map<String, dynamic>.from(_contacts[index]);
-        updatedContact['labels'] = List.from(_labels);
+        // Store as List of Maps for compatibility with existing UI if needed, 
+        // or just rely on the provider's _labels when viewing.
+        updatedContact['labels'] = _allAvailableLabels
+            .where((l) => labels.contains(l.uid))
+            .map((l) => l.toJson())
+            .toList();
         _contacts[index] = updatedContact;
       }
 

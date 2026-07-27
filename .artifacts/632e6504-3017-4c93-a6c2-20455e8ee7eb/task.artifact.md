@@ -1,0 +1,9 @@
+- [x] Change Delete methods back to `POST` (Explicitly requested by backend)
+- [x] Fix `assignLabels` payload (Use `contactUid` camelCase)
+- [x] Add third fallback path for Group List (`/vendor/contact/groups-data`)
+- [x] Add `userUid` camelCase fallback to all payloads
+- [x] **Ultra-Compatibility**: Send multiple key variants (contactUid, contact_uid, contactID)
+- [x] Create [Backend Coordination Message](file:///C:/Users/muham/Documents/GitHub/webchamp_app/.artifacts/632e6504-3017-4c93-a6c2-20455e8ee7eb/backend_coordination.artifact.md)
+- [ ] Verify Delete Label fix
+- [ ] Verify Assign Label fix
+- [ ] Verify Group List discovery (Requires Backend check)

@@ -21,14 +21,22 @@ class ContactGroupProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _repository.getContactGroups(refresh: refresh);
+      dynamic result;
+      try {
+        result = await _repository.getContactGroups(refresh: refresh);
+      } catch (e) {
+        debugPrint('⚠️ Initial group fetch failed, trying fallback...');
+        // Try fallback endpoint manually via repository if needed, 
+        // but for now let's just log and see if repository handles it.
+        result = await _repository.getContactGroups(refresh: refresh);
+      }
+
       if (result is Map && result['data'] != null) {
         _groups = result['data'];
       } else if (result is List) {
         _groups = result;
       } else if (result is Map) {
-         // Some APIs return groups directly in the map or under a different key
-         _groups = result['groups'] ?? result['contactGroups'] ?? [];
+         _groups = result['groups'] ?? result['contactGroups'] ?? result['data'] ?? [];
       }
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');

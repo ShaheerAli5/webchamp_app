@@ -14,6 +14,7 @@ import '../ui/screens/campaigns/create_campaign_screen.dart';
 import '../ui/screens/contacts/add_contact_screen.dart';
 import '../ui/screens/contacts/upload_csv_screen.dart';
 import '../ui/screens/chat/individual_chat_screen.dart';
+import 'package:webchamp_app/ui/screens/contacts/manage_labels_screen.dart';
 import '../ui/screens/home/home_screen.dart';
 import '../ui/screens/campaigns/campaigns_screen.dart';
 import '../ui/screens/chat/chat_screen.dart';
@@ -68,6 +69,7 @@ class AppRoutes {
   static const String individualChatNoParams = '/chat-detail';
   static const String createNewList = '/create-new-list';
   static const String selectContacts = '/select-contacts';
+  static const String manageLabels = '/manage-labels';
   static const String templates = '/templates';
   static const String addTemplate = '/add-template';
   static const String botList = '/bot-list';
@@ -233,6 +235,10 @@ class AppRoutes {
         GoRoute(
           path: selectContacts,
           builder: (context, state) => const SelectContactsScreen(),
+        ),
+        GoRoute(
+          path: manageLabels,
+          builder: (context, state) => const ManageLabelsScreen(),
         ),
         GoRoute(
           path: templates,

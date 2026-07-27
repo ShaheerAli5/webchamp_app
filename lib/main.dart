@@ -54,7 +54,7 @@ void main() async {
   authProvider.onLogin = (user, token) {
     debugPrint('🔑 [MAIN] User Login - Initializing for User ID: ${user.id}');
     apiClient.setCurrentUser(token, userId: user.id.toString());
-    contactProvider.setActiveUser(user.id.toString());
+    contactProvider.setActiveUser(user.id.toString(), userUid: user.uuid ?? user.vendorUid);
     
     // Load cache first for speed, then fetch fresh in background
     contactProvider.loadCachedData().then((_) {

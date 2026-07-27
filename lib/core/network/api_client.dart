@@ -38,9 +38,9 @@ class ApiClient {
     _dio.interceptors.add(cacheInterceptor);
     _dio.interceptors.add(_dioInterceptor);
     _dio.interceptors.add(LogInterceptor(
-      requestBody: false, // Reduced log noise for performance
+      requestBody: true, // Enabled for debugging 422 errors
       requestHeader: true,
-      responseBody: false, // Reduced log noise
+      responseBody: true, // Enabled to see exact validation errors
       responseHeader: false,
       error: true,
     ));

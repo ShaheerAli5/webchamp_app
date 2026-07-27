@@ -93,6 +93,7 @@ class ContactApiService {
     String? address,
     String? languageCode,
     required dynamic country,
+    String? userUid,
     List<int>? contactGroups,
     bool? whatsappOptOut,
     bool? enableAiBot,
@@ -109,6 +110,8 @@ class ContactApiService {
         if (address != null) 'address': address,
         if (languageCode != null) 'language_code': languageCode,
         'country': country,
+        if (userUid != null) 'user_uid': userUid,
+        if (userUid != null) 'userUid': userUid,
         if (contactGroups != null) 'contact_groups': contactGroups,
         if (whatsappOptOut != null) 'whatsapp_opt_out': whatsappOptOut ? 1 : 0,
         if (enableAiBot != null) 'enable_ai_bot': enableAiBot ? 1 : 0,
@@ -126,6 +129,7 @@ class ContactApiService {
     String? address,
     String? languageCode,
     required dynamic country,
+    String? userUid,
     List<int>? contactGroups,
     bool? whatsappOptOut,
     bool? enableAiBot,
@@ -141,6 +145,8 @@ class ContactApiService {
         if (address != null) 'address': address,
         if (languageCode != null) 'language_code': languageCode,
         'country': country,
+        if (userUid != null) 'user_uid': userUid,
+        if (userUid != null) 'userUid': userUid,
         if (contactGroups != null) 'contact_groups': contactGroups,
         if (whatsappOptOut != null) 'whatsapp_opt_out': whatsappOptOut ? 1 : 0,
         if (enableAiBot != null) 'enable_ai_bot': enableAiBot ? 1 : 0,
@@ -458,6 +464,7 @@ class ContactApiService {
     required String title,
     required String textColor,
     required String bgColor,
+    String? userUid,
   }) async {
     return await _apiClient.post(
       ApiConstants.createLabel,
@@ -465,6 +472,8 @@ class ContactApiService {
         'title': title,
         'text_color': textColor,
         'bg_color': bgColor,
+        if (userUid != null) 'user_uid': userUid,
+        if (userUid != null) 'userUid': userUid,
       },
     );
   }
@@ -474,33 +483,50 @@ class ContactApiService {
     required String title,
     required String textColor,
     required String bgColor,
+    String? userUid,
   }) async {
     return await _apiClient.post(
       ApiConstants.updateLabel,
       data: {
+        'labelUid': labelUid,
         'label_uid': labelUid,
         'title': title,
         'text_color': textColor,
         'bg_color': bgColor,
+        if (userUid != null) 'user_uid': userUid,
+        if (userUid != null) 'userUid': userUid,
+        if (userUid != null) 'userUid': userUid,
       },
     );
   }
 
-  Future<Response> deleteLabel(String labelUid) async {
+  Future<Response> deleteLabel(String labelUid, {String? userUid}) async {
     return await _apiClient.post(
       ApiConstants.deleteLabel(labelUid),
+      data: {
+        'labelUid': labelUid,
+        'label_uid': labelUid,
+        if (userUid != null) 'userUid': userUid,
+        if (userUid != null) 'user_uid': userUid,
+      },
     );
   }
 
   Future<Response> assignLabels({
     required String contactUid,
     required List<String> labels,
+    String? userUid,
   }) async {
     return await _apiClient.post(
       ApiConstants.assignLabels,
       data: {
+        'contactUid': contactUid,
         'contact_uid': contactUid,
+        'contactID': contactUid,
         'labels': labels,
+        'label_uids': labels,
+        if (userUid != null) 'userUid': userUid,
+        if (userUid != null) 'user_uid': userUid,
       },
       options: Options(
         extra: {'stateless': true},
@@ -516,7 +542,31 @@ class ContactApiService {
 
   Future<Response> getContactGroups({bool refresh = false}) async {
     return await _apiClient.get(
+      ApiConstants.contactGroupsListData, // Try groups-data first
+      options: Options(
+        extra: {
+          'useCache': true,
+          'refresh': refresh,
+        },
+      ),
+    );
+  }
+
+  Future<Response> getContactGroupsFallback({bool refresh = false}) async {
+    return await _apiClient.get(
       ApiConstants.contactGroupsList,
+      options: Options(
+        extra: {
+          'useCache': true,
+          'refresh': refresh,
+        },
+      ),
+    );
+  }
+
+  Future<Response> getContactGroupsLastResort({bool refresh = false}) async {
+    return await _apiClient.get(
+      ApiConstants.contactGroupsListFallback,
       options: Options(
         extra: {
           'useCache': true,
