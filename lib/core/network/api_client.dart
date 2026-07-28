@@ -19,7 +19,7 @@ class ApiClient {
     connectTimeout: const Duration(seconds: 120), // Increased for long videos
     receiveTimeout: const Duration(seconds: 120), // Increased for long videos
     sendTimeout: const Duration(seconds: 300),    // Increased to 5 minutes for large uploads
-    contentType: null,
+    contentType: 'application/json',             // 🛡️ Explicitly enforce JSON Content-Type
     headers: {
       'Accept': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
@@ -38,9 +38,9 @@ class ApiClient {
     _dio.interceptors.add(cacheInterceptor);
     _dio.interceptors.add(_dioInterceptor);
     _dio.interceptors.add(LogInterceptor(
-      requestBody: false, // Reduced log noise for performance
+      requestBody: true, // Enabled for debugging 422 errors
       requestHeader: true,
-      responseBody: false, // Reduced log noise
+      responseBody: true, // Enabled to see exact validation errors
       responseHeader: false,
       error: true,
     ));

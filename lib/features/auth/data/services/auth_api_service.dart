@@ -27,10 +27,6 @@ class AuthApiService {
         'email': email,
         'password': password,
       },
-      options: Options(
-        contentType: null,
-        headers: {'content-type': null},
-      ),
     );
   }
 
@@ -58,10 +54,6 @@ class AuthApiService {
         'password_confirmation': passwordConfirmation,
         'terms_and_conditions': termsAndConditions ? '1' : '0',
       },
-      options: Options(
-        contentType: null,
-        headers: {'content-type': null},
-      ),
     );
     _extractSessionCookie(response);
     return response;
@@ -83,10 +75,6 @@ class AuthApiService {
         'password': password,
         'password_confirmation': passwordConfirmation,
       },
-      options: Options(
-        contentType: null,
-        headers: {'content-type': null},
-      ),
     );
   }
 
@@ -94,10 +82,6 @@ class AuthApiService {
     return await _apiClient.post(
       ApiConstants.twoFactorChallenge,
       queryParameters: {'code': code},
-      options: Options(
-        contentType: null,
-        headers: {'content-type': null},
-      ),
     );
   }
 }

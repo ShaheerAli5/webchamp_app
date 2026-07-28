@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
+import '../../../features/contacts/data/models/label_model.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../widgets/contacts/assign_labels_dialog.dart';
 
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
@@ -83,6 +85,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
                     SizedBox(height: 16.h),
                     const _ActionButtons(),
                     SizedBox(height: 16.h),
+                    const _LabelFilterBar(),
+                    SizedBox(height: 16.h),
                     Selector<ContactProvider, int>(
                       selector: (_, p) => p.total > 0 ? p.total : p.contacts.length,
                       builder: (context, total, _) => _CounterCard(count: total),
@@ -125,15 +129,24 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   return SliverFillRemaining(child: _buildNoResultsState());
                 }
 
+                final contacts = provider.filteredContacts;
+                if (contacts.isEmpty && provider.selectedLabel != null) {
+                   return SliverFillRemaining(
+                     child: Center(
+                       child: Text('No contacts with label "${provider.selectedLabel}"'),
+                     ),
+                   );
+                }
+
                 return SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
                       return ContactCard(
-                        contact: provider.contacts[index],
+                        contact: contacts[index],
                         onTap: (action, contact) => _handleContactAction(action, contact),
                       );
                     },
-                    childCount: provider.contacts.length,
+                    childCount: contacts.length,
                     addAutomaticKeepAlives: true,
                     addRepaintBoundaries: true,
                   ),
@@ -186,6 +199,11 @@ class _ContactsScreenState extends State<ContactsScreen> {
         ),
       ),
       actions: [
+        IconButton(
+          icon: const Icon(Iconsax.tag, color: Color(0xFF151C27)),
+          onPressed: () => context.push('/manage-labels'),
+          tooltip: 'Manage Labels',
+        ),
         IconButton(
           icon: const Icon(Icons.filter_list, color: Color(0xFF151C27)),
           onPressed: () {},
@@ -262,6 +280,17 @@ class _ContactsScreenState extends State<ContactsScreen> {
       context.push('/chat-detail/$encodedUid/$encodedName');
     } else if (action == 'edit') {
       context.push('/edit-contact', extra: contact).then((_) => _fetchContacts());
+    } else if (action == 'labels') {
+      final List<dynamic> rawLabels = contact['labels'] ?? [];
+      final initialLabels = rawLabels.map((e) => LabelModel.fromJson(e)).toList();
+      
+      showDialog(
+        context: context,
+        builder: (context) => AssignLabelsDialog(
+          contactUid: uid,
+          initialLabels: initialLabels,
+        ),
+      );
     }
   }
 
@@ -333,6 +362,13 @@ class _ActionButtons extends StatelessWidget {
             ),
             SizedBox(width: 8.w),
             _ActionButton(
+              onTap: () => context.push('/manage-labels'),
+              icon: Iconsax.tag,
+              label: 'Labels',
+              isPrimary: false,
+            ),
+            SizedBox(width: 8.w),
+            _ActionButton(
               onTap: () {},
               icon: Icons.download_outlined,
               label: 'Export Contacts',
@@ -342,6 +378,87 @@ class _ActionButtons extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _LabelFilterBar extends StatelessWidget {
+  const _LabelFilterBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ContactProvider>(
+      builder: (context, provider, child) {
+        if (provider.allAvailableLabels.isEmpty) return const SizedBox.shrink();
+
+        return SizedBox(
+          height: 36.h,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: EdgeInsets.symmetric(horizontal: 16.w),
+            itemCount: provider.allAvailableLabels.length + 1,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                final isSelected = provider.selectedLabel == null || provider.selectedLabel == 'all';
+                return Padding(
+                  padding: EdgeInsets.only(right: 8.w),
+                  child: FilterChip(
+                    label: const Text('All'),
+                    selected: isSelected,
+                    onSelected: (_) => provider.setSelectedLabel(null),
+                    backgroundColor: Colors.white,
+                    selectedColor: AppColors.primary.withOpacity(0.2),
+                    checkmarkColor: AppColors.primary,
+                    labelStyle: TextStyle(
+                      color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                      fontSize: 12.sp,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20.r),
+                      side: BorderSide(color: isSelected ? AppColors.primary : Colors.grey.withOpacity(0.3)),
+                    ),
+                  ),
+                );
+              }
+
+              final label = provider.allAvailableLabels[index - 1];
+              final isSelected = provider.selectedLabel?.toLowerCase() == label.title.toLowerCase();
+
+              return Padding(
+                padding: EdgeInsets.only(right: 8.w),
+                child: FilterChip(
+                  label: Text(label.title),
+                  selected: isSelected,
+                  onSelected: (_) => provider.setSelectedLabel(isSelected ? null : label.title),
+                  backgroundColor: Colors.white,
+                  selectedColor: _parseColor(label.bgColor).withOpacity(0.2),
+                  checkmarkColor: _parseColor(label.bgColor),
+                  labelStyle: TextStyle(
+                    color: isSelected ? _parseColor(label.bgColor) : AppColors.textSecondary,
+                    fontSize: 12.sp,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20.r),
+                    side: BorderSide(
+                      color: isSelected ? _parseColor(label.bgColor) : Colors.grey.withOpacity(0.3),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Color _parseColor(String hex) {
+    try {
+      return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+    } catch (e) {
+      return Colors.grey;
+    }
   }
 }
 
@@ -530,11 +647,13 @@ class ContactCard extends StatelessWidget {
                     itemBuilder: (ctx) => [
                       const PopupMenuItem(value: 'view', child: Text('View')),
                       const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                      const PopupMenuItem(value: 'labels', child: Text('Labels')),
                       const PopupMenuItem(value: 'delete', child: Text('Delete')),
                     ],
                   ),
                 ],
               ),
+              _buildLabels(contact['labels']),
               if (latestPreview.isNotEmpty) ...[
                 SizedBox(height: 8.h),
                 Padding(
@@ -566,6 +685,45 @@ class ContactCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildLabels(dynamic labels) {
+    if (labels == null || labels is! List || labels.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: EdgeInsets.only(left: 60.w, top: 4.h),
+      child: Wrap(
+        spacing: 4.w,
+        runSpacing: 4.h,
+        children: labels.map((l) {
+          final label = LabelModel.fromJson(l is Map ? Map<String, dynamic>.from(l) : {});
+          return Container(
+            padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+            decoration: BoxDecoration(
+              color: _parseColor(label.bgColor).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8.r),
+              border: Border.all(color: _parseColor(label.bgColor).withOpacity(0.2)),
+            ),
+            child: Text(
+              label.title,
+              style: TextStyle(
+                color: _parseColor(label.bgColor),
+                fontSize: 10.sp,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Color _parseColor(String hex) {
+    try {
+      return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+    } catch (e) {
+      return Colors.grey;
+    }
   }
 }
 

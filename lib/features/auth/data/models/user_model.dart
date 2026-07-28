@@ -9,6 +9,7 @@ class UserModel {
   final String? twoFactorSecret;
   final String? vendorUid;
   final int? vendorId;
+  final String? uuid;
 
   UserModel({
     required this.id,
@@ -21,6 +22,7 @@ class UserModel {
     this.twoFactorSecret,
     this.vendorUid,
     this.vendorId,
+    this.uuid,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -36,6 +38,7 @@ class UserModel {
       twoFactorSecret: safeJson['two_factor_secret'] ?? safeJson['google2fa_secret'],
       vendorUid: safeJson['vendor_uid'],
       vendorId: safeJson['vendor_id'],
+      uuid: safeJson['uuid'],
     );
   }
 
@@ -59,6 +62,7 @@ class UserModel {
       'two_factor_secret': twoFactorSecret,
       'vendor_uid': vendorUid,
       'vendor_id': vendorId,
+      'uuid': uuid,
     };
   }
 }

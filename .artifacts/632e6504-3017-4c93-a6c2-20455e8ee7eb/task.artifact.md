@@ -1,0 +1,8 @@
+- `[x]` Enforce global JSON headers in `ApiClient`
+- `[x]` Update `ApiConstants` with confirmed Group endpoints
+- `[x]` Align `ContactApiService` methods with confirmed keys and methods
+- `[x]` Update `ContactGroupProvider` parsing logic
+- `[x]` Implement `_syncLabelsFromResponse` in `ContactProvider`
+- `[x]` Update Label CRUD methods to handle `reaction 14` (No Change)
+- `[x]` Fix `AuthApiService` conflict with global JSON headers
+- `[ ]` Final verification of CRUD operations

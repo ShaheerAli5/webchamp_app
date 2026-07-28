@@ -22,13 +22,17 @@ class ContactGroupProvider extends ChangeNotifier {
 
     try {
       final result = await _repository.getContactGroups(refresh: refresh);
-      if (result is Map && result['data'] != null) {
-        _groups = result['data'];
+
+      if (result is Map) {
+        // Backend confirmed structure: { reaction_code: 1, data: { groups: [...] } }
+        final data = result['data'];
+        if (data is Map && data['groups'] != null) {
+          _groups = data['groups'];
+        } else {
+          _groups = result['groups'] ?? result['data'] ?? [];
+        }
       } else if (result is List) {
         _groups = result;
-      } else if (result is Map) {
-         // Some APIs return groups directly in the map or under a different key
-         _groups = result['groups'] ?? result['contactGroups'] ?? [];
       }
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');

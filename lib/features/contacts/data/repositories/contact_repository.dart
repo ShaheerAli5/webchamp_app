@@ -92,6 +92,7 @@ class ContactRepository {
     String? address,
     String? languageCode,
     required dynamic country,
+    String? userUid,
     List<int>? contactGroups,
     bool? whatsappOptOut,
     bool? enableAiBot,
@@ -107,6 +108,7 @@ class ContactRepository {
         address: address,
         languageCode: languageCode,
         country: country,
+        userUid: userUid,
         contactGroups: contactGroups,
         whatsappOptOut: whatsappOptOut,
         enableAiBot: enableAiBot,
@@ -133,6 +135,7 @@ class ContactRepository {
     String? address,
     String? languageCode,
     required dynamic country,
+    String? userUid,
     List<int>? contactGroups,
     bool? whatsappOptOut,
     bool? enableAiBot,
@@ -148,6 +151,7 @@ class ContactRepository {
         address: address,
         languageCode: languageCode,
         country: country,
+        userUid: userUid,
         contactGroups: contactGroups,
         whatsappOptOut: whatsappOptOut,
         enableAiBot: enableAiBot,
@@ -499,12 +503,14 @@ class ContactRepository {
     required String title,
     required String textColor,
     required String bgColor,
+    String? userUid,
   }) async {
     try {
       final response = await _apiService.createLabel(
         title: title,
         textColor: textColor,
         bgColor: bgColor,
+        userUid: userUid,
       );
       return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
@@ -517,6 +523,7 @@ class ContactRepository {
     required String title,
     required String textColor,
     required String bgColor,
+    String? userUid,
   }) async {
     try {
       final response = await _apiService.updateLabel(
@@ -524,6 +531,7 @@ class ContactRepository {
         title: title,
         textColor: textColor,
         bgColor: bgColor,
+        userUid: userUid,
       );
       return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
@@ -531,9 +539,9 @@ class ContactRepository {
     }
   }
 
-  Future<dynamic> deleteLabel(String labelUid) async {
+  Future<dynamic> deleteLabel(String labelUid, {String? userUid}) async {
     try {
-      final response = await _apiService.deleteLabel(labelUid);
+      final response = await _apiService.deleteLabel(labelUid, userUid: userUid);
       return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
@@ -543,11 +551,13 @@ class ContactRepository {
   Future<dynamic> assignLabels({
     required String contactUid,
     required List<String> labels,
+    String? userUid,
   }) async {
     try {
       final response = await _apiService.assignLabels(
         contactUid: contactUid,
         labels: labels,
+        userUid: userUid,
       );
       return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
@@ -714,15 +724,19 @@ class ContactRepository {
   String _extractError(DioException e) {
     if (e.response != null) {
       final status = e.response!.statusCode;
-      if (status == 403)
-        return "Access denied. You may not have permission for this action.";
-      if (status == 404) return "The requested resource was not found.";
-      if (status == 413)
-        return "Video file is too large for the server. Please try a shorter or lower quality video.";
-      if (status != null && status >= 500)
-        return "Server error. Please try again later.";
-
       final data = e.response!.data;
+      
+      // 🕵️ Debug Logging for API failures
+      debugPrint('🛑 [API ERROR] ${e.requestOptions.method} ${e.requestOptions.path}');
+      debugPrint('   - Status: $status');
+      debugPrint('   - Payload: ${e.requestOptions.data}');
+      debugPrint('   - Response: $data');
+
+      if (status == 403) return "Access denied. You may not have permission for this action.";
+      if (status == 404) return "The requested resource was not found. Please verify the API endpoint.";
+      if (status == 413) return "Video file is too large for the server. Please try a shorter or lower quality video.";
+      if (status != null && status >= 500) return "Server error. Please try again later.";
+
       if (data is Map) {
         String msg =
             (data['message'] ??
