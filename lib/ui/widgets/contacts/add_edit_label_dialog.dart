@@ -93,16 +93,22 @@ class _AddEditLabelDialogState extends State<AddEditLabelDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
           child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
         ),
         ElevatedButton(
-          onPressed: _submit,
+          onPressed: context.watch<ContactProvider>().isLoading ? null : _submit,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
           ),
-          child: const Text('Save', style: TextStyle(color: Colors.white)),
+          child: context.watch<ContactProvider>().isLoading
+              ? SizedBox(
+                  width: 20.w,
+                  height: 20.w,
+                  child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                )
+              : const Text('Save', style: TextStyle(color: Colors.white)),
         ),
       ],
     );
@@ -167,14 +173,14 @@ class _AddEditLabelDialogState extends State<AddEditLabelDialog> {
 
     if (widget.label == null) {
       success = await provider.createLabel(
-        title: _titleController.text,
+        title: _titleController.text.trim(),
         textColor: _textColor,
         bgColor: _bgColor,
       );
     } else {
       success = await provider.updateLabel(
         labelUid: widget.label!.uid,
-        title: _titleController.text,
+        title: _titleController.text.trim(),
         textColor: _textColor,
         bgColor: _bgColor,
       );
@@ -182,10 +188,20 @@ class _AddEditLabelDialogState extends State<AddEditLabelDialog> {
 
     if (mounted) {
       if (success) {
-        Navigator.pop(context);
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(widget.label == null ? 'Label created' : 'Label updated'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(provider.errorMessage ?? 'Operation failed')),
+          SnackBar(
+            content: Text(provider.errorMessage ?? 'Operation failed'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }

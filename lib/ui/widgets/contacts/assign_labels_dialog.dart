@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../features/contacts/data/models/label_model.dart';
 import '../../../../features/contacts/presentation/providers/contact_provider.dart';
+import 'add_edit_label_dialog.dart';
 
 class AssignLabelsDialog extends StatefulWidget {
   final String contactUid;
@@ -42,8 +43,18 @@ class _AssignLabelsDialogState extends State<AssignLabelsDialog> {
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('No labels available. Please create some first in Label Management.'),
+                const Text('No labels available. Please create some first.'),
                 SizedBox(height: 20.h),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context, rootNavigator: true).pop();
+                    showDialog(
+                      context: context,
+                      builder: (context) => AddEditLabelDialog(),
+                    );
+                  },
+                  child: const Text('Create Label'),
+                ),
               ],
             );
           }
@@ -82,7 +93,9 @@ class _AssignLabelsDialogState extends State<AssignLabelsDialog> {
                   onChanged: (value) {
                     setState(() {
                       if (value == true) {
-                        _selectedLabelUids.add(label.uid);
+                        if (!_selectedLabelUids.contains(label.uid)) {
+                          _selectedLabelUids.add(label.uid);
+                        }
                       } else {
                         _selectedLabelUids.remove(label.uid);
                       }
@@ -96,16 +109,22 @@ class _AssignLabelsDialogState extends State<AssignLabelsDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
           child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
         ),
         ElevatedButton(
-          onPressed: _submit,
+          onPressed: context.watch<ContactProvider>().isLoading ? null : _submit,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
           ),
-          child: const Text('Apply', style: TextStyle(color: Colors.white)),
+          child: context.watch<ContactProvider>().isLoading
+              ? SizedBox(
+                  width: 20.w,
+                  height: 20.w,
+                  child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                )
+              : const Text('Apply', style: TextStyle(color: Colors.white)),
         ),
       ],
     );
@@ -128,10 +147,20 @@ class _AssignLabelsDialogState extends State<AssignLabelsDialog> {
 
     if (mounted) {
       if (success) {
-        Navigator.pop(context);
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Labels assigned successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(provider.errorMessage ?? 'Failed to assign labels')),
+          SnackBar(
+            content: Text(provider.errorMessage ?? 'Failed to assign labels'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }

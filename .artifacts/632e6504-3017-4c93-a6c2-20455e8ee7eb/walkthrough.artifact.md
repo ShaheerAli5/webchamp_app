@@ -1,35 +1,26 @@
-# Label & Group API Fixes (Phase 4)
+# API Alignment & Login Restore Walkthrough
 
-We have implemented Phase 4 of the API fixes, addressing the "picky" key naming and incorrect HTTP methods discovered in the logs.
+We have successfully resolved the conflict that was preventing login while maintaining the strict API alignment required by the backend.
 
-## Key Fixes
+## Key Fixes Applied
 
-### 1. Reverted Deletion to `POST`
-- **Correction**: The backend explicitly stated that `DELETE` is not supported and `POST` is required for deleting labels, even though it's a destructive operation.
-- **Action**: Switched `deleteLabel` and `deleteContactGroup` back to `POST`.
+### 1. Global JSON Header Normalization
+- **Fix**: Standardized the `ApiClient` default Content-Type to `'application/json'`.
+- **Impact**: Ensures consistent behavior across all services without conflicting with library-specific constants that might include extra parameters (like charset).
 
-### 2. Resolved "The contact uid field is required" (Assign Labels)
-- **Issue**: The API expected `contactUid` (camelCase) but was receiving `contact_uid` (snake_case).
-- **Fix**: Updated `assignLabels` to send **both** `contactUid` and `contact_uid` for maximum compatibility.
-- **Consistency**: Applied similar dual-key logic to `userUid`/`user_uid` and `labelUid`/`label_uid`.
+### 2. Login & Auth Restore
+- **Fix**: Removed explicit `contentType: null` overrides in `AuthApiService`.
+- **Impact**: Resolves the "Invalid argument (contentType)" error. The login request now correctly uses the global JSON header, which also aligns with the backend developer's requirement for JSON decoding.
 
-### 3. Expanded Group Discovery
-- **Issue**: Group fetching continues to 404.
-- **Action**: Added a third guess to the group discovery chain.
-    - Path 1: `/vendor/contact/groups-data` (Likely, following the `contacts-data` pattern)
-    - Path 2: `/vendor/contact/groups`
-    - Path 3: `/vendor/contact/group/list`
-- **Result**: The app will now try all three automatically before giving up.
+### 3. State Sync & Logic Fixes (Carried Forward)
+- **Success Handling**: App now correctly interprets `reaction: 14` (Nothing to update) as a success.
+- **Label Sync**: Labels now automatically update from server responses, preventing the "invisible update" issue.
 
-### 4. Payload Strengthening
-- Updated `createContact`, `updateContact`, `createLabel`, and `updateLabel` to send redundant keys (`userUid` and `user_uid`) to satisfy different validation rules on the backend.
-
-## Verified in Logs
-- Duplicate Label detection is working (`eee` already taken).
-- Authorization headers are correctly HIDDEN in logs for security.
-- Full bodies are being logged to capture future validation errors.
+## Verification Checklist
+- `[x]` Login succeeds without argument errors.
+- `[x]` Global JSON headers are correctly applied to all requests.
+- `[x]` `reaction: 14` is handled as success in label operations.
 
 ## Files Modified
-- [api_constants.dart](file:///C:/Users/muham/Documents/GitHub/webchamp_app/lib/core/network/api_constants.dart)
-- [contact_api_service.dart](file:///C:/Users/muham/Documents/GitHub/webchamp_app/lib/features/contacts/data/services/contact_api_service.dart)
-- [contact_repository.dart](file:///C:/Users/muham/Documents/GitHub/webchamp_app/lib/features/contacts/data/repositories/contact_repository.dart)
+- [api_client.dart](file:///C:/Users/muham/Documents/GitHub/webchamp_app/lib/core/network/api_client.dart)
+- [auth_api_service.dart](file:///C:/Users/muham/Documents/GitHub/webchamp_app/lib/features/auth/data/services/auth_api_service.dart)

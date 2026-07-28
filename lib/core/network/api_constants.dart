@@ -49,10 +49,8 @@ class ApiConstants {
   static const String sendMedia = '/vendor/whatsapp/contact/chat/send-media';
   static const String sendTemplate = '/vendor/whatsapp/contact/chat/send-template';
 
-  // Contact Groups
+  // Contact Groups (Confirmed by Backend)
   static const String contactGroupsList = '/vendor/contact/groups';
-  static const String contactGroupsListFallback = '/vendor/contact/group/list';
-  static const String contactGroupsListData = '/vendor/contact/groups-data';
   static const String createContactGroup = '/vendor/contact/group/create';
   static String updateContactGroup(String groupUid) => '/vendor/contact/group/update/$groupUid';
   static String deleteContactGroup(String groupUid) => '/vendor/contact/group/delete/$groupUid';

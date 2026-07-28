@@ -144,31 +144,63 @@ class _LabelItem extends StatelessWidget {
   void _showDeleteConfirm(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Label'),
-        content: Text('Are you sure you want to delete the label "${label.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final provider = context.read<ContactProvider>();
-              final success = await provider.deleteLabel(label.uid);
-              if (context.mounted) {
-                Navigator.pop(context);
-                if (!success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(provider.errorMessage ?? 'Delete failed')),
-                  );
-                }
-              }
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+      barrierDismissible: false,
+      builder: (context) => _DeleteLabelDialog(label: label),
     );
+  }
+}
+
+class _DeleteLabelDialog extends StatefulWidget {
+  final LabelModel label;
+  const _DeleteLabelDialog({required this.label});
+
+  @override
+  State<_DeleteLabelDialog> createState() => _DeleteLabelDialogState();
+}
+
+class _DeleteLabelDialogState extends State<_DeleteLabelDialog> {
+  bool _isDeleting = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Delete Label'),
+      content: Text('Are you sure you want to delete the label "${widget.label.title}"?'),
+      actions: [
+        TextButton(
+          onPressed: _isDeleting ? null : () => Navigator.of(context, rootNavigator: true).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _isDeleting ? null : _handleDelete,
+          child: _isDeleting
+              ? SizedBox(
+                  width: 20.w,
+                  height: 20.w,
+                  child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                )
+              : const Text('Delete', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    );
+  }
+
+  void _handleDelete() async {
+    setState(() => _isDeleting = true);
+    final provider = context.read<ContactProvider>();
+    final success = await provider.deleteLabel(widget.label.uid);
+    
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Label deleted'), backgroundColor: Colors.green),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(provider.errorMessage ?? 'Delete failed'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 }

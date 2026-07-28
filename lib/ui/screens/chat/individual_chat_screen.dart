@@ -27,10 +27,12 @@ import 'dart:io';
 import 'dart:math' as math;
 import '../../../core/utils/helpers.dart';
 import '../../../features/contacts/presentation/providers/contact_provider.dart';
-import 'widgets/voice_message_bubble.dart';
-import 'widgets/video_player_widget.dart';
-import 'widgets/whatsapp_camera_screen.dart';
-import 'status_edit_screen.dart';
+import 'package:webchamp_app/ui/screens/chat/widgets/voice_message_bubble.dart';
+import 'package:webchamp_app/ui/screens/chat/widgets/video_player_widget.dart';
+import 'package:webchamp_app/ui/screens/chat/widgets/whatsapp_camera_screen.dart';
+import 'package:webchamp_app/ui/screens/chat/status_edit_screen.dart';
+import 'package:webchamp_app/ui/widgets/contacts/add_edit_label_dialog.dart';
+import 'package:webchamp_app/ui/widgets/contacts/assign_labels_dialog.dart';
 
 enum RecordingState { idle, recording, locked, preview }
 
@@ -659,6 +661,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> with Widget
                 bottom: !_showEmoji,
                 child: Column(
                   children: [
+                    const _AssignedLabelsBar(),
                     const ChatCountdownTimer(),
                     Expanded(
                       child: Selector<ContactProvider, _ChatStateData>(
@@ -1648,8 +1651,47 @@ class ChatAppBar extends StatelessWidget {
           ],
         ),
       ),
-      actions: [IconButton(onPressed: onInfoTap, icon: const Icon(Icons.more_vert, color: Color(0xFF667781)))],
+      actions: [
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert, color: Color(0xFF667781)),
+          onSelected: (value) => _handleMenuAction(context, value),
+          itemBuilder: (context) => [
+            const PopupMenuItem(value: 'info', child: Text('Contact Info')),
+            const PopupMenuDivider(),
+            const PopupMenuItem(value: 'create', child: Text('Create Label')),
+            const PopupMenuItem(value: 'assign', child: Text('Assign Label')),
+            const PopupMenuItem(value: 'manage', child: Text('Edit / Delete Label')),
+          ],
+        ),
+      ],
     );
+  }
+
+  void _handleMenuAction(BuildContext context, String value) {
+    final provider = context.read<ContactProvider>();
+    switch (value) {
+      case 'info':
+        onInfoTap();
+        break;
+      case 'assign':
+        showDialog(
+          context: context,
+          builder: (context) => AssignLabelsDialog(
+            contactUid: uid,
+            initialLabels: provider.labels,
+          ),
+        );
+        break;
+      case 'create':
+        showDialog(
+          context: context,
+          builder: (context) => AddEditLabelDialog(),
+        );
+        break;
+      case 'manage':
+        context.push('/manage-labels');
+        break;
+    }
   }
 }
 
@@ -3105,3 +3147,57 @@ class _ChatStateData {
       Object.hash(messages, isLoading, errorMessage);
 }
 
+
+class _AssignedLabelsBar extends StatelessWidget {
+  const _AssignedLabelsBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ContactProvider>(
+      builder: (context, provider, child) {
+        if (provider.labels.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 16.w),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: Colors.black.withOpacity(0.05))),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: provider.labels.map((label) {
+                return Container(
+                  margin: EdgeInsets.only(right: 8.w),
+                  padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+                  decoration: BoxDecoration(
+                    color: _parseColor(label.bgColor).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12.r),
+                    border: Border.all(color: _parseColor(label.bgColor).withOpacity(0.2)),
+                  ),
+                  child: Text(
+                    label.title,
+                    style: TextStyle(
+                      color: _parseColor(label.bgColor),
+                      fontSize: 11.sp,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Color _parseColor(String hex) {
+    try {
+      return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+    } catch (e) {
+      return Colors.grey;
+    }
+  }
+}

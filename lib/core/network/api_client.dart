@@ -19,7 +19,7 @@ class ApiClient {
     connectTimeout: const Duration(seconds: 120), // Increased for long videos
     receiveTimeout: const Duration(seconds: 120), // Increased for long videos
     sendTimeout: const Duration(seconds: 300),    // Increased to 5 minutes for large uploads
-    contentType: null,
+    contentType: 'application/json',             // 🛡️ Explicitly enforce JSON Content-Type
     headers: {
       'Accept': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',

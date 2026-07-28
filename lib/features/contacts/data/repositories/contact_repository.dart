@@ -557,27 +557,8 @@ class ContactRepository {
 
   Future<dynamic> getContactGroups({bool refresh = false}) async {
     try {
-      try {
-        final response = await _apiService.getContactGroups(refresh: refresh);
-        return Helpers.sanitizeData(response.data);
-      } on DioException catch (e) {
-        if (e.response?.statusCode == 404) {
-          debugPrint('🔍 [GROUPS] 404 on groups-data, trying groups...');
-          try {
-            final fallbackResponse = await _apiService.getContactGroupsFallback(refresh: refresh);
-            return Helpers.sanitizeData(fallbackResponse.data);
-          } on DioException catch (e2) {
-             if (e2.response?.statusCode == 404) {
-               debugPrint('🔍 [GROUPS] 404 on groups, trying group/list...');
-               // Last resort hardcoded try for testing
-               final lastResort = await _apiService.getContactGroupsLastResort(refresh: refresh);
-               return Helpers.sanitizeData(lastResort.data);
-             }
-             rethrow;
-          }
-        }
-        rethrow;
-      }
+      final response = await _apiService.getContactGroups(refresh: refresh);
+      return Helpers.sanitizeData(response.data);
     } on DioException catch (e) {
       throw Exception(_extractError(e));
     }
